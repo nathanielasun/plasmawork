@@ -1,6 +1,6 @@
 # Phase 1 — Manual Scientific Workbench
 
-**Status: In progress (started 2026-05-02). Active workstreams: 1A, 1B.**
+**Status: In progress (started 2026-05-02). Workstreams 1A and 1B complete; 1C-1F pending.**
 
 ## Objective
 Build a functioning non-agentic workbench that can define, run, pause, save, load, visualize, and export simple scientific simulations. (Plan §Phase 1.)
@@ -45,16 +45,18 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 The agent opening Phase 1 translates each deliverable below into an assertion in `scripts/dev/check_repo_conventions.sh`. Starting-point hints, drawn from plan §Phase 1 — replace stubs with real implementations as workstreams complete:
 
 - ☑ `packages/core/pyproject.toml` populated with the runtime's actual dependencies (no longer a Phase-0 placeholder). *Done 2026-05-02 (Workstream 1B).*
-- ☑ `packages/core/src/simworkbench/model_spec/schema.py` — `ModelSpec` types + JSON schema (per ADR-0003). *Done 2026-05-02 (Workstream 1A): `model_spec/{__init__,types,loader,schema}.py`. Pydantic v2 IR with custom `Quantity` field bridging to `simworkbench.units`. 20 ModelSpec tests passing.*
-- ☑ `packages/core/src/simworkbench/units/__init__.py` — units library wrapper, dimensional validation entrypoints. *Done 2026-05-02 (Workstream 1B): `units/{__init__,registry,quantity,validators}.py`, 30 unit tests passing.*
+- ☑ `packages/core/src/simworkbench/model_spec/schema.py` — `ModelSpec` types + JSON schema (per ADR-0003). *Done 2026-05-02 (Workstream 1A): `model_spec/{__init__,types,loader,schema}.py`. Pydantic v2 IR with custom `Quantity` field bridging to `simworkbench.units`. Extended validators reject missing species, unknown equation refs, missing coefficient sources, unsupported backends, unknown validity-regime keys, unitless domain bounds, and raw numeric leaves in ModelSpec parameter dictionaries.*
+- ☑ `packages/core/src/simworkbench/experiment/{__init__,types}.py` — `Experiment`, `RunConfig`, `DiagnosticConfig`, `BackendConfig`.
+- ☑ `packages/core/src/simworkbench/serialization/{__init__,experiment}.py` — experiment YAML save/load. Capsule save/load remains Phase 2.
+- ☑ `packages/core/src/simworkbench/units/__init__.py` — units library wrapper, dimensional validation entrypoints. *Done 2026-05-02 (Workstream 1B): `units/{__init__,registry,quantity,validators}.py`, with ModelSpec boundary hardening.*
 - ☐ `packages/core/src/simworkbench/runtime/runner.py` — start / pause / resume / checkpoint API.
-- ☐ `packages/core/src/simworkbench/serialization/capsule.py` — minimal capsule save/load (Phase 2 finalizes the format).
+- ☐ `packages/core/src/simworkbench/serialization/capsule.py` — capsule save/load (Phase 2 finalizes the format).
 - ☐ `packages/physics_modules/laser/gaussian_pulse/{module.yaml,src/}` — first physics module (per ADR-0001 laser focus).
 - ☐ `packages/physics_modules/species/<basic>/{module.yaml,src/}` — basic species module.
 - ☐ `examples/simple_rate_equations/run.py` — first laser-species example, runnable end-to-end. *(YAML model spec landed Workstream 1A; runtime to wire it up lands in Workstream 1C.)*
 - ☐ `examples/ising_phase_transition/run.py` *or* `examples/molecular_dynamics/run.py` — second-domain proof per ADR-0001.
 - ☐ `scripts/dev/run_backend.sh` and `scripts/dev/run_ui.sh` are real implementations (no longer Phase-0 stubs).
-- ☑ `tests/unit/test_modelspec.py`, ☑ `tests/unit/test_units.py`, ☐ `tests/integration/test_capsule_save_load.py`.
+- ☑ `tests/unit/test_modelspec.py`, ☑ `tests/unit/test_units.py`, ☑ `tests/unit/test_experiment.py`, ☑ `tests/integration/test_experiment_save_load.py`, ☐ `tests/integration/test_capsule_save_load.py`.
 - ☐ `apps/workbench-ui/src/app/page.tsx` is a real workbench shell with simulation list, run controls, code/docs viewers, diagnostics panel, plot panel, capsule explorer.
 - ☐ Every `docs_site/src/content/*.tsx` page that has a Phase-1 banner has been updated and re-banner'd.
 

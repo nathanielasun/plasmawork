@@ -2,7 +2,10 @@ export default function Overview() {
   return (
     <article>
       <h1>Overview</h1>
-      <p className="page-status">Phase 0 skeleton. Expand in Phase 1.</p>
+      <p className="page-status">
+        Phase 1 in progress. ModelSpec, units, and Experiment save/load are
+        implemented; runtime execution and UI remain pending.
+      </p>
 
       <h2>What this is</h2>
       <p>

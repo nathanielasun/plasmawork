@@ -21,6 +21,14 @@ packages/
         so bootstrap, convention, and future build scripts have stable entry
         points even before the runtime and UI are implemented.
       </p>
+      <p>
+        Phase 1A adds <code>simworkbench.experiment</code> and{" "}
+        <code>simworkbench.serialization</code> for the core experiment model:
+        <code>Experiment</code>, <code>RunConfig</code>,{" "}
+        <code>BackendConfig</code>, <code>DiagnosticConfig</code>, and YAML
+        save/load. Phase 1B adds <code>simworkbench.units</code> and enforces
+        unit-aware ModelSpec boundaries.
+      </p>
 
       <h2>Dependency direction</h2>
       <p>

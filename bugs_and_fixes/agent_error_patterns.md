@@ -200,6 +200,32 @@ Every plan-derived artifact gets a reality test before commit:
 
 ---
 
+## Error Pattern: Letting `dict[str, Any]` bypass scientific boundary validation
+
+### Why it is bad
+Flexible dictionaries are useful for early schemas, but they can silently admit raw floats, numeric strings without units, unknown validity-regime keys, or unsupported backend names. That breaks the repository rule that units are first-class and makes ModelSpec validation look stronger than it is.
+
+### Required behavior
+Every flexible dictionary at a scientific boundary needs recursive validation. Raw `int` / `float` values are rejected unless the field is explicitly dimensionless metadata. Numeric strings like `"0"` are rejected when a physical quantity is expected; use unit-aware strings like `"0 m"` or explicit dimensionless strings where supported.
+
+### Detection
+Add negative tests that insert raw floats into every flexible field (`fields.initialization`, `interactions.valid_regime`, backend/runtime options when they become physical). A phase gate is not complete until these tests fail for the right reason.
+
+---
+
+## Error Pattern: Running tests with ambient Python instead of the repo environment
+
+### Why it is bad
+The repository can pass in one shell and fail in another if wrapper scripts call bare `python` while dependencies are installed in `.venv`. Agents may then misdiagnose missing dependencies as implementation failures, or falsely report tests as un-runnable.
+
+### Required behavior
+Test wrappers should prefer `SIMWORKBENCH_PYTHON` when set, then `.venv/bin/python`, and only fall back to bare `python` if no repo virtualenv exists. Document this behavior in `tests/README.md`.
+
+### Detection
+Inspect `scripts/test/*.sh` for `.venv/bin/python` or the shared environment-selection helper. Run `./scripts/test/all.sh` without manually activating `.venv`.
+
+---
+
 ## Error Pattern: Switching backends to make output "look better"
 
 ### Why it is bad

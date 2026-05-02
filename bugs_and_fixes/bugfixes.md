@@ -32,6 +32,37 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-02: Phase 1A/1B gate overstated implementation completeness
+
+### Affected subsystem
+`packages/core/src/simworkbench/{model_spec,experiment,serialization,units}/`, `scripts/test/`.
+
+### Symptoms
+Phase 1 Workstreams 1A and 1B were documented around ModelSpec and units, but verification found plan-level gaps:
+
+- Workstream 1A had ModelSpec but not `Experiment`, `RunConfig`, `DiagnosticConfig`, `BackendConfig`, or experiment save/load.
+- ModelSpec unit enforcement only covered typed `Quantity` fields; raw floats passed through flexible dictionaries such as `fields.initialization` and `interactions.valid_regime`.
+- Several plan §8.2 ModelSpec validation rules were missing: missing species, unknown equation references, missing coefficient sources, unsupported backends, unknown validity-regime keys, missing spatial bounds, and missing spatial boundary conditions.
+- `scripts/test/*.sh` used ambient `python`, so tests failed outside an activated `.venv` even though the repo-local virtualenv had the required dependencies.
+- README status text still described Phase 0 while the phase table showed Phase 1 in progress.
+
+### Root cause
+The convention checker and milestone notes verified file presence and the ModelSpec slice, not the complete Workstream 1A deliverable list or behavioral validator coverage. Flexible `dict[str, Any]` fields created a unit-validation escape hatch. Test wrappers assumed the user's shell had already activated the repo virtualenv.
+
+### Fix
+Implemented `simworkbench.experiment` with `Experiment`, `RunConfig`, `DiagnosticConfig`, and `BackendConfig`. Added `simworkbench.serialization` experiment YAML save/load helpers. Hardened ModelSpec validators for flexible parameter dictionaries and the missing plan §8.2 checks listed above. Updated test wrappers to prefer `.venv/bin/python`. Synced README, docs, milestone, timeline, convention checker, and regression records.
+
+Commit: pending.
+
+### Regression protection
+- `tests/unit/test_modelspec.py` now covers raw numeric bypasses, missing species, unknown equation refs, missing coefficient sources, unsupported backends, unknown validity-regime keys, and missing spatial bounds/boundary conditions.
+- `tests/unit/test_experiment.py` covers core experiment/config models.
+- `tests/integration/test_experiment_save_load.py` covers experiment YAML save/load.
+- `scripts/dev/check_repo_conventions.sh` now asserts the new implementation/test files and test-wrapper virtualenv behavior.
+
+### Agent warning
+Do not treat one slice of a workstream as the full workstream. Translate every named plan deliverable into implementation and tests. Avoid `dict[str, Any]` at scientific boundaries unless it has recursive validation that rejects raw physical numbers.
+
 ## 2026-05-02: Phase 0 gate false positive for missing skeleton files
 
 ### Affected subsystem

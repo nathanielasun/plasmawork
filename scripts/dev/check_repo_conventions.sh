@@ -185,9 +185,15 @@ check_file_exists packages/core/src/simworkbench/model_spec/__init__.py
 check_file_exists packages/core/src/simworkbench/model_spec/types.py
 check_file_exists packages/core/src/simworkbench/model_spec/loader.py
 check_file_exists packages/core/src/simworkbench/model_spec/schema.py
+check_file_exists packages/core/src/simworkbench/experiment/__init__.py
+check_file_exists packages/core/src/simworkbench/experiment/types.py
+check_file_exists packages/core/src/simworkbench/serialization/__init__.py
+check_file_exists packages/core/src/simworkbench/serialization/experiment.py
 check_file_exists examples/simple_rate_equations/model.yaml
 check_file_exists tests/unit/test_modelspec.py
 check_file_exists tests/unit/test_units.py
+check_file_exists tests/unit/test_experiment.py
+check_file_exists tests/integration/test_experiment_save_load.py
 check_dir_exists packages/agent_orchestration
 check_dir_exists packages/physics_modules
 check_dir_exists packages/solver_backends
@@ -219,6 +225,9 @@ for f in dev/install.sh \
          test/performance.sh \
          export/capsule.sh; do
   check_file_executable "scripts/$f" "script scripts/$f"
+done
+for f in unit integration regression validation performance; do
+  check_grep_in_file '\.venv/bin/python' "scripts/test/$f.sh" "scripts/test/$f.sh prefers repo venv"
 done
 for d in laser_species krf_excimer simple_rate_equations molecular_dynamics ising_phase_transition pde_wave_equation; do
   check_dir_exists "examples/$d" "examples/$d"

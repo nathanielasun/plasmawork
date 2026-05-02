@@ -13,6 +13,7 @@ Cover:
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -73,7 +74,7 @@ def test_quantity_field_accepts_pint_quantity():
 
 
 def test_quantity_field_rejects_raw_float():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["species"] = [
         {"name": "A", "type": "atom", "initial_density": 1.0e18},  # raw — forbidden
         {"name": "B", "type": "atom", "initial_density": "0 1/m^3"},
@@ -83,7 +84,7 @@ def test_quantity_field_rejects_raw_float():
 
 
 def test_quantity_field_dimensionality_check_on_density():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["species"] = [
         # Density quoted in seconds — wrong dimensionality.
         {"name": "A", "type": "atom", "initial_density": "1.0e18 second"},
@@ -124,7 +125,7 @@ def test_to_dict_emits_quantity_strings():
 # ---------------------------------------------------------------------------
 
 def test_schema_version_mismatch_raises():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["schema_version"] = "0.99"
     with pytest.raises(ModelSpecError, match="Unsupported schema_version"):
         from_dict(data)
@@ -141,7 +142,7 @@ def test_default_schema_version_when_omitted():
 # ---------------------------------------------------------------------------
 
 def test_unknown_interaction_participant_rejected():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["interactions"] = [
         {
             "name": "bogus",
@@ -155,7 +156,7 @@ def test_unknown_interaction_participant_rejected():
 
 
 def test_unknown_diagnostic_quantity_rejected():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["diagnostics"] = [
         {"name": "ghost", "quantity": "Z", "output_format": "parquet"}
     ]
@@ -164,7 +165,7 @@ def test_unknown_diagnostic_quantity_rejected():
 
 
 def test_diagnostic_quantity_matching_equation_id_accepted():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["equations"] = [
         {
             "id": "eq1",
@@ -182,7 +183,7 @@ def test_diagnostic_quantity_matching_equation_id_accepted():
 
 
 def test_zero_d_with_boundary_conditions_rejected():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["geometry"] = {
         "dimensionality": 0,
         "boundary_conditions": [{"name": "left", "kind": "dirichlet"}],
@@ -192,7 +193,7 @@ def test_zero_d_with_boundary_conditions_rejected():
 
 
 def test_units_checked_requires_assumptions():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["equations"] = [
         {
             "id": "eq1",
@@ -207,9 +208,147 @@ def test_units_checked_requires_assumptions():
 
 
 def test_extra_fields_rejected():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["mystery_key"] = 42
     with pytest.raises(ModelSpecError):
+        from_dict(data)
+
+
+def test_missing_species_rejected():
+    data = deepcopy(MINIMAL_SPEC)
+    data["species"] = []
+    with pytest.raises(ModelSpecError, match="at least one species"):
+        from_dict(data)
+
+
+def test_unknown_equation_ref_rejected():
+    data = deepcopy(MINIMAL_SPEC)
+    data["interactions"] = [
+        {
+            "name": "bad_ref",
+            "participants": ["A"],
+            "equation_refs": ["missing_eq"],
+            "coefficient_sources": ["placeholder: test"],
+        }
+    ]
+    with pytest.raises(ModelSpecError, match="unknown equation id"):
+        from_dict(data)
+
+
+def test_missing_coefficient_sources_rejected():
+    data = deepcopy(MINIMAL_SPEC)
+    data["interactions"] = [
+        {
+            "name": "missing_sources",
+            "participants": ["A"],
+            "equation_refs": [],
+            "coefficient_sources": [],
+        }
+    ]
+    with pytest.raises(ModelSpecError, match="coefficient_sources"):
+        from_dict(data)
+
+
+def test_unsupported_backend_rejected():
+    data = deepcopy(MINIMAL_SPEC)
+    data["solvers"] = {
+        "recommended": [
+            {
+                "name": "bad_backend_solver",
+                "backend_compatibility": ["made_up_backend"],
+            }
+        ]
+    }
+    with pytest.raises(ModelSpecError, match="unsupported backend"):
+        from_dict(data)
+
+
+def test_solver_backend_compatibility_required():
+    data = deepcopy(MINIMAL_SPEC)
+    data["solvers"] = {
+        "recommended": [
+            {
+                "name": "solver_without_backends",
+                "backend_compatibility": [],
+            }
+        ]
+    }
+    with pytest.raises(ModelSpecError, match="backend_compatibility"):
+        from_dict(data)
+
+
+def test_unknown_valid_regime_key_rejected():
+    data = deepcopy(MINIMAL_SPEC)
+    data["interactions"] = [
+        {
+            "name": "bad_regime",
+            "participants": ["A"],
+            "equation_refs": [],
+            "coefficient_sources": ["placeholder: test"],
+            "valid_regime": {"vibes_max": "10 dimensionless"},
+        }
+    ]
+    with pytest.raises(ModelSpecError, match="unknown validity-regime key"):
+        from_dict(data)
+
+
+def test_field_initialization_rejects_raw_float():
+    data = deepcopy(MINIMAL_SPEC)
+    data["fields"] = [
+        {
+            "name": "laser",
+            "type": "laser",
+            "initialization": {"wavelength": 248.0},
+        }
+    ]
+    with pytest.raises(ModelSpecError, match="raw number"):
+        from_dict(data)
+
+
+def test_interaction_valid_regime_rejects_raw_float():
+    data = deepcopy(MINIMAL_SPEC)
+    data["interactions"] = [
+        {
+            "name": "raw_regime",
+            "participants": ["A"],
+            "equation_refs": [],
+            "coefficient_sources": ["placeholder: test"],
+            "valid_regime": {"density_max": 1.0e24},
+        }
+    ]
+    with pytest.raises(ModelSpecError, match="raw number"):
+        from_dict(data)
+
+
+def test_domain_bounds_reject_dimensionless_strings():
+    data = deepcopy(MINIMAL_SPEC)
+    data["geometry"] = {
+        "dimensionality": 1,
+        "domain_bounds": {"x": ["0", "1"]},
+        "boundary_conditions": [{"name": "left", "kind": "dirichlet"}],
+    }
+    with pytest.raises(ModelSpecError, match="missing units"):
+        from_dict(data)
+
+
+def test_spatial_model_requires_boundary_conditions():
+    data = deepcopy(MINIMAL_SPEC)
+    data["geometry"] = {
+        "dimensionality": 1,
+        "domain_bounds": {"x": ["0 m", "1 m"]},
+        "boundary_conditions": [],
+    }
+    with pytest.raises(ModelSpecError, match="boundary_conditions"):
+        from_dict(data)
+
+
+def test_spatial_model_requires_domain_bounds():
+    data = deepcopy(MINIMAL_SPEC)
+    data["geometry"] = {
+        "dimensionality": 1,
+        "boundary_conditions": [{"name": "left", "kind": "dirichlet"}],
+    }
+    with pytest.raises(ModelSpecError, match="domain_bounds"):
         from_dict(data)
 
 

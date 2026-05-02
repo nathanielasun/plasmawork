@@ -1,7 +1,8 @@
 # tests/
 
-Phase 0 creates the test layout and convention guards. Scientific runtime,
-module, and UI tests begin in Phase 1+ as the corresponding subsystems land.
+Phase 1A/1B includes unit and integration tests for ModelSpec, units, the core
+Experiment model, and experiment YAML save/load. Scientific runtime, module,
+and UI tests continue to land as the corresponding workstreams are implemented.
 
 ## Layout
 
@@ -24,4 +25,6 @@ module, and UI tests begin in Phase 1+ as the corresponding subsystems land.
 ./scripts/test/performance.sh
 ```
 
-In Phase 0, the regression command runs `scripts/dev/check_repo_conventions.sh`, which is the active regression guard for repository bootstrap invariants.
+The test scripts prefer `.venv/bin/python` when it exists, so running
+`./scripts/dev/install.sh` once is enough for the wrapper commands to use the
+repo-local dependencies.

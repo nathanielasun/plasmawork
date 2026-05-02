@@ -2,7 +2,7 @@
 
 A modular workbench for laser physics, laser fusion, laser–species interaction, and adjacent computational-physics domains. Designed to turn a scientific paper into a structured, inspectable, testable, visualizable computational experiment — and to keep the resulting code, data, and provenance bundled in a portable simulation capsule.
 
-> **Status: Phase 0 — Repository Bootstrap complete.** The scaffolding, governance files, docs skeleton, and convention checker are in place. The Python core runtime, workbench UI, and scientific modules described below are scheduled for Phase 1+.
+> **Status: Phase 1 — Manual Scientific Workbench in progress.** Workstreams 1A (core experiment model) and 1B (units and quantities) are implemented; runtime, physics modules, diagnostics, and UI shell remain Phase 1 work.
 
 The full architectural plan is in [`scientific_simulation_workbench_agent_plan.md`](./scientific_simulation_workbench_agent_plan.md).
 
@@ -46,7 +46,7 @@ See [`program_development/milestones/`](./program_development/milestones/) for p
 
 ## Installation
 
-> Phase 0 — the bootstrap script installs the minimal core package skeleton and Node workspaces. Full runtime setup lands in Phase 1.
+> Phase 1 — the bootstrap script installs the core package, including ModelSpec, units, and experiment serialization, plus Node workspaces. Runtime execution lands in Workstream 1C.
 
 Prerequisites (planned):
 
@@ -60,7 +60,7 @@ Bootstrap:
 ./scripts/dev/install.sh
 ```
 
-This creates a Python virtualenv under `.venv/`, installs the Phase 0 core package in editable mode, and installs the UI/docs Node dependencies.
+This creates a Python virtualenv under `.venv/`, installs the Phase 1 core package in editable mode, and installs the UI/docs Node dependencies.
 
 ---
 
@@ -80,7 +80,7 @@ This creates a Python virtualenv under `.venv/`, installs the Phase 0 core packa
 ./scripts/dev/check_repo_conventions.sh
 ```
 
-The UI, backend, capsule, kernel, and export scripts exist in Phase 0 so documented commands do not point at missing files. Scripts for later phases print an explicit scheduled-phase message until their subsystem is implemented.
+The UI, backend, capsule, kernel, and export scripts exist so documented commands do not point at missing files. Scripts for later phases print an explicit scheduled-phase message until their subsystem is implemented.
 
 ---
 
@@ -204,11 +204,20 @@ See [`CLAUDE.md → How to Add an Internal Tool`](./CLAUDE.md#how-to-add-an-inte
 
 ## How to Run Example Simulations
 
-Examples will land under `examples/` starting in Phase 1:
+The first Phase 1A example is a validated ModelSpec. Runtime execution lands in Workstream 1C:
 
 ```bash
-# Phase 1
-python examples/simple_rate_equations/run.py
+# Validate and save/load the example experiment
+source .venv/bin/activate
+python - <<'PY'
+from simworkbench import Experiment
+from simworkbench.model_spec import load_yaml
+from simworkbench.serialization import save_experiment
+
+spec = load_yaml("examples/simple_rate_equations/model.yaml")
+experiment = Experiment.from_model_spec(spec)
+save_experiment(experiment, "temp_runs/simple_rate_equations_experiment.yaml")
+PY
 
 # Phase 2+
 ./scripts/dev/run_capsule.sh examples/krf_excimer/krf_excimer.lxp

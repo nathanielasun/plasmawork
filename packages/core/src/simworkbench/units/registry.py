@@ -11,21 +11,19 @@ API. Code outside this package should import `Q` and helpers from
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import pint
 
-_REGISTRY: pint.UnitRegistry | None = None
 
-
+@lru_cache(maxsize=1)
 def get_registry() -> pint.UnitRegistry:
     """Return the workbench's `pint.UnitRegistry`, building it on first call.
 
     The registry is lazy-initialized so importing `simworkbench.units` is cheap
     and so test code can patch it before first use if needed.
     """
-    global _REGISTRY
-    if _REGISTRY is None:
-        _REGISTRY = _build_registry()
-    return _REGISTRY
+    return _build_registry()
 
 
 def _build_registry() -> pint.UnitRegistry:

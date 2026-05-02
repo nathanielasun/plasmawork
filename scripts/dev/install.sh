@@ -11,4 +11,4 @@ python3 -m venv "$REPO_ROOT/.venv"
 npm --prefix "$REPO_ROOT/docs_site" install
 npm --prefix "$REPO_ROOT/apps/workbench-ui" install
 
-echo "Installed Phase 0 Python package and Node workspaces."
+echo "Installed Scientific Simulation Workbench Python package and Node workspaces."

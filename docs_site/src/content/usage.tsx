@@ -2,7 +2,10 @@ export default function Usage() {
   return (
     <article>
       <h1>Usage</h1>
-      <p className="page-status">Phase 0 skeleton. Expand in Phase 1.</p>
+      <p className="page-status">
+        Phase 1A/1B implemented: ModelSpec, units, Experiment config, and
+        experiment YAML save/load. Runtime execution lands in Phase 1C.
+      </p>
 
       <h2>Starting the workbench</h2>
       <pre>
@@ -15,16 +18,24 @@ export default function Usage() {
 
       <h2>Creating an experiment manually (Phase 1)</h2>
       <p>
-        The minimum viable workflow is: define a <code>ModelSpec</code>, point
-        it at a backend, run, inspect diagnostics, save as a capsule.
+        The current minimum workflow is: load a <code>ModelSpec</code>, bind it
+        to an <code>Experiment</code>, choose backend/run/diagnostic config, and
+        save or reload the experiment YAML. Running the experiment starts in
+        Workstream 1C.
       </p>
       <pre>
-        <code>{`from simworkbench import Experiment, ModelSpec
+        <code>{`from simworkbench import Experiment
+from simworkbench.model_spec import load_yaml
+from simworkbench.serialization import save_experiment, load_experiment
 
-spec = ModelSpec.from_file("examples/simple_rate_equations/model.yaml")
-experiment = Experiment(spec, backend="python_cpu")
-result = experiment.run()
-result.save_capsule("my_first_capsule.lxp")`}</code>
+spec = load_yaml("examples/simple_rate_equations/model.yaml")
+experiment = Experiment.from_model_spec(
+    spec,
+    run_config={"start_time": "0 s", "end_time": "25 ns"},
+    backend_config={"name": "python_cpu"},
+)
+save_experiment(experiment, "temp_runs/simple_rate_equations_experiment.yaml")
+reloaded = load_experiment("temp_runs/simple_rate_equations_experiment.yaml")`}</code>
       </pre>
 
       <h2>Run controls</h2>

@@ -3,8 +3,9 @@ export default function Installation() {
     <article>
       <h1>Installation</h1>
       <p className="page-status">
-        Phase 0 skeleton. The bootstrap script installs the package skeletons;
-        full runtime setup lands in Phase 1.
+        Phase 1A/1B core package is implemented. The bootstrap script installs
+        ModelSpec, units, experiment serialization, and Node workspaces; runtime
+        execution lands in Phase 1C.
       </p>
 
       <h2>Prerequisites (planned)</h2>
@@ -19,7 +20,7 @@ export default function Installation() {
         <code>{`./scripts/dev/install.sh`}</code>
       </pre>
       <p>
-        This creates <code>.venv/</code>, installs the Phase 0 Python core
+        This creates <code>.venv/</code>, installs the Phase 1 Python core
         package in editable mode, and installs Node dependencies for the UI and
         docs site.
       </p>
@@ -38,12 +39,12 @@ cd docs_site && npm install
 cd ../apps/workbench-ui && npm install`}</code>
       </pre>
 
-      <h2>Phase 0 command wrappers</h2>
+      <h2>Command wrappers</h2>
       <p>
-        The documented command paths exist in Phase 0. Commands for later
-        subsystems, such as the backend runtime and capsule export, print the
-        phase where the subsystem will be implemented instead of failing with a
-        missing-file error.
+        The documented command paths exist even when a later workstream owns
+        the implementation. Commands for later subsystems, such as the backend
+        runtime and capsule export, print the phase where the subsystem will be
+        implemented instead of failing with a missing-file error.
       </p>
 
       <h2>Local-only directories the workbench creates</h2>

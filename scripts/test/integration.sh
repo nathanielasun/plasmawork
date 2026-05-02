@@ -3,9 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
+PYTHON="${SIMWORKBENCH_PYTHON:-$REPO_ROOT/.venv/bin/python}"
+if [[ ! -x "$PYTHON" ]]; then
+  PYTHON="python"
+fi
 
 if find "$REPO_ROOT/tests/integration" -type f \( -name "test_*.py" -o -name "*.test.ts" \) | grep -q .; then
-  python -m pytest "$REPO_ROOT/tests/integration"
+  "$PYTHON" -m pytest "$REPO_ROOT/tests/integration"
 else
-  echo "No Phase 0 integration tests yet."
+  echo "No integration tests yet."
 fi
