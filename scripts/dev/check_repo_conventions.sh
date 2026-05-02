@@ -180,6 +180,14 @@ check_file_exists packages/core/src/simworkbench/units/validators.py
 check_grep_in_file '"pint' packages/core/pyproject.toml "packages/core/pyproject.toml depends on pint"
 check_grep_in_file '"pydantic' packages/core/pyproject.toml "packages/core/pyproject.toml depends on pydantic"
 check_grep_in_file '"pyyaml' packages/core/pyproject.toml "packages/core/pyproject.toml depends on pyyaml"
+# Phase 1A (Workstream 1A / ADR-0003) — ModelSpec IR.
+check_file_exists packages/core/src/simworkbench/model_spec/__init__.py
+check_file_exists packages/core/src/simworkbench/model_spec/types.py
+check_file_exists packages/core/src/simworkbench/model_spec/loader.py
+check_file_exists packages/core/src/simworkbench/model_spec/schema.py
+check_file_exists examples/simple_rate_equations/model.yaml
+check_file_exists tests/unit/test_modelspec.py
+check_file_exists tests/unit/test_units.py
 check_dir_exists packages/agent_orchestration
 check_dir_exists packages/physics_modules
 check_dir_exists packages/solver_backends

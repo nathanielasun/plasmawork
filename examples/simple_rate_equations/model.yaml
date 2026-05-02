@@ -1,0 +1,98 @@
+# examples/simple_rate_equations/model.yaml
+#
+# Phase 1A — first laser-species ModelSpec example.
+# Two-species 0D rate-equation model with a laser drive.
+# Demonstrates: species + field declaration, interaction with explicit
+# coefficient_sources, equation with assumptions, diagnostics, validation
+# expectations. The actual run script lands in Workstream 1C (runtime).
+
+schema_version: "0.1"
+
+model:
+  name: simple_rate_equations
+  version: "0.1.0"
+  domain: laser_species
+  description: |
+    Two-species photon-driven rate-equation example. Species A is photoionized
+    by a CW laser intensity I_laser into species B. The rate constant k is a
+    placeholder until Phase 4 paper-ingestion supplies a real value; the run
+    is therefore exploratory rather than validated. Used to exercise the
+    ModelSpec loader, units validation, and (Phase 1C) the runtime API.
+
+sources:
+  papers: []
+
+geometry:
+  dimensionality: 0
+  coordinate_system: cartesian
+  boundary_conditions: []
+
+species:
+  - name: A
+    type: atom
+    charge: 0.0
+    initial_density: "1.0e18 1/m^3"
+  - name: B
+    type: atom
+    charge: 0.0
+    initial_density: "0.0 1/m^3"
+
+fields:
+  - name: laser_pulse
+    type: laser
+    initialization:
+      wavelength: "248 nm"
+      pulse_duration: "25 ns"
+      peak_intensity: "1.0e10 W/m^2"
+    evolution_equation: null
+
+interactions:
+  - name: A_to_B_photoexcitation
+    participants: [A, B, laser_pulse]
+    equation_refs: [eq1]
+    coefficient_sources:
+      - "placeholder: rate constant k pending Phase-4 paper ingestion"
+    valid_regime:
+      density_max: "1.0e24 1/m^3"
+      intensity_max: "1.0e14 W/m^2"
+
+equations:
+  - id: eq1
+    latex: "dA/dt = -k * I_laser * A; dB/dt = +k * I_laser * A"
+    description: |
+      Single-photon photoexcitation A -> B. Mass-action kinetics with a
+      first-order rate in A and linear in laser intensity. No spatial term
+      (0D). No back-reaction.
+    assumptions:
+      - "Single-photon process (intensity well below saturation)."
+      - "No back-reaction B -> A."
+      - "Spatially uniform laser intensity (0D)."
+      - "Total density A + B is conserved."
+    units_checked: false
+
+solvers:
+  recommended:
+    - name: scipy_ivp_lsoda
+      reason: "Stiff-tolerant LSODA wrapping scipy.integrate.solve_ivp; cheap for 2-species 0D."
+      backend_compatibility: [python_cpu]
+
+diagnostics:
+  - name: species_density_A
+    quantity: A
+    output_format: parquet
+    visualization: line_plot
+  - name: species_density_B
+    quantity: B
+    output_format: parquet
+    visualization: line_plot
+
+validation:
+  expected_limits:
+    - "A(t) + B(t) is conserved within solver tolerance."
+    - "B(t) is monotone non-decreasing."
+    - "A(t) decays toward zero as t -> inf when the laser is on."
+  conservation_laws:
+    - "Particle number: A + B = const."
+  paper_figures_to_reproduce: []
+  convergence_requirements:
+    - "Halving the timestep changes A(t_final) by less than 1e-6 relative."

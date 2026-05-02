@@ -24,6 +24,26 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1 — Workstreams 1A and 1B implementations)
+
+### Completed
+- **Workstream 1B — Units subsystem.** `simworkbench.units` lands, wrapping `pint` per ADR-0004. Public API: `Q`, `parse_quantity`, `to_unit`, `magnitude`, `check_dimensionality`, `require_units`, `require_dimensionality`, `equations_consistent`, `UnitsError`. Workbench `pint.UnitRegistry` includes laser-physics-friendly aliases (`photon_energy`, `number_density`, `intensity`) and probes the unit strings every Phase 1+ ModelSpec will use at registry-build time so missing definitions fail loudly. 30 unit tests pass.
+- **Workstream 1A — ModelSpec IR.** `simworkbench.model_spec` lands, implementing the Pydantic-v2 typed schema from ADR-0003 / plan §8.1. Custom `Quantity` field type rejects raw floats at the boundary (plan §22) and round-trips through YAML. Cross-section validators per plan §8.2 catch unknown interaction participants, unknown diagnostic quantities, 0D-with-boundary-conditions, and `units_checked=True` without assumptions. JSON-Schema export available via `get_json_schema()`. Example ModelSpec at `examples/simple_rate_equations/model.yaml` loads, validates, and round-trips cleanly. 20 ModelSpec tests pass.
+- **Convention checker.** Extended from 117 to 131 checks. New assertions cover `simworkbench/units/{__init__,registry,quantity,validators}.py`, `simworkbench/model_spec/{__init__,types,loader,schema}.py`, `examples/simple_rate_equations/model.yaml`, `tests/unit/test_modelspec.py`, `tests/unit/test_units.py`, and pyproject deps on pint/pydantic/pyyaml.
+- **`packages/core` packaging.** `pyproject.toml` bumped to 0.1.0 with real dependencies (pint, pydantic, pyyaml, numpy) and dev deps (pytest, pytest-cov, ruff). `scripts/dev/install.sh` already creates `.venv`, installs core editable, and brings up the Node workspaces — installing the now-real Python deps as a side effect.
+
+### Open questions
+- ModelSpec migration strategy for schema_version bumps (deferred to ADR-0005 when v0.2 actually arrives).
+- Whether to add `pint` <-> `numpy.ndarray` conversion helpers at the `simworkbench.units` boundary now or in Phase 8 when the GPU/HPC backends arrive (deferred — wrapper has the hooks).
+
+### Next steps
+- Workstream 1C — Simulation runtime: start / pause / resume / checkpoint API in `simworkbench.runtime.runner`. First consumer: a 0D rate-equation runner that drives `examples/simple_rate_equations/model.yaml` end-to-end.
+- Workstream 1D — Basic physics modules: Gaussian laser pulse, basic species, 0D rate-equation solver wrapping `scipy.integrate.solve_ivp`.
+- Workstream 1E — Visualization and diagnostics.
+- Workstream 1F — UI workbench (deferred until 1C/1D land so the UI has something to display).
+
+---
+
 ## 2026-05-02 (Phase 1 opens)
 
 ### Completed
