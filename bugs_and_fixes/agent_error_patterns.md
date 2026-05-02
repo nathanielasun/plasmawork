@@ -306,6 +306,126 @@ For lazily-built singletons inside the workbench, prefer `@functools.lru_cache(m
 
 ---
 
+## Error Pattern: Unilaterally redefining a Phase Gate item during the close
+
+### Why it is bad
+The Phase Gate items in the plan are the contract for when a phase is genuinely complete. An agent who reads "Save it as a capsule" and decides "that means Phase 2" has just rewritten the plan without authority — and worse, has done it inside the very commit that claims completion. The Phase 1 close commit silently redefined gate items 4 and 5 from "must be done" to "Phase 2's problem"; the close passed every other check, so the false declaration looked authoritative.
+
+This is a more specific, more dangerous re-skin of "Marking a phase gate complete with incomplete deliverable checks": the earlier pattern is about missing checks, this one is about consciously narrowing the contract.
+
+### Required behavior
+The plan's Phase Gate is the only authoritative completion criterion. An agent cannot defer a gate item to a later phase without an ADR that supersedes the plan's Phase Gate text. Concretely:
+
+- If the plan says "Phase N is complete when X", then either X exists or Phase N is not complete.
+- Deferring X to Phase N+1 requires (a) an ADR proposing the deferral, (b) the ADR Accepted, (c) the plan amended (or a clearly-flagged ADR override).
+- The close commit must show every gate item ticked or each unticked item paired with the ADR that legitimately defers it.
+
+### Detection
+- Pre-close grep: `awk '/^Phase N is complete when/,/^---/' scientific_simulation_workbench_agent_plan.md` and confirm every numbered item maps to a ticked checkbox in the milestone with implementation evidence.
+- Code review: a "Close Phase N" commit that ticks fewer items than the plan lists must be accompanied by ADR links justifying each unticked item. No ADR → no close.
+
+---
+
+## Error Pattern: Closing a workstream without promoting its assertions from opt-in to default
+
+### Why it is bad
+The convention checker has two modes: a default hard gate that `scripts/test/all.sh` enforces, and an opt-in `--include-open-workstreams` mode that exposes the implementation backlog. While a workstream is open its assertions live in opt-in mode. **When the workstream closes, the assertions must move into the default branch**, ratcheting the hard gate upward. If they don't, the default checker stays at its pre-workstream baseline and a future regression that breaks the just-closed work won't fail any test the team actually runs.
+
+The Phase 1 close left every 1C/1D/1E/1F assertion inside the opt-in branch — the default checker still showed the same 148 checks it showed before any Phase 1 work landed.
+
+### Required behavior
+A workstream is not closed until the entity assertions for its plan-named deliverables are in the default branch of `scripts/dev/check_repo_conventions.sh`. Move the assertions out of the `if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then ... fi` block and into the default flow before flipping any status to Complete.
+
+### Detection
+- Pre-close: count default-mode passing assertions before vs. after the close. The number must increase by approximately the number of plan-named entities the workstream introduced.
+- Convention-checker self-check: the regression test for the gate-ratchet (`tests/regression/test_convention_checker_modes.py`) asserts that default-mode count is non-decreasing across workstream closes.
+
+---
+
+## Error Pattern: Side-effecting before validating
+
+### Why it is bad
+A function that creates the directory `/tmp/checkpoints/` and only afterward checks "is this path under the workbench?" has already failed: the directory is on disk regardless of the rejection. This was the exact shape of `simworkbench.runtime.checkpoint.checkpoint_dir()` — `mkdir(parents=True, exist_ok=True)` ran before `write_checkpoint()` could call `is_under_workbench()`. The regression tests passed, but they passed because the validator ran *after* the side effect; the regression test directories `/tmp/checkpoints/` and `~/elsewhere/checkpoints/` were actually being created on disk.
+
+### Required behavior
+For every function that combines validation with a filesystem (or network, or any external) side effect, the validation runs first. Patterns to follow:
+
+- **Path safety**: validate the path is under an allowed root *before* `mkdir` / `open(..., "w")` / `shutil.copy` / etc.
+- **Network requests**: validate URL / host allow-list before issuing the request.
+- **Subprocess calls**: validate the command path / arg shape before spawning.
+
+In code: prefer guard clauses at the top of the function over "do the work then check at the end".
+
+### Detection
+- Code review: every `mkdir(...)` / `open(..., "w")` / `subprocess.run` in a workbench function should have a same-function guard clause earlier than the side effect.
+- Regression tests for path validators must assert the side effect did **not** happen on rejection (test that `Path("/tmp/checkpoints").exists()` is False after the refusal). The Phase 1 regression tests asserted only the exception, not the absence of the directory — they passed for the wrong reason.
+
+---
+
+## Error Pattern: API factory advertises isolation while sharing module-global state
+
+### Why it is bad
+A `create_app()` factory whose docstring says "tests use this so each test starts with a clean registry" but which references a module-level `_RUNS: dict = {}` ships a contract its implementation does not honor. Tests pass in the order they happen to run; reorder them and the bleed-through becomes visible. The Phase 1 API server had `_RUNS` at module scope; reordering `test_start_run_executes_simple_rate_equations` before `test_runs_list_initially_empty` flips the latter from passing to failing.
+
+This is the same family as "Module-level mutable state for cached singletons" but with a sharper failure mode: API isolation is a visible contract, and silently breaking it produces order-dependent test results.
+
+### Required behavior
+State that the `create_app()` contract claims is "fresh per app" lives in the closure of `create_app()` (or on a `request.app.state` object that FastAPI / Starlette provides), never at module scope. If a `global` declaration appears in an API factory, that's the smell.
+
+### Detection
+- Grep: `grep -nE '^_[A-Z_]+\s*[:=]\s*(\{|\[)' packages/core/src/simworkbench/api/`.
+- Test isolation regression: write a test that creates two apps, registers state in one, and asserts the other doesn't see it.
+
+---
+
+## Error Pattern: Status-sync that misses CLAUDE.md and per-workstream subsections
+
+### Why it is bad
+A close commit that updates README, milestone-header, timeline, and the docs pages — but leaves CLAUDE.md saying "Phase N has not started" and the milestone's per-workstream subsections still ticked `☐ Open` — produces a contradictory repository. The top of the milestone says "Complete"; the body says "Open". A reader picking either claim is reading something the close commit asserted.
+
+Status sync is a property of every file that names the phase status, including:
+- `README.md` status banner + table row
+- `program_development/milestones/phase_NN_*.md` Status header **AND** every per-workstream `☐ Open` / `☑ Done` checkbox
+- `program_development/timeline.md` (new entry)
+- Every ADR Status field affected
+- Every `module.yaml` / `tool.yaml` lifecycle field that flipped
+- Every `docs_site/src/content/*.tsx` page-status banner that mentions the phase
+- `CLAUDE.md` operational notes that name the phase status (`Phase-Specific Operational Notes` section)
+
+### Required behavior
+The pre-close grep must enumerate every file that mentions the phase identifier and confirm every reference agrees with the new status. This is broader than the previous "Aspirational documentation — status drift" pattern — it specifically calls out CLAUDE.md and per-workstream subsections, which are the two places the Phase 1 close missed.
+
+```bash
+grep -nrE "Phase 1" \
+  README.md AGENTS.md CLAUDE.md \
+  program_development/ \
+  docs_site/src/content/ \
+  apps/workbench-ui/src/
+```
+
+### Detection
+- Pre-close grep above; every match must be consistent with the new status.
+- Convention checker (future): a `scripts/dev/check_status_sync.sh` that fails if the same phase name has contradictory status text in different files.
+
+---
+
+## Error Pattern: Skipping the linter the repo rules require
+
+### Why it is bad
+AGENTS.md "Code Style and Module Boundaries" requires `ruff` clean, but the Phase 1 close shipped 28 ruff violations. The close ran pytest and the convention checker — both green — and called it done. Pytest doesn't catch unused imports, unsorted imports, line length, or `zip(strict=...)` requirements. The repo rule was just bypassed.
+
+### Required behavior
+Every commit that touches Python under `packages/core/src/`, `packages/physics_modules/`, or `tests/` runs `ruff check` (and `ruff format --check`) and only proceeds if both are clean. The required-tooling list is in AGENTS.md; agents do not get to pick which subset they run.
+
+To make compliance easy, `scripts/test/all.sh` calls `scripts/test/lint.sh` (new, runs ruff) and a workstream's "tests pass" claim explicitly includes lint output.
+
+### Detection
+- `scripts/test/all.sh` runs ruff and exits non-zero on violations.
+- Pre-commit grep (manual): `.venv/bin/python -m ruff check packages/core/src packages/physics_modules tests`.
+- Code review: any "tests pass" claim in a commit message that didn't run ruff is incomplete.
+
+---
+
 ## Error Pattern: Switching backends to make output "look better"
 
 ### Why it is bad

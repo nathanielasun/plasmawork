@@ -24,7 +24,31 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
-## 2026-05-02 (Phase 1 — CLOSED. All six workstreams 1A–1F implemented.)
+## 2026-05-02 (Phase 1 close REOPENED — review identified seven issues)
+
+### Completed
+- **User review of the Phase 1 close** identified seven legitimate issues. Logged in `bugs_and_fixes/bugfixes.md` 2026-05-02 *Phase 1 false close*. Six new patterns added to `agent_error_patterns.md`:
+  - *Unilaterally redefining a Phase Gate item during the close* — Phase Gate items 4 and 5 (capsule save/reload) were narrowed to "Phase 2's problem" without ADR authority. Plan wins.
+  - *Closing a workstream without promoting its assertions from opt-in to default* — completed deliverables stayed in opt-in mode; default checker never ratcheted up.
+  - *Side-effecting before validating* — `checkpoint_dir()` ran `mkdir` before `is_under_workbench()` rejected the path. `/tmp/checkpoints/` was actually being created by the regression tests.
+  - *API factory advertises isolation while sharing module-global state* — `_RUNS` at module scope contradicted the `create_app()` "fresh registry" contract.
+  - *Status-sync that misses CLAUDE.md and per-workstream subsections* — top-level "Complete" while body sections still said "Open" for 1C/1D/1E/1F.
+  - *Skipping the linter the repo rules require* — 28 ruff violations shipped uncaught.
+- **Phase 1 status reopened** across `README.md`, `program_development/milestones/phase_01_manual_workbench.md`, and this timeline. The status flip is "Complete → close reopened (review fixes in flight)".
+
+### Next steps (each one its own commit + push)
+1. Reorder `checkpoint_dir()` so `is_under_workbench()` fires before `mkdir`. Strengthen regression to assert the directory does NOT exist after refusal.
+2. Backend distinguishes placeholder vs sourced rates and refuses unsourced rates without explicit placeholder flag. Surface `placeholder_used` through `RunSummary` and into the UI.
+3. Move `_RUNS` into the `create_app()` closure. Add a regression test demonstrating two app instances don't share runs.
+4. Run `ruff check`; fix all 28 violations. Add `scripts/test/lint.sh` and wire into `scripts/test/all.sh`.
+5. Implement minimal `simworkbench.serialization.capsule` — `save_capsule()` + `load_capsule()` with a real `.lxp/` directory. Roundtrip tests. Phase Gate items 4–5 satisfied.
+6. Promote 1C/1D/1E/1F entity assertions out of the `--include-open-workstreams` branch into the default branch. Default checker count rises by ~80 entities.
+7. Sync CLAUDE.md "Phase-Specific Operational Notes" + the milestone's per-workstream subsection checkboxes.
+8. Real Phase 1 close commit — status flip across every status-bearing file in lockstep. Default checker covers every Phase 1 entity.
+
+---
+
+## 2026-05-02 (Phase 1 — earlier "CLOSED" claim, withdrawn)
 
 ### Completed
 - **Workstream 1C — Simulation runtime.** `simworkbench.runtime.{Runner, Checkpoint, EventBus, ProgressTracker, SeedSet}` + `simworkbench.paths`. The default `python_cpu` backend wraps `scipy.integrate.solve_ivp` for 0D rate-equation models — never a hand-rolled timestep loop, per `agent_error_patterns.md`. 6 unit tests, 1 integration test (pause/resume identity), 1 regression test (writes-only-to-temp_runs). Real `scripts/dev/run_backend.sh`. End-to-end runnable `examples/simple_rate_equations/run.py`.

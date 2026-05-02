@@ -1,6 +1,6 @@
 # Phase 1 — Manual Scientific Workbench
 
-**Status: Complete (2026-05-02). All six workstreams 1A–1F implemented.**
+**Status: Close reopened (2026-05-02). All six workstream implementations have landed but a review (`bugs_and_fixes/bugfixes.md` 2026-05-02 *Phase 1 false close*) identified seven legitimate issues that must be resolved before Phase 1 closes for real.**
 
 ## Objective
 Build a functioning non-agentic workbench that can define, run, pause, save, load, visualize, and export simple scientific simulations. (Plan §Phase 1.)
@@ -23,14 +23,13 @@ Phase 1 is complete when a user can:
 1. ☑ Create a simple experiment manually. *(Workstream 1A — `Experiment.from_model_spec`.)*
 2. ☑ Run it locally. *(Workstream 1C — `Runner.run` against the `python_cpu` backend.)*
 3. ☑ Pause and resume it. *(Workstream 1C — pause/resume identity test passes.)*
-4. ☐ Save it as a capsule. *(Phase 2 finalizes the `.lxp/` capsule format. Phase 1A's experiment YAML save/load substitutes for now.)*
-5. ☐ Reload it. *(Phase 2.)*
+4. ☐ Save it as a capsule. *(In flight per the Phase 1 false-close fix; minimal `simworkbench.serialization.capsule` lands before close. Phase 2 will lock the bulk-data format per ADR-0002.)*
+5. ☐ Reload it. *(In flight, paired with item 4.)*
 6. ☑ View code/configuration. *(Workstream 1F — CodeViewer panel.)*
 7. ☑ Plot diagnostics. *(Workstream 1E + 1F — server-side plotters in `simworkbench.diagnostics.plotters` and the in-browser PlotPanel.)*
 8. ☑ Read documentation from inside the UI. *(Workstream 1F — DocsViewer loads from `docs_site/src/content/*.tsx` via the `@docs` Vite alias; no duplication.)*
 
-Items 4–5 are explicitly Phase 2 (per ADR-0002). Phase 1 closes with the
-six other gate criteria green and the capsule format slot left for Phase 2.
+Items 4 and 5 are **Phase 1 requirements per the plan §Phase 1**, not Phase 2 deferrals. The earlier close commit narrowed the contract without ADR authority — see `agent_error_patterns.md` *Unilaterally redefining a Phase Gate item during the close*. Phase 2 will lock the bulk-data format (HDF5 vs. Zarr per ADR-0002) but Phase 1 ships a minimal-but-real capsule save/reload that satisfies the gate.
 
 ## Pending decisions (carried in from Phase 0)
 - ~~Units library: `pint` vs. `astropy.units` vs. custom wrapper~~ — **resolved 2026-05-02 in ADR-0004 (`pint`)**.

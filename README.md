@@ -2,7 +2,7 @@
 
 A modular workbench for laser physics, laser fusion, laser–species interaction, and adjacent computational-physics domains. Designed to turn a scientific paper into a structured, inspectable, testable, visualizable computational experiment — and to keep the resulting code, data, and provenance bundled in a portable simulation capsule.
 
-> **Status: Phase 1 — Manual Scientific Workbench complete (2026-05-02).** All six workstreams 1A–1F are implemented: ModelSpec IR, units subsystem, simulation runtime with checkpointing, seven physics modules with three runnable examples, diagnostics + plotters, and a Vite + React UI workbench backed by a FastAPI server. Phase 2 (simulation capsule format) is up next.
+> **Status: Phase 1 — close reopened 2026-05-02 pending review fixes.** Six workstream implementations have landed (1A–1F), but a review identified seven legitimate issues: capsule save/reload (Phase Gate items 4–5) was unilaterally deferred without ADR authority, completed deliverables hadn't been promoted from the opt-in checker into the default hard gate, the checkpoint refusal guard ran *after* `mkdir`, placeholder coefficients weren't propagated through the API, the API factory shared module-global state, status references in CLAUDE.md and per-workstream milestone subsections weren't synced, and ruff was never run. See `bugs_and_fixes/bugfixes.md` 2026-05-02 *Phase 1 false close*. The corrective commits are in flight.
 
 The full architectural plan is in [`scientific_simulation_workbench_agent_plan.md`](./scientific_simulation_workbench_agent_plan.md).
 
@@ -29,7 +29,7 @@ Initial focus is laser–species interaction (KrF excimer, photoionization, rate
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Repository bootstrap, governance, docs skeleton, bug-memory and dev-history systems | **Complete** |
-| 1 | Manual workbench: ModelSpec, units, runtime, basic modules, UI shell | **Complete** |
+| 1 | Manual workbench: ModelSpec, units, runtime, basic modules, UI shell | **Close reopened** (review fixes in flight) |
 | 2 | Simulation capsule format & provenance | Pending |
 | 3 | Internal tool SDK and registry | Pending |
 | 4 | Agent-assisted paper ingestion | Pending |

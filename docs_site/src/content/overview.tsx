@@ -3,11 +3,12 @@ export default function Overview() {
     <article>
       <h1>Overview</h1>
       <p className="page-status">
-        Phase 1 complete (2026-05-02). All six workstreams 1A–1F are
-        implemented: ModelSpec, units, runtime, seven physics modules with
-        three runnable examples, diagnostics + plotters, and a Vite + React
-        UI workbench backed by a FastAPI server. Phase 2 (simulation capsule
-        format) is up next.
+        Phase 1 — implementations of all six workstreams 1A–1F have landed,
+        but a review identified seven legitimate issues (capsule save/reload,
+        opt-in-to-default checker promotion, checkpoint guard order,
+        placeholder coefficient surfacing, API state isolation, status sync,
+        ruff). Close fixes are in flight. See{" "}
+        <code>bugs_and_fixes/bugfixes.md</code> 2026-05-02 <em>Phase 1 false close</em>.
       </p>
 
       <h2>What this is</h2>

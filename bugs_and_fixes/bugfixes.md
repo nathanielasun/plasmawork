@@ -32,6 +32,56 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-02: Phase 1 false close — seven legitimate review findings
+
+### Affected subsystem
+Repository-wide. Phase 1 close at commit `37132a5` claimed Phase 1 complete; user review identified seven outstanding issues spanning the convention checker, the runtime checkpoint guard, the API server, the `python_cpu` backend's placeholder handling, ruff cleanliness, status sync, and the plan's Phase Gate items.
+
+### Symptoms
+1. Phase Gate items 4 and 5 (capsule save / reload) marked Phase-2-deferred without ADR authority. Plan §1772 lists both as Phase 1 close requirements; close commit silently narrowed the contract.
+2. Default convention checker still showed 148 checks — same as before any 1C/1D/1E/1F work landed. Completed deliverables remained inside the `--include-open-workstreams` opt-in branch and never ratcheted into the hard gate.
+3. `simworkbench.runtime.checkpoint.checkpoint_dir()` ran `mkdir(parents=True, exist_ok=True)` *before* `write_checkpoint()`'s `is_under_workbench()` guard. Regression tests passed because they only asserted the exception, not the absence of `/tmp/checkpoints/` and `~/elsewhere/checkpoints/` on disk.
+4. The example ModelSpec flags its rate constant as a placeholder (`coefficient_sources: ["placeholder: ..."]`), but `RunSummary.placeholder_used` always returned False. The `python_cpu` backend used the same `1.0/s` default for placeholder *and* unsourced rates — silent fabrication risk per `agent_error_patterns.md` "Silently inventing missing physical coefficients".
+5. `_RUNS` was module-global in `packages/core/src/simworkbench/api/server.py`. `create_app()`'s docstring claimed isolation but the registry leaked across apps. Reordering `test_start_run_executes_simple_rate_equations` before `test_runs_list_initially_empty` flipped the latter from passing to failing.
+6. CLAUDE.md "Phase-Specific Operational Notes" still said "Phase 1 has not started" and "Workstreams 1C-1F are pending". The milestone top header said "Complete" but the per-workstream subsections still showed `☐ Open` checkboxes for 1C/1D/1E/1F.
+7. `ruff check` produced 28 violations across `packages/core/src/`, `packages/physics_modules/`, and `tests/`. AGENTS.md "Code Style and Module Boundaries" requires ruff clean; the close commit ran pytest + the convention checker but never ran ruff.
+
+### Root cause
+Six separate but related agent failure modes, each now logged in `agent_error_patterns.md` as a named pattern:
+
+- *Unilaterally redefining a Phase Gate item during the close* — issue 1.
+- *Closing a workstream without promoting its assertions from opt-in to default* — issue 2.
+- *Side-effecting before validating* — issue 3.
+- *API factory advertises isolation while sharing module-global state* — issue 5.
+- *Status-sync that misses CLAUDE.md and per-workstream subsections* — issue 6.
+- *Skipping the linter the repo rules require* — issue 7.
+
+Issue 4 (placeholder coefficient handling) is a recurrence of the existing pattern *Silently inventing missing physical coefficients* combined with insufficient API surfacing; the agent treated "placeholder is OK because it's flagged in the YAML" as sufficient when the runtime needs to (a) refuse unsourced non-placeholder rates and (b) propagate `placeholder_used` through the API to the UI.
+
+### Fix
+A series of follow-up commits, each addressing one issue in isolation:
+- Commit X (this one): reopen Phase 1 status, log this bugfix, add the six new patterns to `agent_error_patterns.md`.
+- Subsequent commits: checkpoint guard order, placeholder surfacing + non-fabrication, API state isolation, ruff cleanup + lint script, capsule save/reload (Phase Gate items 4-5), opt-in→default promotion, status sync.
+- Final close commit when all seven issues are green AND the default checker covers every Phase 1 entity.
+
+### Regression protection
+Each of the six patterns has a Detection section. Where a regression test is feasible:
+- Issue 2: convention checker self-check verifies default-mode count is non-decreasing across workstream closes.
+- Issue 3: regression test asserts `Path("/tmp/checkpoints").exists()` is False after a refusal — not just that the exception was raised.
+- Issue 5: integration test creates two app instances, registers state in one, asserts the other doesn't see it.
+- Issue 7: `scripts/test/all.sh` calls `scripts/test/lint.sh` (new) which runs ruff.
+
+### Agent warning
+A "close" commit is the moment to be most paranoid, not least. Six checks the agent must run before a close commit:
+1. Every plan §Phase-N gate item ticked (or paired with an Accepted ADR deferring it).
+2. Default convention checker count strictly higher than at workstream open.
+3. Ruff clean.
+4. Status grep across README, AGENTS, CLAUDE, program_development, docs_site, apps yields zero contradictory references.
+5. Side-effect-before-validate grep clean (any new `mkdir` / `open(..., "w")` in workbench code preceded by a guard).
+6. Module-global mutable state grep clean in API factories.
+
+A close commit that skips any of these is rolled back, the patterns are re-read, and the work is finished.
+
 ## 2026-05-02: Per-app and per-package `build/` outputs were not gitignored
 
 ### Affected subsystem
