@@ -2,7 +2,11 @@ export default function Architecture() {
   return (
     <article>
       <h1>Architecture</h1>
-      <p className="page-status">Phase 0 skeleton. Expand in Phase 1–2.</p>
+      <p className="page-status">
+        Phase 1 complete. ModelSpec IR, units, runtime, diagnostics, the
+        FastAPI backend, and the Vite + React UI shell are all implemented.
+        Phase 2 finalizes the simulation capsule format.
+      </p>
 
       <h2>System layout</h2>
       <pre>

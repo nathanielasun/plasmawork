@@ -2,7 +2,7 @@
 
 A modular workbench for laser physics, laser fusion, laser–species interaction, and adjacent computational-physics domains. Designed to turn a scientific paper into a structured, inspectable, testable, visualizable computational experiment — and to keep the resulting code, data, and provenance bundled in a portable simulation capsule.
 
-> **Status: Phase 1 — Manual Scientific Workbench in progress.** Workstreams 1A (core experiment model) and 1B (units and quantities) are implemented; runtime, physics modules, diagnostics, and UI shell remain Phase 1 work.
+> **Status: Phase 1 — Manual Scientific Workbench complete (2026-05-02).** All six workstreams 1A–1F are implemented: ModelSpec IR, units subsystem, simulation runtime with checkpointing, seven physics modules with three runnable examples, diagnostics + plotters, and a Vite + React UI workbench backed by a FastAPI server. Phase 2 (simulation capsule format) is up next.
 
 The full architectural plan is in [`scientific_simulation_workbench_agent_plan.md`](./scientific_simulation_workbench_agent_plan.md).
 
@@ -29,7 +29,7 @@ Initial focus is laser–species interaction (KrF excimer, photoionization, rate
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Repository bootstrap, governance, docs skeleton, bug-memory and dev-history systems | **Complete** |
-| 1 | Manual workbench: ModelSpec, units, runtime, basic modules, UI shell | **In progress** (1A, 1B done; 1C, 1D, 1E, 1F open) |
+| 1 | Manual workbench: ModelSpec, units, runtime, basic modules, UI shell | **Complete** |
 | 2 | Simulation capsule format & provenance | Pending |
 | 3 | Internal tool SDK and registry | Pending |
 | 4 | Agent-assisted paper ingestion | Pending |

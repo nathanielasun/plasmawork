@@ -3,8 +3,9 @@ export default function Usage() {
     <article>
       <h1>Usage</h1>
       <p className="page-status">
-        Phase 1A/1B implemented: ModelSpec, units, Experiment config, and
-        experiment YAML save/load. Runtime execution lands in Phase 1C.
+        Phase 1 complete. End-to-end flow: load a ModelSpec, build an
+        Experiment, run via the Runner (or the UI), inspect diagnostics, and
+        view plots. Capsule save/load lands in Phase 2.
       </p>
 
       <h2>Starting the workbench</h2>

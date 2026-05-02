@@ -3,8 +3,11 @@ export default function Overview() {
     <article>
       <h1>Overview</h1>
       <p className="page-status">
-        Phase 1 in progress. ModelSpec, units, and Experiment save/load are
-        implemented; runtime execution and UI remain pending.
+        Phase 1 complete (2026-05-02). All six workstreams 1A–1F are
+        implemented: ModelSpec, units, runtime, seven physics modules with
+        three runnable examples, diagnostics + plotters, and a Vite + React
+        UI workbench backed by a FastAPI server. Phase 2 (simulation capsule
+        format) is up next.
       </p>
 
       <h2>What this is</h2>

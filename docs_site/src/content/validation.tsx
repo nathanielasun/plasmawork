@@ -2,7 +2,13 @@ export default function Validation() {
   return (
     <article>
       <h1>Validation</h1>
-      <p className="page-status">Phase 0 skeleton. Expand in Phase 1–7.</p>
+      <p className="page-status">
+        Phase 1 complete. Three validation tests live under
+        <code>tests/validation/</code> covering rate-equation conservation,
+        Lennard-Jones energy drift, and 2D Ising critical-temperature
+        crossover. The validation surface expands in Phase 7 (validated
+        physics module registry).
+      </p>
 
       <h2>Validation categories</h2>
       <table>

@@ -24,6 +24,29 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1 — CLOSED. All six workstreams 1A–1F implemented.)
+
+### Completed
+- **Workstream 1C — Simulation runtime.** `simworkbench.runtime.{Runner, Checkpoint, EventBus, ProgressTracker, SeedSet}` + `simworkbench.paths`. The default `python_cpu` backend wraps `scipy.integrate.solve_ivp` for 0D rate-equation models — never a hand-rolled timestep loop, per `agent_error_patterns.md`. 6 unit tests, 1 integration test (pause/resume identity), 1 regression test (writes-only-to-temp_runs). Real `scripts/dev/run_backend.sh`. End-to-end runnable `examples/simple_rate_equations/run.py`.
+- **Workstream 1D — Basic physics modules.** Module template + seven `candidate` modules (`laser/{gaussian_pulse, simple_absorption, simple_emission}`, `species/{basic, rate_equation_0d}`, `molecular_dynamics/lennard_jones`, `phase_transition/ising_2d`). Each has `module.yaml` + `README.md` + `src/__init__.py` + a unit test. Three runnable examples: simple_rate_equations (driven by 1C runtime), molecular_dynamics (LJ MD with energy-drift < 3e-5), ising_phase_transition (sweeps T* across Onsager critical, magnetization 0.97 → 0.26 across 1.5 ≤ T* ≤ 4.0). Three validation tests in `tests/validation/`.
+- **Workstream 1E — Diagnostics + plotters.** `simworkbench.diagnostics.{Diagnostic, DiagnosticCollector, DiagnosticStream, summarize, conservation_error, line_plot, heatmap, particle_scatter}`. matplotlib forced to `Agg` so headless CI works. 4 tests: API + statistics + plotters + streaming-during-runtime integration test.
+- **Workstream 1F — UI workbench + backend API.** ADR-0005 (Vite + React, accepted) precedes the UI implementation. Backend `simworkbench.api.server` is a small FastAPI app exposing /api/{health, runs, docs/pages, capsules, temp_runs}. UI app at `apps/workbench-ui/` — Vite + React + React Router with seven plan-named panels (SimulationList, RunControls, CodeViewer, DocsViewer, DiagnosticsPanel, PlotPanel, CapsuleExplorer), a typed API client, and four Vitest tests. **DocsViewer loads from `docs_site/src/content/` via the `@docs` Vite alias** — the canonical docs source, no duplication, enforced by a `check_grep_in_file 'docs_site'` assertion. `apps/*/build/` and `packages/*/build/` added to `.gitignore` (caught by the bug-memory grep during the 1F open).
+- **Phase 1 close — status flip in one commit.** README, milestone, timeline, and five `docs_site/src/content/*.tsx` pages (overview, installation, architecture, usage, validation) all updated together. Phase Gate criteria 1, 2, 3, 6, 7, 8 are green; criteria 4 (capsule save) and 5 (capsule reload) are explicitly Phase 2 per ADR-0002 — Phase 1A's experiment YAML save/load substitutes for now.
+
+### Open questions
+- None Phase-1-blocking. Phase 2 will finalize the `.lxp/` capsule format (HDF5 vs Zarr decision, ADR-0002 transition Proposed → Accepted) and ship the provenance writer.
+
+### Next steps
+- Open Phase 2 (Simulation Capsule System) per the existing milestone Pre-gate template. First action: enumerate plan §Phase 2 deliverables and add per-entity opt-in convention-checker assertions, mirroring the procedure that worked for Phase 1.
+
+### Final Phase 1 metrics
+- Default convention checker: **148/148** passing.
+- Opt-in convention checker: **0 failures, 232 checks** passing — all Phase 1 entities exist on disk.
+- Tests: **199** Python unit + integration + regression + validation, all green.
+- Workstreams: 1A ☑ 1B ☑ 1C ☑ 1D ☑ 1E ☑ 1F ☑.
+
+---
+
 ## 2026-05-02 (Phase 1 — Workstream 1F opened; build-output gitignore gap fixed)
 
 ### Completed

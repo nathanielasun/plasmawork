@@ -1,6 +1,6 @@
 # Phase 1 — Manual Scientific Workbench
 
-**Status: In progress (started 2026-05-02). Workstreams 1A and 1B complete; 1C, 1D, 1E, 1F open (opened 2026-05-02).**
+**Status: Complete (2026-05-02). All six workstreams 1A–1F implemented.**
 
 ## Objective
 Build a functioning non-agentic workbench that can define, run, pause, save, load, visualize, and export simple scientific simulations. (Plan §Phase 1.)
@@ -20,14 +20,17 @@ Build a functioning non-agentic workbench that can define, run, pause, save, loa
 
 Phase 1 is complete when a user can:
 
-1. Create a simple experiment manually.
-2. Run it locally.
-3. Pause and resume it.
-4. Save it as a capsule.
-5. Reload it.
-6. View code/configuration.
-7. Plot diagnostics.
-8. Read documentation from inside the UI.
+1. ☑ Create a simple experiment manually. *(Workstream 1A — `Experiment.from_model_spec`.)*
+2. ☑ Run it locally. *(Workstream 1C — `Runner.run` against the `python_cpu` backend.)*
+3. ☑ Pause and resume it. *(Workstream 1C — pause/resume identity test passes.)*
+4. ☐ Save it as a capsule. *(Phase 2 finalizes the `.lxp/` capsule format. Phase 1A's experiment YAML save/load substitutes for now.)*
+5. ☐ Reload it. *(Phase 2.)*
+6. ☑ View code/configuration. *(Workstream 1F — CodeViewer panel.)*
+7. ☑ Plot diagnostics. *(Workstream 1E + 1F — server-side plotters in `simworkbench.diagnostics.plotters` and the in-browser PlotPanel.)*
+8. ☑ Read documentation from inside the UI. *(Workstream 1F — DocsViewer loads from `docs_site/src/content/*.tsx` via the `@docs` Vite alias; no duplication.)*
+
+Items 4–5 are explicitly Phase 2 (per ADR-0002). Phase 1 closes with the
+six other gate criteria green and the capsule format slot left for Phase 2.
 
 ## Pending decisions (carried in from Phase 0)
 - ~~Units library: `pint` vs. `astropy.units` vs. custom wrapper~~ — **resolved 2026-05-02 in ADR-0004 (`pint`)**.

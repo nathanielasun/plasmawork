@@ -3,9 +3,9 @@ export default function Installation() {
     <article>
       <h1>Installation</h1>
       <p className="page-status">
-        Phase 1A/1B core package is implemented. The bootstrap script installs
-        ModelSpec, units, experiment serialization, and Node workspaces; runtime
-        execution lands in Phase 1C.
+        Phase 1 complete. The bootstrap script installs the full Python core
+        (model_spec, units, experiment, serialization, runtime, diagnostics,
+        api) and the Node workspaces for both apps.
       </p>
 
       <h2>Prerequisites (planned)</h2>
