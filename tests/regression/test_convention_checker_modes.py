@@ -3,13 +3,20 @@ broke the default test gate*.
 
 Asserts the convention checker's two-mode contract:
 
-1. **Default mode** is the hard gate. It must always exit 0 while Phase 1
-   workstreams are open. ``scripts/test/all.sh`` calls this mode.
-2. **Opt-in mode** (``--include-open-workstreams``) exposes the implementation
-   backlog. It exits 1 while any workstream remains open. The exact failure
-   count shrinks as work lands; this test does not pin it. Instead it
-   asserts a stable subset of opt-in TODO anchors that won't all close at
-   once — at least one of the listed anchors must appear in the output.
+1. **Default mode** is the hard gate. It must always exit 0. ``scripts/test/all.sh``
+   calls this mode.
+2. **Opt-in mode** (``--include-open-workstreams``) exposes any open
+   implementation backlog. While Phase 1 was open it returned non-zero with
+   the failing TODO list; now that Phase 1 is complete it also exits 0.
+   When the next phase opens its workstreams, this test will fail until it is
+   updated to reflect the new backlog — that's the explicit ratchet point.
+
+Update procedure when opening a new phase:
+- Add a test like ``test_opt_in_mode_lists_known_open_anchors`` checking that
+  at least one expected open-anchor entity from the newly-opened
+  workstream(s) appears in opt-in output.
+- When closing the phase, drop that test or replace it with the "passes"
+  variant below.
 """
 
 from __future__ import annotations
@@ -33,61 +40,42 @@ def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_default_convention_checker_excludes_open_workstream_todos() -> None:
-    """Hard gate — default mode must stay green while open workstreams exist."""
+    """Hard gate — default mode must stay green."""
     result = _run_checker("--quiet")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Convention check PASSED" in result.stdout
 
 
-def test_open_workstream_todo_mode_exits_nonzero_with_failures() -> None:
-    """Opt-in mode exposes the backlog: exits 1, names "FAILED"."""
-    result = _run_checker("--include-open-workstreams")
-    output = result.stdout + result.stderr
-    assert result.returncode == 1
-    assert "Convention check FAILED" in output
+def test_opt_in_mode_passes_when_no_workstreams_open() -> None:
+    """Phase 1 is complete; opt-in mode currently exposes no failing TODOs.
 
-
-def test_open_workstream_todo_mode_lists_known_open_anchors() -> None:
-    """At least one of these stable open-anchor entities is currently failing.
-
-    The list intentionally spans 1D, 1E, and 1F so that no single workstream
-    closure makes all of them pass at once. Update this list when *every*
-    listed anchor has been implemented (i.e. when Phase 1 is essentially
-    closed).
+    When the next phase opens workstreams, replace this with a test that
+    asserts opt-in mode returns non-zero with the new backlog.
     """
     result = _run_checker("--include-open-workstreams")
-    output = result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Convention check PASSED" in result.stdout
 
-    # Phase 1F is the only open Phase-1 workstream after 1C/1D/1E land. The
-    # anchors below all live under 1F; until ADR-0005 ships and the UI is
-    # implemented they all fail in opt-in mode.
-    open_anchors = (
-        # ADR for the UI framework choice (must precede UI implementation).
-        "program_development/architectural_decisions/ADR-0005-ui-framework.md",
-        # Backend HTTP API the UI consumes.
-        "packages/core/src/simworkbench/api/__init__.py",
-        "packages/core/src/simworkbench/api/server.py",
-        "tests/integration/test_api_server.py",
-        # UI app shell + plan-named panels.
-        "apps/workbench-ui/index.html",
-        "apps/workbench-ui/vite.config.ts",
-        "apps/workbench-ui/src/main.tsx",
-        "apps/workbench-ui/src/App.tsx",
-        "apps/workbench-ui/src/components/SimulationList.tsx",
-        "apps/workbench-ui/src/components/RunControls.tsx",
-        "apps/workbench-ui/src/components/CodeViewer.tsx",
-        "apps/workbench-ui/src/components/DocsViewer.tsx",
-        "apps/workbench-ui/src/components/DiagnosticsPanel.tsx",
-        "apps/workbench-ui/src/components/PlotPanel.tsx",
-        "apps/workbench-ui/src/components/CapsuleExplorer.tsx",
-    )
 
-    # At least three should still be failing. When 1F closes, this test gets
-    # updated alongside the Phase 1 close commit.
-    found = [a for a in open_anchors if a in output]
-    assert len(found) >= 3, (
-        f"Only {len(found)}/{len(open_anchors)} open anchors found in opt-in "
-        f"output; either Phase 1 is nearly closed (update this test) or the "
-        f"opt-in section regressed.\n\nFound: {found}\nMissing: "
-        f"{[a for a in open_anchors if a not in found]}"
-    )
+def test_opt_in_mode_check_count_at_least_default() -> None:
+    """Opt-in mode runs at least as many checks as default mode.
+
+    Today (Phase 1 complete) opt-in adds zero failing assertions but still
+    runs all the closed-workstream entity assertions. This test guards
+    against accidentally removing the opt-in section entirely — if a future
+    refactor drops it, the count delta would go negative.
+    """
+    default = _run_checker("--quiet")
+    opt_in = _run_checker("--include-open-workstreams", "--quiet")
+    # Last lines look like "Convention check PASSED — N check(s) ok." or
+    # "Convention check FAILED — F failure(s), N check(s) ok.". Extract N.
+    import re
+
+    def _ok_count(out: str) -> int:
+        m = re.search(r"(\d+) check\(s\) ok", out)
+        assert m, f"Could not parse check count from {out!r}"
+        return int(m.group(1))
+
+    default_count = _ok_count(default.stdout + default.stderr)
+    opt_in_count = _ok_count(opt_in.stdout + opt_in.stderr)
+    assert opt_in_count >= default_count

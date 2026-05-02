@@ -1,16 +1,30 @@
 {
   "name": "@simworkbench/workbench-ui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Phase 0 placeholder package for the Scientific Simulation Workbench UI.",
+  "description": "Phase 1F workbench UI shell. Vite + React + React Router (ADR-0005).",
   "scripts": {
-    "dev": "node -e \"console.log('Workbench UI shell is scheduled for Phase 1F.')\"",
-    "build": "node -e \"console.log('Workbench UI build is scheduled for Phase 1F.')\"",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5173",
     "typecheck": "tsc --noEmit",
-    "test": "node -e \"console.log('Workbench UI tests are scheduled for Phase 1F.')\""
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/jest-dom": "^6.5.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
   }
 }
