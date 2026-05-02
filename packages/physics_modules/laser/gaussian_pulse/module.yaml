@@ -1,0 +1,35 @@
+name: gaussian_pulse
+version: 0.1.0
+domain: laser
+status: candidate
+
+description: |
+  Gaussian temporal laser pulse. I(t) = I0 * exp(-((t - t0)^2) / (2 sigma^2))
+  with peak intensity I0, center time t0, and Gaussian width sigma. Pulse
+  duration (FWHM) and sigma are interconvertible:
+  FWHM = 2 * sqrt(2 ln 2) * sigma.
+
+inputs:
+  - name: peak_intensity
+    units: "watt / meter ** 2"
+  - name: center_time
+    units: "second"
+  - name: fwhm_duration
+    units: "second"
+
+outputs:
+  - name: intensity_at_time
+    units: "watt / meter ** 2"
+
+validity_domain:
+  notes:
+    - "Strictly temporal — no spatial profile."
+    - "Single transform-limited pulse, no chirp."
+    - "Use FWHM > 4 dt of the consuming runner; otherwise the pulse is undersampled."
+
+references:
+  - title: "Diels & Rudolph, *Ultrashort Laser Pulse Phenomena*, 2nd ed."
+
+tests:
+  unit:
+    - tests/unit/test_gaussian_pulse.py

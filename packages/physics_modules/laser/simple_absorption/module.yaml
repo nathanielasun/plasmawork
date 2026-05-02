@@ -1,0 +1,38 @@
+name: simple_absorption
+version: 0.1.0
+domain: laser
+status: candidate
+
+description: |
+  Linear-regime Beer-Lambert absorption: I(z) = I0 * exp(-alpha * z), with
+  absorption coefficient alpha = sigma * n where sigma is the absorption
+  cross-section and n is the absorber density.
+
+inputs:
+  - name: incident_intensity
+    units: "watt / meter ** 2"
+  - name: absorber_density
+    units: "1 / meter ** 3"
+  - name: cross_section
+    units: "meter ** 2"
+  - name: path_length
+    units: "meter"
+
+outputs:
+  - name: transmitted_intensity
+    units: "watt / meter ** 2"
+  - name: absorbed_fraction
+    units: dimensionless
+
+validity_domain:
+  notes:
+    - "Linear (low-intensity) regime — no saturation."
+    - "No scattering."
+    - "Uniform absorber density along the path."
+
+references:
+  - title: "Demtröder, *Laser Spectroscopy*, vol. 1, ch. 2."
+
+tests:
+  unit:
+    - tests/unit/test_simple_absorption.py

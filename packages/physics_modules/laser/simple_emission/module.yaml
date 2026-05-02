@@ -1,0 +1,35 @@
+name: simple_emission
+version: 0.1.0
+domain: laser
+status: candidate
+
+description: |
+  Spontaneous emission from a single excited level: dn*/dt = -n* / tau,
+  with explicit lifetime tau. Returns the decay trajectory and the photon
+  emission rate vs time.
+
+inputs:
+  - name: initial_excited_density
+    units: "1 / meter ** 3"
+  - name: lifetime
+    units: second
+  - name: time_grid
+    units: second
+
+outputs:
+  - name: excited_density_trajectory
+    units: "1 / meter ** 3"
+  - name: photon_emission_rate
+    units: "1 / (meter ** 3 * second)"
+
+validity_domain:
+  notes:
+    - "Single radiative channel; no quenching, no reabsorption."
+    - "No re-pumping during the decay window."
+
+references:
+  - title: "Demtröder, *Laser Spectroscopy*, vol. 1, ch. 2."
+
+tests:
+  unit:
+    - tests/unit/test_simple_emission.py

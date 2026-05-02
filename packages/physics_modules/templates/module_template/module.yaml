@@ -1,0 +1,37 @@
+# Phase 1D — Module template.
+#
+# Copy this directory to packages/physics_modules/<domain>/<name>/ and fill
+# in. Convention-checker assertions for a Phase 1 module: module.yaml +
+# README.md + a tests/test_<name>.py. The other AGENTS.md "Module SDK"
+# files (assumptions.md, validity_domain.md, equations.md, changelog.md,
+# examples/) are required for promotion to `validated` or `trusted` per
+# plan §14.3.
+
+name: module_template
+version: 0.1.0
+domain: template
+status: draft
+
+description: |
+  Replace this with a one-paragraph description of the module's purpose
+  and the regime it applies to.
+
+inputs:
+  - name: example_input
+    units: "1 / second"
+    description: replace with a real input
+
+outputs:
+  - name: example_output
+    units: dimensionless
+    description: replace with a real output
+
+validity_domain:
+  notes:
+    - "List the regime in which this module is valid."
+
+references: []
+
+tests:
+  unit:
+    - tests/test_template.py

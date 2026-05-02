@@ -1,0 +1,49 @@
+name: ising_2d
+version: 0.1.0
+domain: phase_transition
+status: candidate
+
+description: |
+  2D Ising model on a square lattice with periodic boundary conditions and
+  Metropolis single-spin-flip Monte Carlo dynamics. Energy is in units of
+  the coupling J, temperature is in units of J/k_B (i.e. T* = k_B T / J).
+  The exact Onsager critical temperature for the 2D Ising model is
+  T_c* = 2 / ln(1 + sqrt(2)) ≈ 2.269.
+
+inputs:
+  - name: lattice_size
+    units: dimensionless
+  - name: temperature_reduced
+    units: dimensionless
+  - name: n_sweeps
+    units: dimensionless
+  - name: equilibration_sweeps
+    units: dimensionless
+  - name: external_field
+    units: dimensionless
+
+outputs:
+  - name: magnetization_per_spin
+    units: dimensionless
+  - name: energy_per_spin
+    units: dimensionless
+  - name: heat_capacity_per_spin
+    units: dimensionless
+  - name: susceptibility_per_spin
+    units: dimensionless
+
+validity_domain:
+  notes:
+    - "Square lattice, periodic BCs."
+    - "Single-spin-flip Metropolis (no cluster updates)."
+    - "Critical region tau ≈ 0 has slow autocorrelation; use n_sweeps >= a few thousand for L >= 16."
+
+references:
+  - title: "Onsager, Phys. Rev. 65, 117 (1944)."
+  - title: "Newman & Barkema, *Monte Carlo Methods in Statistical Physics*."
+
+tests:
+  unit:
+    - tests/unit/test_ising_2d.py
+  validation:
+    - tests/validation/test_ising_2d_critical_temperature.py

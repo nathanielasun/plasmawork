@@ -1,0 +1,46 @@
+name: lennard_jones
+version: 0.1.0
+domain: molecular_dynamics
+status: candidate
+
+description: |
+  Velocity-Verlet integrator for a system of N classical particles in 2D
+  interacting through the Lennard-Jones 12-6 pair potential. All
+  computations done in reduced LJ units; the public API takes and returns
+  unit-aware quantities and converts internally.
+
+inputs:
+  - name: positions
+    units: meter
+  - name: velocities
+    units: "meter / second"
+  - name: mass
+    units: kilogram
+  - name: epsilon
+    units: joule
+  - name: sigma
+    units: meter
+
+outputs:
+  - name: trajectory_positions
+    units: meter
+  - name: trajectory_kinetic_energy
+    units: joule
+  - name: trajectory_potential_energy
+    units: joule
+
+validity_domain:
+  notes:
+    - "Classical, non-relativistic."
+    - "Pairwise LJ 12-6 only — no three-body terms."
+    - "Periodic boundary conditions with minimum-image convention."
+    - "Energy drift bound: < 0.1% over the test window."
+
+references:
+  - title: "Frenkel & Smit, *Understanding Molecular Simulation*, 2nd ed., Algorithm 4."
+
+tests:
+  unit:
+    - tests/unit/test_lennard_jones.py
+  validation:
+    - tests/validation/test_lennard_jones_energy_drift.py

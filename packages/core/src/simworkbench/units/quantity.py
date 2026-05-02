@@ -110,15 +110,25 @@ def to_unit(quantity: pint.Quantity, target_units: str) -> pint.Quantity:
         ) from exc
 
 
-def magnitude(quantity: pint.Quantity, units: str) -> float:
+def magnitude(quantity: pint.Quantity, units: str) -> Any:
     """Return the bare numeric magnitude of `quantity` after converting to `units`.
 
     Use this at the boundary between unit-aware workbench APIs and unit-naive
     third-party code (numpy linear algebra, scipy solvers, plotting libraries).
     By naming the target unit explicitly the caller documents the convention
     that the downstream code assumes.
+
+    Returns ``float`` for scalar quantities, ``numpy.ndarray`` for array-valued
+    quantities. Mixed-shape inputs are not converted — callers handle them.
     """
-    return float(to_unit(quantity, units).magnitude)
+    val = to_unit(quantity, units).magnitude
+    # numpy arrays — keep as arrays. pint.Quantity wrapping an ndarray returns
+    # the ndarray here. Importing numpy is cheap and we already depend on it.
+    import numpy as _np
+
+    if isinstance(val, _np.ndarray):
+        return _np.asarray(val)
+    return float(val)
 
 
 __all__ = [

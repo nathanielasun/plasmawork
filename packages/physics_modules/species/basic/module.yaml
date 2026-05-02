@@ -1,0 +1,34 @@
+name: basic_species
+version: 0.1.0
+domain: species
+status: candidate
+
+description: |
+  Basic species wrapper providing unit-aware constructors for atoms, ions,
+  and electrons. Mass, charge, and density are validated against their
+  expected dimensionalities at construction.
+
+inputs:
+  - name: name
+    units: dimensionless
+  - name: mass
+    units: kilogram
+  - name: charge
+    units: dimensionless    # in units of the elementary charge
+  - name: initial_density
+    units: "1 / meter ** 3"
+
+outputs:
+  - name: BasicSpecies
+    units: dimensionless
+
+validity_domain:
+  notes:
+    - "Non-relativistic; rest masses only."
+    - "Charge is an integer multiple of the elementary charge."
+
+references: []
+
+tests:
+  unit:
+    - tests/unit/test_basic_species.py

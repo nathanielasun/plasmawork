@@ -1,0 +1,36 @@
+name: rate_equation_0d
+version: 0.1.0
+domain: species
+status: candidate
+
+description: |
+  0D rate-equation driver. Wraps the simworkbench.runtime.Runner +
+  python_cpu backend to integrate a coupled set of dn/dt = K @ n equations
+  built from a ModelSpec's species + interactions.
+
+inputs:
+  - name: experiment
+    units: dimensionless
+    description: A simworkbench.experiment.Experiment with a 0D ModelSpec.
+
+outputs:
+  - name: trajectories
+    units: "1 / meter ** 3"
+    description: Per-species density time series (dict[str, list[float]]).
+  - name: time_seconds
+    units: second
+    description: Sample times.
+
+validity_domain:
+  notes:
+    - "Spatially homogeneous (0D)."
+    - "First-order rate constants."
+    - "Mass-action kinetics."
+    - "Uses scipy.integrate.solve_ivp (LSODA) — never a hand-rolled timestep loop."
+
+references:
+  - title: "scipy.integrate.solve_ivp documentation."
+
+tests:
+  unit:
+    - tests/unit/test_rate_equation_0d.py
