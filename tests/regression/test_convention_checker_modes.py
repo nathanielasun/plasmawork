@@ -58,20 +58,32 @@ def test_open_workstream_todo_mode_lists_known_open_anchors() -> None:
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
 
+    # Phase 1F is the only open Phase-1 workstream after 1C/1D/1E land. The
+    # anchors below all live under 1F; until ADR-0005 ships and the UI is
+    # implemented they all fail in opt-in mode.
     open_anchors = (
-        # Workstream 1D — module template and the seven physics modules.
-        "packages/physics_modules/templates/module_template/module.yaml",
-        "packages/physics_modules/laser/gaussian_pulse/module.yaml",
-        "packages/physics_modules/phase_transition/ising_2d/module.yaml",
-        # Workstream 1E — plotters.
-        "packages/core/src/simworkbench/diagnostics/plotters/line.py",
-        # Workstream 1F — UI components.
-        "apps/workbench-ui/src/components/SimulationList.tsx",
+        # ADR for the UI framework choice (must precede UI implementation).
         "program_development/architectural_decisions/ADR-0005-ui-framework.md",
+        # Backend HTTP API the UI consumes.
+        "packages/core/src/simworkbench/api/__init__.py",
+        "packages/core/src/simworkbench/api/server.py",
+        "tests/integration/test_api_server.py",
+        # UI app shell + plan-named panels.
+        "apps/workbench-ui/index.html",
+        "apps/workbench-ui/vite.config.ts",
+        "apps/workbench-ui/src/main.tsx",
+        "apps/workbench-ui/src/App.tsx",
+        "apps/workbench-ui/src/components/SimulationList.tsx",
+        "apps/workbench-ui/src/components/RunControls.tsx",
+        "apps/workbench-ui/src/components/CodeViewer.tsx",
+        "apps/workbench-ui/src/components/DocsViewer.tsx",
+        "apps/workbench-ui/src/components/DiagnosticsPanel.tsx",
+        "apps/workbench-ui/src/components/PlotPanel.tsx",
+        "apps/workbench-ui/src/components/CapsuleExplorer.tsx",
     )
 
-    # At least half should still be failing — if fewer, Phase 1 is nearly
-    # complete and this test should be updated alongside the close commit.
+    # At least three should still be failing. When 1F closes, this test gets
+    # updated alongside the Phase 1 close commit.
     found = [a for a in open_anchors if a in output]
     assert len(found) >= 3, (
         f"Only {len(found)}/{len(open_anchors)} open anchors found in opt-in "
