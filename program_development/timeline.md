@@ -24,6 +24,26 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1 — Workstreams 1C, 1D, 1E opened in parallel)
+
+### Completed
+- **Bug-checks before opening.** Ran the three code-craft greps (`bugs_and_fixes/agent_error_patterns.md`): residual `data = dict(MINIMAL_SPEC)` at `tests/unit/test_modelspec.py:67` was missed in the linter sweep — fixed in this commit. No `global` declarations and no module-level mutable singletons in `packages/core/src/`. Bug-memory greps surfaced three patterns directly relevant to the new workstreams: *naive solver loops* (1C runtime + 1D rate-equation), *fabricated coefficients* (1D modules), *writing artifacts outside project dir* (1C checkpoints). Each carries forward into the milestone's per-workstream Pre-gate carry-over notes.
+- **Workstream 1C — Simulation Runtime — opened.** Plan §Phase 1 / Workstream 1C tasks (start/stop/pause/resume, checkpointing, deterministic seeds, event/log, progress) translated into 16 per-entity convention-checker assertions covering `simworkbench.runtime.{__init__,runner,checkpoint,seeds,events,progress}`, `simworkbench.paths`, six unit tests, one integration test, one regression test (writes-only-to-temp_runs), the real `scripts/dev/run_backend.sh`, and the runnable `examples/simple_rate_equations/run.py`.
+- **Workstream 1D — Basic Physics Modules — opened.** Plan §Phase 1 / Workstream 1D modules translated into 30 per-entity assertions: a module template, seven physics modules (laser/gaussian_pulse, species/basic, species/rate_equation_0d, laser/simple_absorption, laser/simple_emission, molecular_dynamics/lennard_jones, phase_transition/ising_2d) each with `module.yaml` + `README.md` + a unit test, three runnable examples (rate equations, MD, Ising), and three validation tests (particle conservation, MD energy drift, Ising critical temperature).
+- **Workstream 1E — Visualization and Diagnostics — opened.** Plan §Phase 1 / Workstream 1E translated into 13 per-entity assertions: `simworkbench.diagnostics.{__init__,api,statistics,streams}`, three plotters (line, heatmap, particle scatter), four tests, and a `matplotlib` dependency in `pyproject.toml`.
+- **Convention checker.** Now reports `56 failure(s), 142 check(s) ok`. The 56 failures are the explicit TODO list for 1C/1D/1E. Per `AGENTS.md → "When starting a workstream"` step 5, this is the correct state during a workstream-opening commit.
+- **Phase 1 milestone Pre-gate verification.** Restructured by workstream (1A done, 1B done, 1C/1D/1E open, 1F pending) so each workstream lists its plan-named entities verbatim and points back to the bug-memory patterns it must honor.
+
+### Open questions
+- Whether `packages/visualization/` should become a separate Python package or stay as `simworkbench.diagnostics.plotters` (currently the latter — defer to ADR if a separation reason emerges).
+- Module template detail: how many of the AGENTS.md "Module SDK" files (`assumptions.md`, `validity_domain.md`, `equations.md`, `changelog.md`) are mandatory vs. recommended at `candidate` status. Will resolve with the first module that lands.
+
+### Next steps
+- Implement Workstream 1C → 1D → 1E in that order. 1C unlocks the runtime that 1D modules drive; 1D produces the data 1E displays. The convention-checker assertions are the implementation backlog.
+- After 1E, evaluate whether 1F (UI workbench) is best landed inside Phase 1 or after Phase 2 (capsule format) so the UI's capsule explorer has a stable format target.
+
+---
+
 ## 2026-05-02 (Phase 1A/1B safeguard hardening)
 
 ### Completed

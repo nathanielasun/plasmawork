@@ -64,7 +64,7 @@ def test_quantity_field_accepts_string():
 
 
 def test_quantity_field_accepts_pint_quantity():
-    data = dict(MINIMAL_SPEC)
+    data = deepcopy(MINIMAL_SPEC)
     data["species"] = [
         {"name": "A", "type": "atom", "initial_density": Q(1.0e18, "1/m^3")},
         {"name": "B", "type": "atom", "initial_density": Q(0.0, "1/m^3")},

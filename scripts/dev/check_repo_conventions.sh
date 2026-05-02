@@ -200,6 +200,77 @@ check_dir_exists packages/solver_backends
 check_dir_exists packages/visualization
 check_dir_exists packages/internal_tools
 
+# Phase 1C (Workstream 1C) — Simulation runtime.
+# Opened 2026-05-02. Each assertion below is one TODO until that workstream
+# closes. See program_development/milestones/phase_01_manual_workbench.md for
+# the full enumeration and bug-check carry-over.
+check_file_exists packages/core/src/simworkbench/runtime/__init__.py
+check_file_exists packages/core/src/simworkbench/runtime/runner.py
+check_file_exists packages/core/src/simworkbench/runtime/checkpoint.py
+check_file_exists packages/core/src/simworkbench/runtime/seeds.py
+check_file_exists packages/core/src/simworkbench/runtime/events.py
+check_file_exists packages/core/src/simworkbench/runtime/progress.py
+check_file_exists packages/core/src/simworkbench/paths/__init__.py
+check_file_exists tests/unit/test_runtime_runner.py
+check_file_exists tests/unit/test_runtime_checkpoint.py
+check_file_exists tests/unit/test_runtime_seeds.py
+check_file_exists tests/unit/test_runtime_events.py
+check_file_exists tests/unit/test_paths.py
+check_file_exists tests/integration/test_runtime_pause_resume.py
+check_file_exists tests/regression/test_runtime_writes_only_to_temp_runs.py
+check_file_exists examples/simple_rate_equations/run.py
+
+# Phase 1D (Workstream 1D) — Basic physics modules.
+# Opened 2026-05-02. Each module carries its own validators (assumptions,
+# validity_domain, equations) — the convention checker asserts module.yaml +
+# README.md + the module's primary unit test.
+check_file_exists packages/physics_modules/templates/module_template/module.yaml
+check_file_exists packages/physics_modules/templates/module_template/README.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/module.yaml
+check_file_exists packages/physics_modules/laser/gaussian_pulse/README.md
+check_file_exists tests/unit/test_gaussian_pulse.py
+check_file_exists packages/physics_modules/species/basic/module.yaml
+check_file_exists packages/physics_modules/species/basic/README.md
+check_file_exists tests/unit/test_basic_species.py
+check_file_exists packages/physics_modules/species/rate_equation_0d/module.yaml
+check_file_exists packages/physics_modules/species/rate_equation_0d/README.md
+check_file_exists tests/unit/test_rate_equation_0d.py
+check_file_exists packages/physics_modules/laser/simple_absorption/module.yaml
+check_file_exists packages/physics_modules/laser/simple_absorption/README.md
+check_file_exists tests/unit/test_simple_absorption.py
+check_file_exists packages/physics_modules/laser/simple_emission/module.yaml
+check_file_exists packages/physics_modules/laser/simple_emission/README.md
+check_file_exists tests/unit/test_simple_emission.py
+check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/module.yaml
+check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/README.md
+check_file_exists tests/unit/test_lennard_jones.py
+check_file_exists packages/physics_modules/phase_transition/ising_2d/module.yaml
+check_file_exists packages/physics_modules/phase_transition/ising_2d/README.md
+check_file_exists tests/unit/test_ising_2d.py
+check_file_exists examples/molecular_dynamics/run.py
+check_file_exists examples/ising_phase_transition/run.py
+check_file_exists tests/validation/test_rate_equation_conservation.py
+check_file_exists tests/validation/test_lennard_jones_energy_drift.py
+check_file_exists tests/validation/test_ising_2d_critical_temperature.py
+
+# Phase 1E (Workstream 1E) — Visualization and diagnostics.
+# Opened 2026-05-02. Diagnostics API + plotters live under simworkbench.diagnostics
+# during Phase 1; promotion to a separate packages/visualization/ Python package
+# is deferred to a future ADR if it becomes necessary.
+check_file_exists packages/core/src/simworkbench/diagnostics/__init__.py
+check_file_exists packages/core/src/simworkbench/diagnostics/api.py
+check_file_exists packages/core/src/simworkbench/diagnostics/statistics.py
+check_file_exists packages/core/src/simworkbench/diagnostics/streams.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/__init__.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/line.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/heatmap.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/particle_scatter.py
+check_file_exists tests/unit/test_diagnostics_api.py
+check_file_exists tests/unit/test_diagnostics_statistics.py
+check_file_exists tests/unit/test_plotters.py
+check_file_exists tests/integration/test_diagnostics_streaming.py
+check_grep_in_file '"matplotlib' packages/core/pyproject.toml "packages/core/pyproject.toml depends on matplotlib (Phase 1E)"
+
 # ---------------------------------------------------------------------------
 section "Tests, scripts, examples, configs"
 check_file_exists tests/README.md
