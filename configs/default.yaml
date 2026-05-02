@@ -31,7 +31,7 @@ runtime:
   pause_on_validation_warning: true   # halt and surface warnings before continuing
 
 units:
-  library: pending                # pint | astropy | custom — locked by Phase 1B ADR
+  library: pint                   # locked by ADR-0004 (2026-05-02)
   display:
     energy: J
     length: m

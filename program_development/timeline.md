@@ -24,6 +24,22 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1 opens)
+
+### Completed
+- **Phase 1 opens.** Status flipped from `Not started` → `In progress` across `README.md` (Current Development Status table), `program_development/milestones/phase_01_manual_workbench.md` (Status header), and this timeline. Active workstreams: 1A (Core Experiment Model — ModelSpec) and 1B (Units and Quantities). Workstreams 1C–1F remain pending.
+- **ADR-0004 — Units library = `pint`.** Accepted. Resolves the Phase 0 carry-over decision. The library is wrapped behind `simworkbench.units` so the public API is workbench-defined and `pint` is a swappable implementation detail. `configs/default.yaml` updated from `units.library: pending` to `units.library: pint`.
+
+### Open questions
+- UI framework choice for `apps/workbench-ui` (deferred to Workstream 1F kickoff).
+- Whether the `simworkbench.units` wrapper should also expose a NumPy-array-flavored quantity for HPC backends in Phase 8 (deferred to Workstream 1B implementation).
+
+### Next steps
+- Workstream 1B implementation: pint wrapper, workbench unit registry, dimensional validators, tests.
+- Workstream 1A implementation: Pydantic-based ModelSpec types, YAML loader, JSON Schema export, tests, first example ModelSpec under `examples/simple_rate_equations/`.
+
+---
+
 ## 2026-05-02
 
 ### Completed

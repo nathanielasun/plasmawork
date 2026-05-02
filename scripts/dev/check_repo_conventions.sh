@@ -232,6 +232,7 @@ check_file_exists program_development/architectural_decisions/_template.md
 check_file_exists program_development/architectural_decisions/ADR-0001-project-scope.md
 check_file_exists program_development/architectural_decisions/ADR-0002-simulation-capsule-format.md
 check_file_exists program_development/architectural_decisions/ADR-0003-model-spec-ir.md
+check_file_exists program_development/architectural_decisions/ADR-0004-units-library.md
 check_dir_exists  program_development/milestones
 for f in phase_00_repository_bootstrap.md \
          phase_01_manual_workbench.md \

@@ -1,6 +1,6 @@
 # Phase 1 — Manual Scientific Workbench
 
-**Status: Not started**
+**Status: In progress (started 2026-05-02). Active workstreams: 1A, 1B.**
 
 ## Objective
 Build a functioning non-agentic workbench that can define, run, pause, save, load, visualize, and export simple scientific simulations. (Plan §Phase 1.)
@@ -30,8 +30,8 @@ Phase 1 is complete when a user can:
 8. Read documentation from inside the UI.
 
 ## Pending decisions (carried in from Phase 0)
-- Units library: `pint` vs. `astropy.units` vs. custom wrapper. Will be decided at the start of Workstream 1B with an ADR.
-- UI framework choice for `apps/workbench-ui`.
+- ~~Units library: `pint` vs. `astropy.units` vs. custom wrapper~~ — **resolved 2026-05-02 in ADR-0004 (`pint`)**.
+- UI framework choice for `apps/workbench-ui` — deferred to Workstream 1F kickoff.
 
 ## Open questions
 - How are capsules surfaced in the UI before Phase 2 finalizes the format? Likely: the capsule explorer reads the directory format directly even before the manifest schema is frozen.
