@@ -36,6 +36,14 @@ If `AGENTS.md` and this file ever drift, `AGENTS.md` is the source of truth for 
 
 13. Reality-test every plan-derived artifact. The plan is design; the filesystem is truth. See **Phase Gate Procedure → Reality-test plan-derived patterns**.
 
+14. The plan's `§Phase N → Workstream NX` description is the deliverable list. Milestone Pre-gate hints are illustrative — read them to start, but enumerate the plan's full bullet list before claiming a workstream done. See **Phase Gate Procedure → Starting a workstream** below.
+
+15. Recursive validation at scientific boundaries. Any `dict[str, Any]` field where physical numbers can land (`fields.initialization`, `interactions.valid_regime`, etc.) gets a recursive validator that rejects raw floats and unitless numeric strings.
+
+16. Test fixtures are deep-copied when mutated. `data = dict(FIXTURE)` is a trap — use `copy.deepcopy` or fixture factories.
+
+17. No `global` declarations on cached singletons. Use `@functools.lru_cache(maxsize=1)` on the factory function instead.
+
 ---
 
 ## How to Run the Program Locally
@@ -210,13 +218,18 @@ When in doubt, ask before editing. Prefer reversible additions over destructive 
 
 ## Phase-Specific Operational Notes
 
-The repository finished **Phase 0** (Repository Bootstrap) on 2026-05-02. Phase 1 (Manual Scientific Workbench) is the next phase but has not started. The current state is:
+**Phase 0** (Repository Bootstrap) — complete 2026-05-02. **Phase 1** (Manual Scientific Workbench) — in progress; Workstreams 1A (core experiment model) and 1B (units subsystem) landed 2026-05-02; Workstreams 1C–1F pending.
 
-- All Phase 0 deliverables exist on disk and are verified by `scripts/dev/check_repo_conventions.sh` (116 checks).
-- Status is mutually consistent across `README.md`, `program_development/milestones/phase_00_repository_bootstrap.md`, and `program_development/timeline.md`.
-- Two Phase 0 bugs are logged in `bugs_and_fixes/bugfixes.md` with regression checks. Future agents read those entries before modifying the convention checker, the `.gitignore`, or the milestone-naming convention.
+Current state:
+- Convention checker at 142 checks, all green.
+- Phase status synchronized across `README.md`, `program_development/milestones/phase_00_repository_bootstrap.md`, `program_development/milestones/phase_01_manual_workbench.md`, and `program_development/timeline.md`.
+- Three bugs logged in `bugs_and_fixes/bugfixes.md` with regression checks:
+  - 2026-05-02 *Bare `build/` ignore rule swallowed `scripts/build/`*
+  - 2026-05-02 *Phase 0 gate false positive for missing skeleton files*
+  - 2026-05-02 *Phase 1A/1B gate overstated implementation completeness*
+- `bugs_and_fixes/agent_error_patterns.md` now carries 12 named patterns. Read them before changing: convention-checker logic, `.gitignore`, milestone-naming, ModelSpec validators (especially flexible-dict fields), test wrappers, or any cached singleton.
 
-Phase 1 work (`ModelSpec`, units subsystem, runtime, basic modules, UI shell) starts only after the steps in **Phase Gate Procedure → Starting a phase** below.
+Phase 1 remaining workstreams (1C runtime, 1D physics modules, 1E viz, 1F UI) start only after **Phase Gate Procedure → Starting a workstream** below — enumerate from the plan, not from the milestone hints.
 
 ---
 
@@ -256,6 +269,44 @@ bash scripts/dev/check_repo_conventions.sh
 ```
 
 Implement until the checker is green. Then proceed to the closing-a-phase steps.
+
+### Starting a workstream — enumerate from the plan, not from the milestone hints
+
+The Phase 1A bug (`bugs_and_fixes/bugfixes.md` 2026-05-02 *Phase 1A/1B gate overstated implementation completeness*) came from implementing the milestone Pre-gate hints rather than the plan's full Workstream description. The hints listed only ModelSpec; the plan listed *Experiment, ModelSpec, RunConfig, DiagnosticConfig, BackendConfig, serialization*. Five of six entities were missed.
+
+Procedure for any new workstream:
+
+```bash
+# 1. Locate the workstream in the plan.
+awk '/^### Workstream NX:/,/^### Workstream/' \
+    scientific_simulation_workbench_agent_plan.md
+# Read the full bullet list. Note every named class, file, module, script,
+# config key, ADR, test, and example.
+
+# 2. Compare against the milestone Pre-gate hints.
+awk '/Convention-checker assertions to add/,/Status sync at close/' \
+    program_development/milestones/phase_NN_*.md
+
+# 3. Diff. If the milestone is missing entities the plan names, patch the
+#    milestone first in a small commit BEFORE writing any code. The milestone's
+#    Pre-gate list must reflect the plan, not the agent's interpretation.
+```
+
+Once the milestone Pre-gate matches the plan, every named entity gets one assertion:
+
+```bash
+# In scripts/dev/check_repo_conventions.sh, prefer:
+check_file_exists packages/core/src/simworkbench/experiment/types.py
+check_file_exists packages/core/src/simworkbench/experiment/__init__.py
+check_file_exists packages/core/src/simworkbench/serialization/experiment.py
+check_file_exists tests/unit/test_experiment.py
+check_file_exists tests/integration/test_experiment_save_load.py
+# ... one assertion per plan-named entity, not one assertion per directory.
+```
+
+Run the checker — every missing entity is one failure. The failures are the workstream's TODO list. Implement until green; only then is the workstream done.
+
+If you choose to defer an entity to a follow-up workstream, **say so explicitly in the commit message** ("RunConfig deferred to Workstream 1C — see milestone phase_01") AND keep a failing convention-checker assertion that encodes the deferral, so the deferral remains visible until resolved.
 
 ### Closing a phase — status flip in one commit
 
@@ -333,6 +384,42 @@ exit 0
 ```
 
 The stub exits 0 so the docs flow stays usable. Stubs become real implementations during the phase that owns them.
+
+### Code-craft anti-patterns to grep before commit
+
+Three small habits caught during the Phase 1A correction sweep. Run these checks as a pre-commit pass when you touch the relevant subsystems:
+
+**1. Shallow-copied test fixtures.** A `data = dict(FIXTURE)` followed by `data["nested"] = [...]` mutates the fixture's nested list, polluting later tests:
+
+```bash
+# Should produce nothing — mutating tests must use deepcopy or fixture factories.
+grep -nrE 'data\s*=\s*(dict\([A-Z_]+\)|\{\*\*[A-Z_]+\})' tests/
+```
+
+If anything matches, replace with `from copy import deepcopy; data = deepcopy(FIXTURE)` or refactor to a `pytest.fixture` factory.
+
+**2. Module-level mutable singletons.** A pattern like `_REGISTRY = None` + `global _REGISTRY` in a factory function leaks state across tests and complicates patching. Prefer `@functools.lru_cache(maxsize=1)` on the factory:
+
+```bash
+# Hits warrant justification or replacement.
+grep -nrE '^\s*global ' packages/core/src/
+grep -nrE '^_[A-Z_]+\s*[:=]\s*(None|\{\}|\[\])' packages/core/src/
+```
+
+**3. Raw numbers crossing scientific boundaries through `dict[str, Any]` fields.** When you add or change a flexible-dict field at a ModelSpec or module boundary, ensure recursive validation rejects raw `int`/`float` and unitless numeric strings. Reference: `simworkbench.model_spec.types._validate_parameter_tree`. Pattern in negative tests:
+
+```python
+# tests/unit/test_<schema>.py — every flexible dict needs at least one of these.
+def test_raw_float_rejected_in_<field>():
+    with pytest.raises(ValueError):
+        from_dict({..., "<field>": {"key": 42.0}})
+
+def test_unitless_numeric_string_rejected_in_<field>():
+    with pytest.raises(ValueError):
+        from_dict({..., "<field>": {"key": "42"}})
+```
+
+A workstream that introduces a new flexible-dict field is not done until both negative tests exist and pass.
 
 ### When a checker assertion is wrong
 
@@ -483,6 +570,8 @@ A Claude task is done when, in addition to the `AGENTS.md` checklist:
 - Every documented command path the change introduced exists on disk and is executable (real implementation or stub).
 - Every plan-derived pattern (gitignore rule, filename, identifier) has been reality-tested per **Phase Gate Procedure → Reality-test plan-derived patterns**.
 - If the task changed phase or module status, the status reads identically across `README.md`, the relevant milestone file, `program_development/timeline.md`, and any ADR / `module.yaml` / `tool.yaml` / docs page that names it. The status flip lands in a single commit.
+- **For workstream-completion tasks**: every plan-named entity in `§Phase N → Workstream NX` has been enumerated, asserted in the convention checker, implemented, and tested. The milestone's Pre-gate hint list has been updated where it disagreed with the plan. Deferrals are named in the commit message with a corresponding failing assertion.
+- The "Code-craft anti-patterns to grep before commit" checks have been run when the diff touches their domains: deepcopy in test fixtures, no `global` on cached singletons, raw-number rejection in any new flexible-dict scientific field.
 - The summary at the end of the response names the changed files and any decisions deferred to the user.
 - Any new public API has a usage example in the relevant docs page.
 - The change is committed. If it qualifies as **major** (per the criteria above), it has also been pushed to `origin`.

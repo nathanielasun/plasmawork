@@ -24,6 +24,22 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1A/1B safeguard hardening)
+
+### Completed
+- **Three new agent_error_patterns** logged in `bugs_and_fixes/agent_error_patterns.md` distilling the Phase 1A/1B correction sweep:
+  - *Implementing the agent's checklist instead of the plan's deliverable list* — the meta-pattern behind the Phase 1A under-scope. Milestone Pre-gate hints are illustrative, never substitutive; the plan's `§Phase N → Workstream NX` description is the deliverable list.
+  - *Shallow-copying a mutable test fixture before mutating it* — `dict(FIXTURE)` shares nested lists/dicts; tests must use `copy.deepcopy` or fixture factories.
+  - *Module-level mutable state for cached singletons* — `global _REGISTRY` patterns leak state across tests; prefer `@functools.lru_cache(maxsize=1)`.
+- **AGENTS.md** — added rule 14 ("plan workstream description = deliverable list"), tightened the Phase Gate Discipline with a new "When starting a workstream" subsection requiring per-named-entity convention-checker assertions, added Required Testing Practices items for deepcopy-fixtures and venv-aware test wrappers, added Code Style items for flexible-dict validation and lru_cache singletons, extended Definition of Done with workstream-completion item.
+- **CLAUDE.md** — mirrored AGENTS.md additions as rules 14–17, added a "Starting a workstream" operational subsection with concrete `awk`/`grep` commands for plan enumeration, added a "Code-craft anti-patterns to grep before commit" subsection with executable checks for the three patterns, updated Phase-Specific Operational Notes to reflect the 12-pattern bug-memory state and 142-check convention-checker baseline.
+- Convention checker stays at 142/142; the safeguards are textual and procedural, not new assertions. All 68 unit tests still pass.
+
+### Next steps
+- Workstream 1C — Simulation runtime, opening with the new Pre-gate procedure: enumerate every plan-named entity from `§Phase 1 → Workstream 1C` before any code lands.
+
+---
+
 ## 2026-05-02 (Phase 1 — Workstreams 1A and 1B implementations)
 
 ### Completed

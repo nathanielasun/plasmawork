@@ -45,6 +45,8 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 
 13. **Reality-test plan-derived artifacts.** The plan document is design, not implementation. Patterns copied from it (`.gitignore` rules, directory diagrams, filename templates, command lists) get reality-tested against the actual filesystem before commit — see `bugs_and_fixes/agent_error_patterns.md` "Treating the plan document as a check instead of as a draft".
 
+14. **The plan's workstream description is the deliverable list — milestone Pre-gate hints are illustrative, never substitutive.** Before claiming a workstream done, enumerate every named class, file, module, script, config key, ADR, and test from `scientific_simulation_workbench_agent_plan.md` `§Phase N → Workstream NX` and confirm each is asserted in the convention checker and exists on disk. If the milestone Pre-gate hints disagree with the plan, the plan wins and the milestone is patched first. See `bugs_and_fixes/agent_error_patterns.md` "Implementing the agent's checklist instead of the plan's deliverable list".
+
 ---
 
 ## Repository Architecture Rules
@@ -71,6 +73,8 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 - New code lands with tests. The test layout is: `tests/{unit,integration,regression,validation,performance}`.
 - Every bug fix adds or updates a regression test where feasible, linked from `bugs_and_fixes/bugfixes.md`.
 - Validation tests assert scientific properties (dimensions, conservation, analytical limits, convergence, benchmark reproduction). Performance tests must not silently relax correctness tolerances.
+- **Test fixtures are deep-copied when mutated.** A module-level dict like `MINIMAL_SPEC = {...}` is shared across tests. Any test that derives a variant must use `copy.deepcopy(FIXTURE)` — never `dict(FIXTURE)`, `{**FIXTURE}`, `FIXTURE.copy()`, or list-slice copies — because those leave nested lists/dicts shared, and the next test inherits the pollution. Better: factory functions or `pytest.fixture` with `scope="function"`. See `bugs_and_fixes/agent_error_patterns.md` "Shallow-copying a mutable test fixture".
+- **Test wrappers prefer the repo virtualenv.** `scripts/test/*.sh` resolve a Python interpreter in the order `SIMWORKBENCH_PYTHON` → `.venv/bin/python` → bare `python`. Tests must run from a clean shell without manual `source .venv/bin/activate`.
 
 ---
 
@@ -79,6 +83,8 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 - Python: type hints on all public APIs; `ruff` clean; explicit error handling at boundaries; no bare `except`.
 - TypeScript: strict `tsconfig`; no `any` in exported types.
 - Units are first-class. No raw floats for physical quantities crossing module boundaries — use the units subsystem (`packages/core/src/simworkbench/units/`).
+- Flexible `dict[str, Any]` fields at scientific boundaries (`fields.initialization`, `interactions.valid_regime`, etc.) require recursive validation that rejects raw numbers and unitless numeric strings. See `bugs_and_fixes/agent_error_patterns.md` "Letting `dict[str, Any]` bypass scientific boundary validation".
+- Cached singletons use `@functools.lru_cache(maxsize=1)` on a factory function, not `global` declarations on module-level mutable state. See `bugs_and_fixes/agent_error_patterns.md` "Module-level mutable state for cached singletons".
 - Module boundaries are enforced by the registry. New cross-module coupling requires an ADR in `program_development/architectural_decisions/`.
 
 ---
@@ -156,6 +162,19 @@ The first action of any agent opening a new phase is to extend the convention ch
 3. For each deliverable, add an assertion to `scripts/dev/check_repo_conventions.sh` (file exists, executable, contains required pattern, does not collide with `.gitignore`, etc.).
 4. The checker fails after this step — that is correct. The failures are the work to do.
 5. Implement the work. The checker passes when the phase is genuinely complete.
+
+### When starting a workstream
+
+A workstream is the smallest unit a phase can claim "done" against. The Phase 1A bug came from declaring Workstream 1A done after implementing only one of its six named classes — see `bugs_and_fixes/bugfixes.md` 2026-05-02 *Phase 1A/1B gate overstated implementation completeness*. To prevent recurrence:
+
+1. Open `scientific_simulation_workbench_agent_plan.md` and locate `## Phase N` → `### Workstream NX:`. Read the entire bullet list.
+2. Enumerate every named entity — every class name, file path, config key, script, ADR, test, and example. Treat each as one row of the deliverable table.
+3. Cross-check against the milestone's `Pre-gate verification → Convention-checker assertions to add` list. If the milestone is missing an entity from the plan, **update the milestone first** in a single small commit before any code lands. The milestone hints must reflect the plan's deliverable list, not the agent's mental model.
+4. For every entity, add or extend a `scripts/dev/check_repo_conventions.sh` assertion. Prefer one assertion per named entity rather than one assertion for the whole directory.
+5. Run the checker — it should fail loudly with one failure per missing entity. Implement until each one is green.
+6. Workstream done = every plan-named entity has a green assertion AND a unit test (or an explicitly-deferred-to-named-followup with a checker assertion that fails until resolved).
+
+This sequence is mandatory. The illustrative starting-point hints in the milestone Pre-gate sections are exactly that — starting points. They cannot replace the plan's enumerated workstream description.
 
 ### When closing a phase
 
@@ -248,4 +267,5 @@ A task is done when:
 9. Generated code remains inspectable, with units and assumptions surfaced.
 10. Convention checker (`scripts/dev/check_repo_conventions.sh`) passes. If the task added or changed a deliverable that the plan, README, or any milestone references, the checker has been **extended** to assert that deliverable — not just left at its prior assertions.
 11. Every documented command path the change introduced exists on disk as an executable (or stub). Every plan-derived pattern (gitignore rule, filename, identifier) has been reality-tested.
-12. The change is committed. If the change is *major* (per the criteria in **Autonomous Git Operations** above), it has also been pushed to `origin`.
+12. **For workstream-completion tasks**: every plan-named entity in `§Phase N → Workstream NX` has been enumerated, asserted in the convention checker, implemented, and tested. The milestone's Pre-gate hint list has been updated where it disagreed with the plan. If any entity was deferred, the deferral is named in the commit message and an explicit follow-up checker assertion encodes the deferral.
+13. The change is committed. If the change is *major* (per the criteria in **Autonomous Git Operations** above), it has also been pushed to `origin`.

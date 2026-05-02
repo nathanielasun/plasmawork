@@ -226,6 +226,70 @@ Inspect `scripts/test/*.sh` for `.venv/bin/python` or the shared environment-sel
 
 ---
 
+## Error Pattern: Implementing the agent's checklist instead of the plan's deliverable list
+
+### Why it is bad
+Each milestone file's "Pre-gate verification" section contains starting-point deliverable hints. They are illustrative — not authoritative. An agent that builds against the hint list and ignores the plan's full workstream description ships an incomplete workstream while the milestone, README, and convention checker all report success. The Phase 1A bug is the canonical example: plan §Phase 1 / Workstream 1A names *Experiment, ModelSpec, RunConfig, DiagnosticConfig, BackendConfig, serialization*; the milestone Pre-gate hints called out only ModelSpec types/loader/schema, so the agent shipped only the ModelSpec slice and marked the workstream done. The other four classes had to land in a follow-up corrective commit.
+
+This is a more subtle re-skin of "Treating the plan document as a check instead of a draft." The plan is the deliverable list; the milestone hints are the agent's first attempt to enumerate it. Drift between the two is invisible until someone reads them side-by-side.
+
+### Required behavior
+Before claiming any workstream done — and before adding the *first* convention-checker assertion for a workstream — the agent reads the plan's full `§Phase N → Workstream NX` description and enumerates **every named class, file, module, script, config key, ADR, and test** the plan says belongs to that workstream. The milestone's existing Pre-gate hints are the starting line, not the finish line; missing entities are added to the hint list (with checkboxes) before any code lands. Every named entity becomes a convention-checker assertion. Workstream completion requires every assertion green.
+
+When the plan and the milestone hints disagree, the plan wins. Update the milestone hints to match — one commit, before code changes.
+
+### Detection
+- Manual: open `scientific_simulation_workbench_agent_plan.md`, find `## Workstream NX:`, list its bullets, then `grep -nE 'Workstream NX|<EntityName>' program_development/milestones/phase_NN_*.md scripts/dev/check_repo_conventions.sh`. Any plan-named entity not appearing in both files is a gap.
+- Pre-flight: a checklist comment at the top of any code-introducing commit message lists the plan's named entities for the workstream and shows them as ☑ or explicitly deferred-to-a-named-followup.
+- Convention checker: when assertions are added for a workstream, prefer one assertion per plan-named entity rather than a single "directory exists" check.
+
+---
+
+## Error Pattern: Shallow-copying a mutable test fixture before mutating it
+
+### Why it is bad
+Pytest fixtures defined as module-level dicts (`MINIMAL_SPEC = {"species": [...], ...}`) are reused across tests. A test that says `data = dict(FIXTURE)` and then mutates `data["species"] = [bad_record]` *also* mutates the fixture's nested list bindings — `dict()` is a shallow copy, the inner list is shared. Subsequent tests inherit the polluted fixture. Failures appear randomly depending on test execution order, and the first symptom is usually "this worked yesterday."
+
+This was caught during the Phase 1A correction sweep: several `test_modelspec.py` tests used `dict(MINIMAL_SPEC)` and the fix replaced them with `copy.deepcopy(MINIMAL_SPEC)`.
+
+### Required behavior
+When mutating a shared fixture, use `copy.deepcopy` — never `dict(...)`, `{**fixture}`, `fixture.copy()`, or list-slice copies for nested structures. Better: define fixtures as factory functions (`def _minimal_spec() -> dict: return {...}`) so every call produces a fresh tree. Best: pytest fixtures with `scope="function"` (the default) and a fresh dict literal in the body.
+
+For non-test code: the same rule applies wherever a mutable structure is shared. Prefer immutability (frozen dataclasses, tuples, `frozenset`) at module scope; if mutation is necessary, build the structure inside a function that owns it.
+
+### Detection
+- Grep: `grep -nrE 'data = dict\(|data = \{\*\*' tests/` flags shallow copies of fixtures. Replace with `deepcopy` or factory calls.
+- Test isolation check: random-order test runs (`pytest -p no:randomly` off, or pytest-randomly plugin) shake out fixture pollution.
+- Code review: any `data = dict(FIXTURE)` followed by mutation of a nested list / dict is a fixture leak.
+
+---
+
+## Error Pattern: Module-level mutable state for cached singletons
+
+### Why it is bad
+A pattern like
+
+```python
+_REGISTRY: pint.UnitRegistry | None = None
+def get_registry() -> pint.UnitRegistry:
+    global _REGISTRY
+    if _REGISTRY is None:
+        _REGISTRY = _build_registry()
+    return _REGISTRY
+```
+
+leaks state across tests, complicates patching, races under threading, and hides the cache from `clear_cache` tooling. The first Phase 1B `simworkbench.units.registry` used this pattern and was replaced with `@lru_cache(maxsize=1)` on `get_registry()` during the correction sweep — same behavior, no `global`, free `cache_clear()` for tests.
+
+### Required behavior
+For lazily-built singletons inside the workbench, prefer `@functools.lru_cache(maxsize=1)` on the factory function, or a class with explicit storage. Avoid `global` declarations in module code. If genuine module-level state is needed (e.g. for a plugin registry that requires registration as a side effect at import time), wrap it in a small `Registry` class with a documented `reset()` method and a test fixture that resets between tests.
+
+### Detection
+- Grep: `grep -nrE '^\s*global ' packages/core/src/` — any hit needs justification.
+- Grep: `grep -nrE '^_[A-Z_]+\s*[:=]\s*(None|\{|\[)' packages/core/src/` — module-level mutable singletons.
+- Code review: any `global X` in workbench code requires either an ADR or a comment naming the alternative considered.
+
+---
+
 ## Error Pattern: Switching backends to make output "look better"
 
 ### Why it is bad
