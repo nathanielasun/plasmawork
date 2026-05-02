@@ -51,7 +51,7 @@ The Phase 0 convention checker verified broad directories and a small milestone 
 ### Fix
 Added the missing Phase 0 package skeleton files, documented command wrappers, and plan-matching milestone files for Phase 0 through Phase 10. Removed stale Phase 2-5 milestone filenames. Extended `scripts/dev/check_repo_conventions.sh` to verify the missing package files, executable scripts, and all Phase 0-10 milestone files. Updated README, docs-site pages, development timeline, and bug-memory records to reflect the corrected gate.
 
-Commit: pending.
+Commit: `11e04f1` (`Fix Phase 0 bootstrap gate coverage`).
 
 ### Regression protection
 - `scripts/dev/check_repo_conventions.sh` now checks all corrected artifacts and passes with 116 checks.
@@ -76,7 +76,7 @@ Once a directory is ignored, gitignore's negation rules cannot re-include files 
 ### Fix
 Replaced `build/` with `/build/` in `.gitignore`, anchoring the rule to the repository root. Added an inline comment explaining why and warning future agents not to reintroduce a bare `build/`. Top-level Node/Vite/Python build artifacts still get ignored; `scripts/build/`, `packages/<x>/build/`, and any other nested `build/` directory remain trackable.
 
-Commit: pending Phase 0 commit.
+Commit: `db040b6` (`Bootstrap Phase 0: governance, docs, bug memory, and autonomous git`).
 
 ### Regression protection
 - Added `scripts/build/.gitkeep` so the directory is staged.
