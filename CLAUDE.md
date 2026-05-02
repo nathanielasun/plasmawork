@@ -30,11 +30,17 @@ If `AGENTS.md` and this file ever drift, `AGENTS.md` is the source of truth for 
 
 10. Prefer precise validated modules over broad approximations. Missing coefficient → report, do not fabricate.
 
+11. The convention checker is the source of truth for phase completion. A markdown checkbox is not a check; `scripts/dev/check_repo_conventions.sh` is. See **Phase Gate Procedure** below.
+
+12. Every command path you mention in `README.md`, `CLAUDE.md`, `AGENTS.md`, or any docs page must exist on disk as an executable. Use stubs for unimplemented subsystems. Doc reference and stub land in the same commit.
+
+13. Reality-test every plan-derived artifact. The plan is design; the filesystem is truth. See **Phase Gate Procedure → Reality-test plan-derived patterns**.
+
 ---
 
 ## How to Run the Program Locally
 
-> The repository is in **Phase 0 / bootstrap**. The commands below are the planned interfaces. Where a script does not yet exist, the corresponding subsystem is scheduled for the noted phase. Do not invent command names; if a script is missing, add it to `scripts/dev/` as part of its phase rather than calling something else.
+> Phase 0 is **complete** as of 2026-05-02. Phase 1 has not started. The commands below are the planned interfaces. Every documented script path exists on disk — scripts whose subsystem is not yet implemented are stubs that print "Phase N — not implemented yet" and exit cleanly. Do not invent command names; if a script is missing, add a stub for it in the same commit as the doc reference.
 
 ```bash
 # One-time install (Python core + UI)
@@ -204,16 +210,149 @@ When in doubt, ask before editing. Prefer reversible additions over destructive 
 
 ## Phase-Specific Operational Notes
 
-The repository is currently in **Phase 0** (Repository Bootstrap). Until Phase 0 is complete, the only valid scope of agent work is:
+The repository finished **Phase 0** (Repository Bootstrap) on 2026-05-02. Phase 1 (Manual Scientific Workbench) is the next phase but has not started. The current state is:
 
-- Creating root governance files
-- Creating directory structure
-- Creating docs site skeleton
-- Creating bugfix and dev-history templates
-- Creating example configs
-- Creating the convention checker
+- All Phase 0 deliverables exist on disk and are verified by `scripts/dev/check_repo_conventions.sh` (116 checks).
+- Status is mutually consistent across `README.md`, `program_development/milestones/phase_00_repository_bootstrap.md`, and `program_development/timeline.md`.
+- Two Phase 0 bugs are logged in `bugs_and_fixes/bugfixes.md` with regression checks. Future agents read those entries before modifying the convention checker, the `.gitignore`, or the milestone-naming convention.
 
-Do not start Phase 1 work (ModelSpec, runtime, modules) until the convention checker passes.
+Phase 1 work (`ModelSpec`, units subsystem, runtime, basic modules, UI shell) starts only after the steps in **Phase Gate Procedure → Starting a phase** below.
+
+---
+
+## Phase Gate Procedure (Claude-Specific)
+
+Phase 0 was initially marked "complete" with stale README status, missing package manifests, missing milestone files, and missing documented scripts. The bug is logged at `bugs_and_fixes/bugfixes.md` 2026-05-02 — *Phase 0 gate false positive*. The procedure below is the operational discipline that prevents recurrence.
+
+### Three independent checks for "phase complete"
+
+A phase is complete only when **all three** are true:
+
+1. `scripts/dev/check_repo_conventions.sh` exits zero.
+2. The phase status reads identically in `README.md`, `program_development/milestones/phase_NN_*.md`, and `program_development/timeline.md`. Any ADR, `module.yaml`, `tool.yaml`, or `docs_site/src/content/*.tsx` page that names the status agrees too.
+3. Every deliverable in the milestone's Phase Gate, the plan's `§Phase NN`, and the README's status table has at least one assertion in the convention checker.
+
+### Starting a phase — the deliverables-to-checker translation
+
+The first action when opening a new phase is to extend the convention checker. Concretely:
+
+```bash
+# 1. Read the plan section for the phase.
+sed -n '/^# Phase NN:/,/^# Phase /p' scientific_simulation_workbench_agent_plan.md \
+  | head -200
+
+# 2. Read the milestone file.
+cat program_development/milestones/phase_NN_*.md
+
+# 3. Read README and the relevant docs page.
+grep -nE "Phase NN" README.md docs_site/src/content/*.tsx
+```
+
+Then enumerate every deliverable into a checklist (see milestone "Pre-gate verification" template). For each deliverable, add a `check_file_exists`, `check_file_executable`, `check_dir_exists`, or `check_grep_in_file` call to `scripts/dev/check_repo_conventions.sh`. Run the checker — it should fail. The failures are the work.
+
+```bash
+bash scripts/dev/check_repo_conventions.sh
+# Convention check FAILED — N failure(s), M check(s) ok.
+```
+
+Implement until the checker is green. Then proceed to the closing-a-phase steps.
+
+### Closing a phase — status flip in one commit
+
+Before flipping any phase status to "Complete":
+
+```bash
+# 1. Run the checker.
+bash scripts/dev/check_repo_conventions.sh
+# expect: Convention check PASSED
+
+# 2. Run subsystem tests if any apply.
+bash scripts/test/all.sh   # or the most relevant subset
+
+# 3. Audit status references.
+grep -nE "Phase NN" README.md \
+  program_development/milestones/phase_NN_*.md \
+  program_development/timeline.md \
+  $(grep -lE "Phase NN" docs_site/src/content/*.tsx 2>/dev/null)
+
+# 4. Confirm every match agrees with the new status.
+
+# 5. Stage all status-bearing files and commit in one commit.
+git add README.md \
+  program_development/milestones/phase_NN_*.md \
+  program_development/timeline.md \
+  <other status-bearing files>
+git commit -m "..."   # Use the HEREDOC pattern below.
+
+# 6. Push (this is a major change per Autonomous Git Operations).
+git push
+```
+
+### Reality-test plan-derived patterns
+
+Anything copied from `scientific_simulation_workbench_agent_plan.md` gets reality-tested before commit.
+
+**Gitignore changes** — probe representative source paths:
+```bash
+for d in scripts/build scripts/dev scripts/test scripts/docs scripts/clean scripts/export \
+         apps/workbench-ui/src/app packages/physics_modules/laser/src \
+         packages/core/src/simworkbench docs_site/src/content; do
+  if git check-ignore -q "$d/foo.tmp" 2>/dev/null; then
+    echo "WARNING: $d/* matched by ignore rule"
+    git check-ignore -v "$d/foo.tmp"
+  fi
+done
+```
+A `WARNING` line means the rule is too aggressive. Anchor it (`/build/`) or specialize it (`apps/*/build/`) until no warnings appear.
+
+**Filenames** — when the plan suggests a filename and the plan's section title disagrees with the placeholder filename in §3, follow the section title. Document the divergence in the milestone file (and in `bugs_and_fixes/bugfixes.md` if the divergence was discovered through a bug, as happened with Phase 2–5 milestones).
+
+**Directory entrypoints** — when you add a top-level package directory, you add its language entrypoint in the same commit:
+
+| Directory pattern | Required entrypoints |
+|---|---|
+| `apps/<name>/` (TypeScript) | `package.json`, `tsconfig.json`, `src/app/page.tsx` (or equivalent) |
+| `packages/core/` and `packages/<name>/` (Python package) | `pyproject.toml`, `src/<package>/__init__.py` |
+| `packages/physics_modules/<domain>/<module>/` | `module.yaml`, `src/`, `tests/`, `README.md` |
+| `packages/internal_tools/registry/<tool>/` | `tool.yaml`, `src/`, `tests/`, `README.md` |
+| `docs_site/` | `package.json`, `tsconfig.json`, content files in `src/content/` |
+
+The convention checker enforces these.
+
+**Documented commands** — when you add a command path to docs, you create the script (or a stub) in the same commit:
+
+```bash
+#!/usr/bin/env bash
+# scripts/dev/run_ui.sh
+#
+# Phase 1F — TypeScript workbench UI launcher.
+# Implementation scheduled for Phase 1 / Workstream 1F.
+echo "scripts/dev/run_ui.sh: scheduled for Phase 1 / Workstream 1F (UI Workbench)"
+echo "See program_development/milestones/phase_01_manual_workbench.md."
+exit 0
+```
+
+The stub exits 0 so the docs flow stays usable. Stubs become real implementations during the phase that owns them.
+
+### When a checker assertion is wrong
+
+The checker can be wrong (e.g. it asserts a file the plan no longer wants). When this happens, fix the **assertion** — do not delete the failing check to make the phase appear complete. If the plan and the checker genuinely disagree, file an ADR before changing either.
+
+### Status-flip commit message template
+
+```bash
+git commit -m "$(cat <<'EOF'
+Close Phase NN: <one-line summary of what's now true>
+
+- README.md status: In progress → Complete.
+- Milestone phase_NN_<name>.md: status header and Phase Gate boxes ticked.
+- Timeline: dated entry with Completed / Changed / Open questions / Next steps.
+- Convention checker: NN/NN passed.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
 
 ---
 
@@ -340,7 +479,10 @@ Commit locally, hold the push, and tell the user what you did and why you held b
 
 A Claude task is done when, in addition to the `AGENTS.md` checklist:
 
-- `scripts/dev/check_repo_conventions.sh` passes (when implemented).
+- `scripts/dev/check_repo_conventions.sh` passes. If the task added or moved a deliverable named in the plan, README, milestone, or any docs page, the checker has been **extended** with a corresponding assertion — it is not enough that the existing checks still pass.
+- Every documented command path the change introduced exists on disk and is executable (real implementation or stub).
+- Every plan-derived pattern (gitignore rule, filename, identifier) has been reality-tested per **Phase Gate Procedure → Reality-test plan-derived patterns**.
+- If the task changed phase or module status, the status reads identically across `README.md`, the relevant milestone file, `program_development/timeline.md`, and any ADR / `module.yaml` / `tool.yaml` / docs page that names it. The status flip lands in a single commit.
 - The summary at the end of the response names the changed files and any decisions deferred to the user.
 - Any new public API has a usage example in the relevant docs page.
 - The change is committed. If it qualifies as **major** (per the criteria above), it has also been pushed to `origin`.

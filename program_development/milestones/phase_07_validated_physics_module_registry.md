@@ -17,3 +17,25 @@ Move from one-off generated simulations to reusable validated scientific modules
 
 ## Phase Gate
 Phase 7 is complete when core modules are reusable, documented, tested, and validated for explicit regimes.
+
+## Pre-gate verification
+
+Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2026-05-02 *Phase 0 gate false positive*. Before this phase opens or closes, follow `CLAUDE.md → Phase Gate Procedure` and `AGENTS.md → Phase Gate Discipline`.
+
+### Convention-checker assertions to add when this phase opens
+
+Starting-point hints from plan §Phase 7:
+
+- ☐ Laser-species modules under `packages/physics_modules/laser/{absorption,emission,excitation,ionization,recombination}/` and `packages/physics_modules/species/{electron_temperature,species_density}/`, each with `module.yaml`, `src/`, `tests/`, `benchmarks/`, `assumptions.md`, `validity_domain.md`, `equations.md`, `changelog.md`.
+- ☐ Stiff rate-equation solver adapter under `packages/solver_backends/python_cpu/` or its appropriate location.
+- ☐ Plasma modules under `packages/physics_modules/plasma/` (electromagnetic fields, particle pusher interface, PIC adapter, collisional model, boundary-condition library).
+- ☐ Generality proofs: a molecular-dynamics module, an Ising/Potts module, a wave-equation module, and a reaction-diffusion module each transition `candidate → validated` against an analytic or benchmark reference.
+- ☐ Validation library at `tests/validation/` covers conservation, convergence, paper reproduction, and cross-solver comparison.
+- ☐ At least one module per family transitions `candidate → validated → trusted` with a human-reviewed promotion record.
+- ☐ Registry v1 metadata: `module.yaml` fields for dependencies, benchmarks, and compatibility are populated for every validated module.
+- ☐ `configs/agents.yaml` — `release` role flipped to `enabled: true`.
+- ☐ Regression tests in `tests/regression/` cover every bug already logged in `bugs_and_fixes/bugfixes.md` for the affected module families.
+
+### Status sync at close
+
+Flip the status in one commit touching this milestone, `README.md` Phase 7 row, `timeline.md`, every promoted module's `module.yaml` lifecycle field, and any docs page that named "Phase 7 — pending".

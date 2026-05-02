@@ -35,3 +35,31 @@ Phase 1 is complete when a user can:
 
 ## Open questions
 - How are capsules surfaced in the UI before Phase 2 finalizes the format? Likely: the capsule explorer reads the directory format directly even before the manifest schema is frozen.
+
+## Pre-gate verification
+
+Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2026-05-02 *Phase 0 gate false positive*. Before this phase opens or closes, follow `CLAUDE.md → Phase Gate Procedure` and `AGENTS.md → Phase Gate Discipline`.
+
+### Convention-checker assertions to add when this phase opens
+
+The agent opening Phase 1 translates each deliverable below into an assertion in `scripts/dev/check_repo_conventions.sh`. Starting-point hints, drawn from plan §Phase 1 — replace stubs with real implementations as workstreams complete:
+
+- ☐ `packages/core/pyproject.toml` populated with the runtime's actual dependencies (no longer a Phase-0 placeholder).
+- ☐ `packages/core/src/simworkbench/model_spec/schema.py` — `ModelSpec` types + JSON schema (per ADR-0003).
+- ☐ `packages/core/src/simworkbench/units/__init__.py` — units library wrapper, dimensional validation entrypoints.
+- ☐ `packages/core/src/simworkbench/runtime/runner.py` — start / pause / resume / checkpoint API.
+- ☐ `packages/core/src/simworkbench/serialization/capsule.py` — minimal capsule save/load (Phase 2 finalizes the format).
+- ☐ `packages/physics_modules/laser/gaussian_pulse/{module.yaml,src/}` — first physics module (per ADR-0001 laser focus).
+- ☐ `packages/physics_modules/species/<basic>/{module.yaml,src/}` — basic species module.
+- ☐ `examples/simple_rate_equations/run.py` — first laser-species example, runnable end-to-end.
+- ☐ `examples/ising_phase_transition/run.py` *or* `examples/molecular_dynamics/run.py` — second-domain proof per ADR-0001.
+- ☐ `scripts/dev/run_backend.sh` and `scripts/dev/run_ui.sh` are real implementations (no longer Phase-0 stubs).
+- ☐ `tests/unit/test_modelspec.py`, `tests/unit/test_units.py`, `tests/integration/test_capsule_save_load.py`.
+- ☐ `apps/workbench-ui/src/app/page.tsx` is a real workbench shell with simulation list, run controls, code/docs viewers, diagnostics panel, plot panel, capsule explorer.
+- ☐ Every `docs_site/src/content/*.tsx` page that has a Phase-1 banner has been updated and re-banner'd.
+
+Add more as workstreams evolve. The checker is the source of truth for "phase complete" — markdown checkboxes alone are aspirational.
+
+### Status sync at close
+
+Flip the status to `Complete` only in a single commit that touches every place it is mirrored: this milestone (Status header + Phase Gate boxes), `README.md` Current Development Status table, `program_development/timeline.md`, any new ADR Status field, any `module.yaml` lifecycle field that transitioned, and any `docs_site/src/content/*.tsx` page that named "Phase 1 — pending" anywhere.
