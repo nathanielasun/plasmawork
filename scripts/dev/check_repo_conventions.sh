@@ -172,6 +172,14 @@ check_dir_exists docs_site
 check_dir_exists packages/core
 check_file_exists packages/core/pyproject.toml
 check_file_exists packages/core/src/simworkbench/__init__.py
+# Phase 1B (Workstream 1B / ADR-0004) — units subsystem.
+check_file_exists packages/core/src/simworkbench/units/__init__.py
+check_file_exists packages/core/src/simworkbench/units/registry.py
+check_file_exists packages/core/src/simworkbench/units/quantity.py
+check_file_exists packages/core/src/simworkbench/units/validators.py
+check_grep_in_file '"pint' packages/core/pyproject.toml "packages/core/pyproject.toml depends on pint"
+check_grep_in_file '"pydantic' packages/core/pyproject.toml "packages/core/pyproject.toml depends on pydantic"
+check_grep_in_file '"pyyaml' packages/core/pyproject.toml "packages/core/pyproject.toml depends on pyyaml"
 check_dir_exists packages/agent_orchestration
 check_dir_exists packages/physics_modules
 check_dir_exists packages/solver_backends

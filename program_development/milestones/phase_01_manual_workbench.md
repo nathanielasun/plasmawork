@@ -44,9 +44,9 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 The agent opening Phase 1 translates each deliverable below into an assertion in `scripts/dev/check_repo_conventions.sh`. Starting-point hints, drawn from plan §Phase 1 — replace stubs with real implementations as workstreams complete:
 
-- ☐ `packages/core/pyproject.toml` populated with the runtime's actual dependencies (no longer a Phase-0 placeholder).
+- ☑ `packages/core/pyproject.toml` populated with the runtime's actual dependencies (no longer a Phase-0 placeholder). *Done 2026-05-02 (Workstream 1B).*
 - ☐ `packages/core/src/simworkbench/model_spec/schema.py` — `ModelSpec` types + JSON schema (per ADR-0003).
-- ☐ `packages/core/src/simworkbench/units/__init__.py` — units library wrapper, dimensional validation entrypoints.
+- ☑ `packages/core/src/simworkbench/units/__init__.py` — units library wrapper, dimensional validation entrypoints. *Done 2026-05-02 (Workstream 1B): `units/{__init__,registry,quantity,validators}.py`, 30 unit tests passing.*
 - ☐ `packages/core/src/simworkbench/runtime/runner.py` — start / pause / resume / checkpoint API.
 - ☐ `packages/core/src/simworkbench/serialization/capsule.py` — minimal capsule save/load (Phase 2 finalizes the format).
 - ☐ `packages/physics_modules/laser/gaussian_pulse/{module.yaml,src/}` — first physics module (per ADR-0001 laser focus).
@@ -54,7 +54,7 @@ The agent opening Phase 1 translates each deliverable below into an assertion in
 - ☐ `examples/simple_rate_equations/run.py` — first laser-species example, runnable end-to-end.
 - ☐ `examples/ising_phase_transition/run.py` *or* `examples/molecular_dynamics/run.py` — second-domain proof per ADR-0001.
 - ☐ `scripts/dev/run_backend.sh` and `scripts/dev/run_ui.sh` are real implementations (no longer Phase-0 stubs).
-- ☐ `tests/unit/test_modelspec.py`, `tests/unit/test_units.py`, `tests/integration/test_capsule_save_load.py`.
+- ☐ `tests/unit/test_modelspec.py`, ☑ `tests/unit/test_units.py`, ☐ `tests/integration/test_capsule_save_load.py`.
 - ☐ `apps/workbench-ui/src/app/page.tsx` is a real workbench shell with simulation list, run controls, code/docs viewers, diagnostics panel, plot panel, capsule explorer.
 - ☐ Every `docs_site/src/content/*.tsx` page that has a Phase-1 banner has been updated and re-banner'd.
 

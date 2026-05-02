@@ -4,10 +4,42 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "simworkbench-core"
-version = "0.0.0"
+version = "0.1.0"
 description = "Core Python package for the Scientific Simulation Workbench."
 requires-python = ">=3.11"
-dependencies = []
+authors = [
+  { name = "Scientific Simulation Workbench" },
+]
+license = { text = "See repository LICENSE" }
+dependencies = [
+  # Phase 1B — Units. ADR-0004 (pint).
+  "pint>=0.23,<1.0",
+  # Phase 1A — ModelSpec IR. ADR-0003.
+  "pydantic>=2.5,<3.0",
+  "pyyaml>=6.0,<7.0",
+  # Numerical core.
+  "numpy>=1.26,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=4.1",
+  "ruff>=0.6",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["../../tests/unit", "../../tests/integration"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "PL"]
+ignore = ["PLR0913"]  # too-many-arguments — physics functions legitimately have many parameters
