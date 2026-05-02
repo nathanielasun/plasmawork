@@ -31,9 +31,16 @@ export default function Troubleshooting() {
       <h3>The convention checker fails</h3>
       <p>
         Run <code>./scripts/dev/check_repo_conventions.sh</code> with
-        <code>--verbose</code> when implemented. It prints which rule failed
-        and which file it expected. Fix the underlying issue rather than
-        suppressing the check.
+        <code>--verbose</code>. It prints which rule failed and which file it
+        expected. Fix the underlying issue rather than suppressing the check.
+      </p>
+
+      <h3>A documented script is missing</h3>
+      <p>
+        That is a Phase 0 convention failure. The README may document planned
+        commands before the subsystem exists, but the command path itself must
+        exist and either dispatch to the implementation or print the phase
+        where implementation is scheduled.
       </p>
 
       <h3>A simulation runs but produces nonsense</h3>

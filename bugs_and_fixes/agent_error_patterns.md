@@ -116,6 +116,19 @@ A `WARNING` line means the rule is too aggressive.
 
 ---
 
+## Error Pattern: Marking a phase gate complete with incomplete deliverable checks
+
+### Why it is bad
+Directory-level checks can make a phase appear complete while required package manifests, command wrappers, milestone files, or entrypoints are missing. Later agents then trust a false gate and build on an incomplete scaffold.
+
+### Required behavior
+Translate phase gates into exact convention checks. If a README documents a command, the script path must exist. If program-development rules require Phase 0 through Phase 10 milestone files, verify all of them by their plan-matching names.
+
+### Detection
+Compare `scientific_simulation_workbench_agent_plan.md`, `README.md`, and `program_development/README.md` against `scripts/dev/check_repo_conventions.sh`. Any deliverable named in those documents but absent from the checker is a gap.
+
+---
+
 ## Error Pattern: Switching backends to make output "look better"
 
 ### Why it is bad

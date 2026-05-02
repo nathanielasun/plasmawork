@@ -32,6 +32,34 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-02: Phase 0 gate false positive for missing skeleton files
+
+### Affected subsystem
+Repository bootstrap / convention checker / development history.
+
+### Symptoms
+Phase 0 was marked complete even though several plan-required or README-advertised artifacts were missing:
+
+- milestone files existed only for Phase 0-5 and several filenames did not match plan phase numbers;
+- `apps/workbench-ui/package.json`, `apps/workbench-ui/tsconfig.json`, `packages/core/pyproject.toml`, and `packages/core/src/simworkbench/__init__.py` were absent despite the plan's initial tree;
+- README-documented wrapper scripts such as `scripts/docs/dev.sh`, `scripts/docs/build.sh`, and `scripts/test/all.sh` did not exist;
+- `README.md` still marked Phase 0 as in progress while the milestone/timeline marked it complete.
+
+### Root cause
+The Phase 0 convention checker verified broad directories and a small milestone subset, but did not verify the full plan-matching skeleton, executable documented scripts, or Phase 0-10 milestone coverage. Documentation and milestone status drifted after the gate was marked as passed.
+
+### Fix
+Added the missing Phase 0 package skeleton files, documented command wrappers, and plan-matching milestone files for Phase 0 through Phase 10. Removed stale Phase 2-5 milestone filenames. Extended `scripts/dev/check_repo_conventions.sh` to verify the missing package files, executable scripts, and all Phase 0-10 milestone files. Updated README, docs-site pages, development timeline, and bug-memory records to reflect the corrected gate.
+
+Commit: pending.
+
+### Regression protection
+- `scripts/dev/check_repo_conventions.sh` now checks all corrected artifacts and passes with 116 checks.
+- `bugs_and_fixes/regression_tests.md` cross-lists this convention checker guard.
+
+### Agent warning
+Do not mark a phase gate complete from directory-level checks alone. Check the exact deliverables named by the plan, README command paths, and development-history naming rules.
+
 ## 2026-05-02: Bare `build/` ignore rule swallowed `scripts/build/`
 
 ### Affected subsystem
@@ -53,8 +81,7 @@ Commit: pending Phase 0 commit.
 ### Regression protection
 - Added `scripts/build/.gitkeep` so the directory is staged.
 - Documented the trap in `agent_error_patterns.md` (entry: "Bare gitignore globs that conflict with project directories").
-- The convention checker should be extended (Phase 1) to verify that `scripts/build/<file>` and `scripts/dev/<file>` are not gitignored. Tracked as a follow-up.
+- Extended `scripts/dev/check_repo_conventions.sh` to verify representative source paths under `scripts/build/`, `scripts/dev/`, `scripts/test/`, `scripts/docs/`, `packages/physics_modules/`, `apps/workbench-ui/`, and `docs_site/` are not gitignored.
 
 ### Agent warning
 Do not generalize a `build/` ignore rule across the whole tree. Project directories whose name happens to be `build` exist deliberately. Anchor build-output ignores to the place they are produced, or use specific patterns like `apps/*/build/`.
-

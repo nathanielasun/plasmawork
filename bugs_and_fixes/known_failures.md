@@ -38,4 +38,4 @@ Linked issue, ADR, or planned phase.
 
 <!-- Append entries below this line. -->
 
-_No known failures yet. The repository is in Phase 0 bootstrap._
+_No known failures yet. The repository has completed the Phase 0 bootstrap gate._

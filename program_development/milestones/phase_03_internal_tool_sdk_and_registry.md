@@ -2,8 +2,6 @@
 
 **Status: Not started**
 
-> Note: the plan numbers Phase 3 as "Internal Tool SDK and Registry" (plan §Phase 3). The filename keeps the original plan's placeholder convention; the content below tracks the actual Phase 3.
-
 ## Objective
 Allow users and agents to create, import, validate, document, and reuse internal tools. (Plan §Phase 3.)
 
@@ -21,11 +19,4 @@ Allow users and agents to create, import, validate, document, and reuse internal
 Phase 3 is complete when a user can create a custom diagnostic tool, test it, document it, register it, use it in an experiment, and export it.
 
 ## Acceptance scenario
-End-to-end the same as plan §18.3:
-1. User opens Internal Tools panel.
-2. Creates "New Diagnostic Tool" from template.
-3. Edits code.
-4. Tests pass.
-5. Tool reaches `candidate`.
-6. Tool is applied to an experiment.
-7. After repeated validation, user promotes tool to `trusted`.
+End-to-end scenario follows plan §18.3: create a diagnostic tool from a template, edit it, test it, register it as `candidate`, apply it to an experiment, and later promote it only with human-reviewed validation evidence.

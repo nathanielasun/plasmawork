@@ -16,6 +16,11 @@ packages/
   visualization/          plotters, viewers, dashboards, exporters
   internal_tools/         SDK, registry, examples, templates`}</code>
       </pre>
+      <p>
+        Phase 0 includes concrete package manifests for the UI and Python core
+        so bootstrap, convention, and future build scripts have stable entry
+        points even before the runtime and UI are implemented.
+      </p>
 
       <h2>Dependency direction</h2>
       <p>

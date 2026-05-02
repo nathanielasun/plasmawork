@@ -2,7 +2,7 @@
 
 A modular workbench for laser physics, laser fusion, laser–species interaction, and adjacent computational-physics domains. Designed to turn a scientific paper into a structured, inspectable, testable, visualizable computational experiment — and to keep the resulting code, data, and provenance bundled in a portable simulation capsule.
 
-> **Status: Phase 0 — Repository Bootstrap.** The scaffolding, governance files, docs skeleton, and convention checker are being put in place. The Python core, UI, and modules described below are scheduled for Phase 1+.
+> **Status: Phase 0 — Repository Bootstrap complete.** The scaffolding, governance files, docs skeleton, and convention checker are in place. The Python core runtime, workbench UI, and scientific modules described below are scheduled for Phase 1+.
 
 The full architectural plan is in [`scientific_simulation_workbench_agent_plan.md`](./scientific_simulation_workbench_agent_plan.md).
 
@@ -28,7 +28,7 @@ Initial focus is laser–species interaction (KrF excimer, photoionization, rate
 
 | Phase | Description | Status |
 |---|---|---|
-| 0 | Repository bootstrap, governance, docs skeleton, bug-memory and dev-history systems | **In progress** |
+| 0 | Repository bootstrap, governance, docs skeleton, bug-memory and dev-history systems | **Complete** |
 | 1 | Manual workbench: ModelSpec, units, runtime, basic modules, UI shell | Pending |
 | 2 | Simulation capsule format & provenance | Pending |
 | 3 | Internal tool SDK and registry | Pending |
@@ -46,7 +46,7 @@ See [`program_development/milestones/`](./program_development/milestones/) for p
 
 ## Installation
 
-> Phase 0 — install scripts are placeholders. Full instructions land in Phase 1.
+> Phase 0 — the bootstrap script installs the minimal core package skeleton and Node workspaces. Full runtime setup lands in Phase 1.
 
 Prerequisites (planned):
 
@@ -54,13 +54,13 @@ Prerequisites (planned):
 - Node.js ≥ 20 (for `apps/workbench-ui` and `docs_site`)
 - A C/C++ toolchain (for compiled kernels in Phase 8)
 
-Bootstrap (when implemented):
+Bootstrap:
 
 ```bash
 ./scripts/dev/install.sh
 ```
 
-This will create a Python virtualenv under `.venv/`, install the workbench Python packages in editable mode, and install the UI/docs Node dependencies.
+This creates a Python virtualenv under `.venv/`, installs the Phase 0 core package in editable mode, and installs the UI/docs Node dependencies.
 
 ---
 
@@ -79,6 +79,8 @@ This will create a Python virtualenv under `.venv/`, install the workbench Pytho
 # Validate repository conventions
 ./scripts/dev/check_repo_conventions.sh
 ```
+
+The UI, backend, capsule, kernel, and export scripts exist in Phase 0 so documented commands do not point at missing files. Scripts for later phases print an explicit scheduled-phase message until their subsystem is implemented.
 
 ---
 

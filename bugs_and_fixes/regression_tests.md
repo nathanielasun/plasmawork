@@ -4,7 +4,8 @@ Index of regression tests and the bugs they protect against. Every entry in `bug
 
 | Bug entry | Test path | What it asserts |
 |---|---|---|
-| 2026-05-02 — Bare `build/` swallowed `scripts/build/` | `scripts/dev/check_repo_conventions.sh` (gitignore-collision check, follow-up) | `scripts/build/<file>` and other project-owned `build/` directories are not gitignored. Initial mitigation: `/build/` rule is anchored to root. Full scripted regression check is a follow-up to extend the convention checker. |
+| 2026-05-02 — Phase 0 gate false positive for missing skeleton files | `scripts/dev/check_repo_conventions.sh` | All Phase 0 skeleton/package/script files and Phase 0-10 milestone files exist, and documented scripts are executable. |
+| 2026-05-02 — Bare `build/` swallowed `scripts/build/` | `scripts/dev/check_repo_conventions.sh` | `scripts/build/<file>` and other project-owned source directories are not gitignored. |
 
 ---
 

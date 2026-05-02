@@ -77,6 +77,21 @@ check_file_exists() {
   fi
 }
 
+check_file_executable() {
+  local path="$1"
+  local label="${2:-$1}"
+  if [[ -f "$path" && -x "$path" ]]; then
+    PASS=$((PASS+1))
+    note "$label executable"
+  elif [[ -f "$path" ]]; then
+    FAIL=$((FAIL+1))
+    fail "$label not executable: $path"
+  else
+    FAIL=$((FAIL+1))
+    fail "$label missing: $path"
+  fi
+}
+
 check_dir_exists() {
   local path="$1"
   local label="${2:-$1}"
@@ -150,8 +165,13 @@ check_file_exists temp_runs/.gitkeep
 # ---------------------------------------------------------------------------
 section "Top-level package directories"
 check_dir_exists apps/workbench-ui
+check_file_exists apps/workbench-ui/package.json
+check_file_exists apps/workbench-ui/tsconfig.json
+check_file_exists apps/workbench-ui/src/app/page.tsx
 check_dir_exists docs_site
 check_dir_exists packages/core
+check_file_exists packages/core/pyproject.toml
+check_file_exists packages/core/src/simworkbench/__init__.py
 check_dir_exists packages/agent_orchestration
 check_dir_exists packages/physics_modules
 check_dir_exists packages/solver_backends
@@ -160,11 +180,29 @@ check_dir_exists packages/internal_tools
 
 # ---------------------------------------------------------------------------
 section "Tests, scripts, examples, configs"
+check_file_exists tests/README.md
 for d in unit integration regression validation performance; do
   check_dir_exists "tests/$d" "tests/$d"
 done
 for d in dev build test docs clean export; do
   check_dir_exists "scripts/$d" "scripts/$d"
+done
+for f in dev/install.sh \
+         dev/run_ui.sh \
+         dev/run_backend.sh \
+         dev/run_capsule.sh \
+         build/ui.sh \
+         build/kernels.sh \
+         docs/dev.sh \
+         docs/build.sh \
+         test/all.sh \
+         test/unit.sh \
+         test/integration.sh \
+         test/regression.sh \
+         test/validation.sh \
+         test/performance.sh \
+         export/capsule.sh; do
+  check_file_executable "scripts/$f" "script scripts/$f"
 done
 for d in laser_species krf_excimer simple_rate_equations molecular_dynamics ising_phase_transition pde_wave_equation; do
   check_dir_exists "examples/$d" "examples/$d"
@@ -197,10 +235,15 @@ check_file_exists program_development/architectural_decisions/ADR-0003-model-spe
 check_dir_exists  program_development/milestones
 for f in phase_00_repository_bootstrap.md \
          phase_01_manual_workbench.md \
-         phase_02_agent_assisted_generation.md \
-         phase_03_validated_module_registry.md \
-         phase_04_hpc_backends.md \
-         phase_05_autonomous_experiment_design.md; do
+         phase_02_simulation_capsule_system.md \
+         phase_03_internal_tool_sdk_and_registry.md \
+         phase_04_agent_assisted_paper_ingestion.md \
+         phase_05_modelspec_generation_and_module_mapping.md \
+         phase_06_agentic_code_generation_in_sandboxed_capsules.md \
+         phase_07_validated_physics_module_registry.md \
+         phase_08_hpc_and_hardware_backends.md \
+         phase_09_parameter_sweeps_optimization_uncertainty.md \
+         phase_10_autonomous_computational_experiment_design.md; do
   check_file_exists "program_development/milestones/$f" "milestone $f"
 done
 

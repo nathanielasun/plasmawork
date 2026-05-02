@@ -6,16 +6,20 @@ The same source pages are loaded inside the workbench UI under the **Documentati
 
 ## Develop
 
+From the repository root:
+
 ```bash
-npm install
-npm run dev      # http://localhost:3000
+./scripts/dev/install.sh
+./scripts/docs/dev.sh      # http://localhost:3000
 ```
 
 ## Build
 
+From the repository root:
+
 ```bash
-npm run build
-npm run preview
+./scripts/docs/build.sh
+npm --prefix docs_site run preview
 ```
 
 ## Layout

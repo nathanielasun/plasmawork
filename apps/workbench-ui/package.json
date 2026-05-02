@@ -1,0 +1,16 @@
+{
+  "name": "@simworkbench/workbench-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 0 placeholder package for the Scientific Simulation Workbench UI.",
+  "scripts": {
+    "dev": "node -e \"console.log('Workbench UI shell is scheduled for Phase 1F.')\"",
+    "build": "node -e \"console.log('Workbench UI build is scheduled for Phase 1F.')\"",
+    "typecheck": "tsc --noEmit",
+    "test": "node -e \"console.log('Workbench UI tests are scheduled for Phase 1F.')\""
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
