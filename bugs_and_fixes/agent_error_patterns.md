@@ -245,6 +245,22 @@ When the plan and the milestone hints disagree, the plan wins. Update the milest
 
 ---
 
+## Error Pattern: Mixing intentionally failing backlog checks into the default test gate
+
+### Why it is bad
+Open workstream TODO assertions are useful because they keep unfinished deliverables visible. They become harmful when they run in the default convention checker path: documented commands such as `./scripts/test/all.sh` fail before pytest, agents cannot distinguish real regressions from expected backlog, and "tests are green" becomes ambiguous.
+
+### Required behavior
+The default `scripts/dev/check_repo_conventions.sh` mode checks hard repository invariants and completed deliverables only, and must stay green. Intentionally failing assertions for open workstreams belong behind `scripts/dev/check_repo_conventions.sh --include-open-workstreams`. `scripts/test/all.sh` and other normal test wrappers must call default checker mode only. When a workstream is completed, promote its assertions into the default gate or otherwise make completion visible in the default checker before claiming the workstream done.
+
+### Detection
+- Run `./scripts/dev/check_repo_conventions.sh --quiet`; it must pass unless a completed invariant is genuinely broken.
+- Run `./scripts/dev/check_repo_conventions.sh --include-open-workstreams --quiet`; failures here are allowed only if they match named open workstream TODOs in `program_development/milestones/`.
+- Review `scripts/test/all.sh`; it must not pass `--include-open-workstreams`.
+- Regression guard: `tests/regression/test_convention_checker_modes.py`.
+
+---
+
 ## Error Pattern: Shallow-copying a mutable test fixture before mutating it
 
 ### Why it is bad

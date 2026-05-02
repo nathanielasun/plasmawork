@@ -30,9 +30,17 @@ export default function Troubleshooting() {
 
       <h3>The convention checker fails</h3>
       <p>
-        Run <code>./scripts/dev/check_repo_conventions.sh</code> with
-        <code>--verbose</code>. It prints which rule failed and which file it
-        expected. Fix the underlying issue rather than suppressing the check.
+        The default <code>./scripts/dev/check_repo_conventions.sh</code> command
+        is the hard repository gate and should pass. Run it with{" "}
+        <code>--verbose</code> to see the failed invariant and fix the
+        underlying issue rather than suppressing the check.
+      </p>
+      <p>
+        If you intentionally ran{" "}
+        <code>./scripts/dev/check_repo_conventions.sh --include-open-workstreams</code>,
+        failures may be the active workstream TODO backlog. Those failures are
+        expected until the named workstream entities land, and they are kept
+        separate from the normal test runner.
       </p>
 
       <h3>A documented script is missing</h3>

@@ -24,14 +24,31 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1 — open-workstream checker mode correction)
+
+### Completed
+- **Convention checker mode split.** `scripts/dev/check_repo_conventions.sh` default mode now checks hard repository invariants and completed deliverables only, so `./scripts/test/all.sh` remains runnable while 1C/1D/1E are open. The intentional implementation backlog is opt-in via `./scripts/dev/check_repo_conventions.sh --include-open-workstreams`.
+- **Corrected 1C TODO coverage.** Added missing backlog assertions for `tests/unit/test_runtime_progress.py` and for `scripts/dev/run_backend.sh` no longer being the Phase-0 stub. The shared `examples/simple_rate_equations/run.py` assertion is tracked once for 1C/1D to avoid duplicate failures for the same file.
+- **Corrected 1D TODO coverage.** Added missing module-template assertions for `packages/physics_modules/templates/module_template/src/__init__.py` and `packages/physics_modules/templates/module_template/tests/test_template.py`.
+- **Regression guard.** Added `tests/regression/test_convention_checker_modes.py` so the default checker must pass while opt-in open-workstream mode exposes the current Phase 1 backlog (`60 failure(s), 142 check(s) ok`).
+- **Agent instructions.** Updated `AGENTS.md` and `CLAUDE.md` to require default checker green, keep intentionally failing TODO assertions opt-in, and prevent `scripts/test/all.sh` from depending on open-workstream backlog mode.
+
+### Open questions
+- None. The remaining 60 opt-in failures are the explicit 1C/1D/1E implementation backlog, not hard-gate failures.
+
+### Next steps
+- Implement Workstream 1C first. As each workstream closes, promote its completed assertions into the default hard gate and update this milestone/status set in one commit.
+
+---
+
 ## 2026-05-02 (Phase 1 — Workstreams 1C, 1D, 1E opened in parallel)
 
 ### Completed
 - **Bug-checks before opening.** Ran the three code-craft greps (`bugs_and_fixes/agent_error_patterns.md`): residual `data = dict(MINIMAL_SPEC)` at `tests/unit/test_modelspec.py:67` was missed in the linter sweep — fixed in this commit. No `global` declarations and no module-level mutable singletons in `packages/core/src/`. Bug-memory greps surfaced three patterns directly relevant to the new workstreams: *naive solver loops* (1C runtime + 1D rate-equation), *fabricated coefficients* (1D modules), *writing artifacts outside project dir* (1C checkpoints). Each carries forward into the milestone's per-workstream Pre-gate carry-over notes.
-- **Workstream 1C — Simulation Runtime — opened.** Plan §Phase 1 / Workstream 1C tasks (start/stop/pause/resume, checkpointing, deterministic seeds, event/log, progress) translated into 16 per-entity convention-checker assertions covering `simworkbench.runtime.{__init__,runner,checkpoint,seeds,events,progress}`, `simworkbench.paths`, six unit tests, one integration test, one regression test (writes-only-to-temp_runs), the real `scripts/dev/run_backend.sh`, and the runnable `examples/simple_rate_equations/run.py`.
-- **Workstream 1D — Basic Physics Modules — opened.** Plan §Phase 1 / Workstream 1D modules translated into 30 per-entity assertions: a module template, seven physics modules (laser/gaussian_pulse, species/basic, species/rate_equation_0d, laser/simple_absorption, laser/simple_emission, molecular_dynamics/lennard_jones, phase_transition/ising_2d) each with `module.yaml` + `README.md` + a unit test, three runnable examples (rate equations, MD, Ising), and three validation tests (particle conservation, MD energy drift, Ising critical temperature).
+- **Workstream 1C — Simulation Runtime — opened.** Plan §Phase 1 / Workstream 1C tasks (start/stop/pause/resume, checkpointing, deterministic seeds, event/log, progress) were initially translated into 16 per-entity convention-checker assertions. The 2026-05-02 checker-mode correction above added the missing progress-test assertion and explicit non-stub backend assertion.
+- **Workstream 1D — Basic Physics Modules — opened.** Plan §Phase 1 / Workstream 1D modules were initially translated into 30 per-entity assertions: a module template, seven physics modules (laser/gaussian_pulse, species/basic, species/rate_equation_0d, laser/simple_absorption, laser/simple_emission, molecular_dynamics/lennard_jones, phase_transition/ising_2d), runnable examples, and validation tests. The 2026-05-02 checker-mode correction above added the missing template source/test assertions and clarified the shared rate-equation example assertion.
 - **Workstream 1E — Visualization and Diagnostics — opened.** Plan §Phase 1 / Workstream 1E translated into 13 per-entity assertions: `simworkbench.diagnostics.{__init__,api,statistics,streams}`, three plotters (line, heatmap, particle scatter), four tests, and a `matplotlib` dependency in `pyproject.toml`.
-- **Convention checker.** Now reports `56 failure(s), 142 check(s) ok`. The 56 failures are the explicit TODO list for 1C/1D/1E. Per `AGENTS.md → "When starting a workstream"` step 5, this is the correct state during a workstream-opening commit.
+- **Convention checker.** At the opening commit it reported `56 failure(s), 142 check(s) ok`. The checker-mode correction above supersedes that state: default mode now passes, and opt-in open-workstream mode reports the corrected `60 failure(s), 142 check(s) ok` backlog.
 - **Phase 1 milestone Pre-gate verification.** Restructured by workstream (1A done, 1B done, 1C/1D/1E open, 1F pending) so each workstream lists its plan-named entities verbatim and points back to the bug-memory patterns it must honor.
 
 ### Open questions

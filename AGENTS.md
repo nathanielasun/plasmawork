@@ -39,7 +39,7 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 
 10. **Prefer precise validated modules over broad approximations.** Fast nonsense is still nonsense. If a coefficient or sub-model is missing, mark the run `exploratory` and surface the gap — do not silently invent values.
 
-11. **The convention checker is the source of truth for phase completion.** A phase is complete only when `scripts/dev/check_repo_conventions.sh` exits zero against every deliverable named by the plan, the README, and the relevant milestone file. Markdown checkboxes are aspirational; the checker is enforced. See **Phase Gate Discipline** below.
+11. **The convention checker is the source of truth for repository health and completed deliverables.** The default `scripts/dev/check_repo_conventions.sh` mode is the hard gate and must stay green. Intentionally open workstream TODOs live behind `scripts/dev/check_repo_conventions.sh --include-open-workstreams`; that mode may fail by design and must not be wired into `scripts/test/all.sh`. A phase is complete only when the default checker exits zero and no relevant open-workstream TODO assertion remains failing. Markdown checkboxes are aspirational; checker assertions are enforced. See **Phase Gate Discipline** below.
 
 12. **Documented commands must exist as executables.** Every script path mentioned in `README.md`, `CLAUDE.md`, `AGENTS.md`, or any docs page must be present on disk and executable, even before its subsystem is implemented. Use stubs that print "Phase N — not implemented yet" for unimplemented commands. A docs reference and the corresponding stub land in the same commit.
 
@@ -149,9 +149,9 @@ Phase 0 was initially marked complete with stale README status, missing package 
 
 A phase is genuinely complete only when **all three** of the following are true:
 
-1. **Convention checker is green.** `scripts/dev/check_repo_conventions.sh` exits zero. Every plan-named deliverable, every documented command path, every milestone filename, and every package entrypoint has a corresponding assertion.
+1. **Default convention checker is green.** `scripts/dev/check_repo_conventions.sh` exits zero. Every completed plan-named deliverable, every documented command path, every milestone filename, and every package entrypoint has a corresponding hard-gate assertion.
 2. **Status is synchronized everywhere.** The phase status reads identically in `README.md`, `program_development/milestones/phase_NN_*.md`, and `program_development/timeline.md`. (Add: any ADR Status field, any `module.yaml` / `tool.yaml` lifecycle field, any `docs_site/src/content/*.tsx` page that names the status.) Status flips happen in **one commit** that touches every place the status is mirrored.
-3. **Deliverables-to-checker mapping is complete.** Every deliverable listed in the milestone file's Phase Gate, the relevant plan section, and the `README.md` status table has at least one assertion in the convention checker. Hand-tracking deliverables in markdown is not enough — they get translated into checks before the gate is claimed.
+3. **Deliverables-to-checker mapping is complete.** Every deliverable listed in the milestone file's Phase Gate, the relevant plan section, and the `README.md` status table has at least one checker assertion. Completed deliverables are hard-gate assertions. Open deliverables are opt-in assertions under `--include-open-workstreams` until implemented, then promoted to the default gate before the workstream is claimed complete.
 
 ### When starting a phase
 
@@ -159,9 +159,9 @@ The first action of any agent opening a new phase is to extend the convention ch
 
 1. Read the plan section for that phase, the milestone file, and the README sections it touches.
 2. List every deliverable: package manifests, source entrypoints, documented commands, configs, ADRs, milestone files, docs pages, examples, tests.
-3. For each deliverable, add an assertion to `scripts/dev/check_repo_conventions.sh` (file exists, executable, contains required pattern, does not collide with `.gitignore`, etc.).
-4. The checker fails after this step — that is correct. The failures are the work to do.
-5. Implement the work. The checker passes when the phase is genuinely complete.
+3. For each open deliverable, add an assertion to the `--include-open-workstreams` section of `scripts/dev/check_repo_conventions.sh` (file exists, executable, contains required pattern, does not collide with `.gitignore`, etc.).
+4. Run `scripts/dev/check_repo_conventions.sh --include-open-workstreams`; that opt-in mode fails after this step — that is correct. The default checker must still pass unless a completed invariant regressed.
+5. Implement the work. As deliverables are completed, move their assertions into the default gate or otherwise ensure the default checker owns them before claiming the phase complete.
 
 ### When starting a workstream
 
@@ -170,9 +170,9 @@ A workstream is the smallest unit a phase can claim "done" against. The Phase 1A
 1. Open `scientific_simulation_workbench_agent_plan.md` and locate `## Phase N` → `### Workstream NX:`. Read the entire bullet list.
 2. Enumerate every named entity — every class name, file path, config key, script, ADR, test, and example. Treat each as one row of the deliverable table.
 3. Cross-check against the milestone's `Pre-gate verification → Convention-checker assertions to add` list. If the milestone is missing an entity from the plan, **update the milestone first** in a single small commit before any code lands. The milestone hints must reflect the plan's deliverable list, not the agent's mental model.
-4. For every entity, add or extend a `scripts/dev/check_repo_conventions.sh` assertion. Prefer one assertion per named entity rather than one assertion for the whole directory.
-5. Run the checker — it should fail loudly with one failure per missing entity. Implement until each one is green.
-6. Workstream done = every plan-named entity has a green assertion AND a unit test (or an explicitly-deferred-to-named-followup with a checker assertion that fails until resolved).
+4. For every open entity, add or extend a `scripts/dev/check_repo_conventions.sh --include-open-workstreams` assertion. Prefer one assertion per named entity rather than one assertion for the whole directory. Do not add intentionally failing TODO assertions to the default checker.
+5. Run `scripts/dev/check_repo_conventions.sh --include-open-workstreams` — it should fail loudly with one failure per missing entity. Run the default checker too; it must stay green.
+6. Workstream done = every plan-named entity has a green default-gate assertion AND a unit test (or an explicitly-deferred-to-named-followup with an opt-in checker assertion that fails until resolved).
 
 This sequence is mandatory. The illustrative starting-point hints in the milestone Pre-gate sections are exactly that — starting points. They cannot replace the plan's enumerated workstream description.
 
@@ -181,14 +181,15 @@ This sequence is mandatory. The illustrative starting-point hints in the milesto
 Before flipping any phase status to "Complete":
 
 1. Run `scripts/dev/check_repo_conventions.sh` and confirm zero failures.
-2. Run any subsystem tests relevant to the phase.
-3. Audit status references with a single grep:
+2. Run `scripts/dev/check_repo_conventions.sh --include-open-workstreams` and confirm no TODO assertion remains for the phase being closed.
+3. Run any subsystem tests relevant to the phase.
+4. Audit status references with a single grep:
    ```bash
    grep -nE "Phase NN" README.md program_development/milestones/phase_NN_*.md program_development/timeline.md
    ```
    Confirm every match agrees with the new status.
-4. Commit the status flip in one commit that touches all status-bearing files at once.
-5. Push (this is a major change per **Autonomous Git Operations**).
+5. Commit the status flip in one commit that touches all status-bearing files at once.
+6. Push (this is a major change per **Autonomous Git Operations**).
 
 ### When a checker assertion is wrong
 
@@ -236,7 +237,7 @@ Routine tweaks (typo fixes, single-file polish, in-progress edits) commit but do
 ### Commit and push hygiene
 
 - Stage specific files by path. Never use `git add -A` or `git add .` — those are how secrets and stray artifacts slip in.
-- Before committing, run the convention checker (`scripts/dev/check_repo_conventions.sh`) and the tests relevant to the touched subsystem. If either fails, fix the underlying problem before the commit. Do not bypass.
+- Before committing, run the default convention checker (`scripts/dev/check_repo_conventions.sh`) and the tests relevant to the touched subsystem. If either fails, fix the underlying problem before the commit. If the diff changes open workstream planning or TODO assertions, also run `scripts/dev/check_repo_conventions.sh --include-open-workstreams` and verify the failure list is intentional and documented. Do not bypass.
 - Commit messages are imperative, ≤ 72 characters in the subject, with a body explaining *why*. Reference the ADR, bugfix entry, workstream ID, or milestone where relevant.
 - Always create a new commit rather than amending — amending after a hook failure modifies the wrong commit and risks losing work.
 - The `Co-Authored-By:` trailer for the Claude model that did the work is required.
@@ -265,7 +266,7 @@ A task is done when:
 7. `program_development/timeline.md` updated if milestone-relevant.
 8. No local temp/cache/generated files staged.
 9. Generated code remains inspectable, with units and assumptions surfaced.
-10. Convention checker (`scripts/dev/check_repo_conventions.sh`) passes. If the task added or changed a deliverable that the plan, README, or any milestone references, the checker has been **extended** to assert that deliverable — not just left at its prior assertions.
+10. Default convention checker (`scripts/dev/check_repo_conventions.sh`) passes. If the task added or changed a deliverable that the plan, README, or any milestone references, the checker has been **extended** to assert that deliverable — completed deliverables in default mode, open TODOs in `--include-open-workstreams`.
 11. Every documented command path the change introduced exists on disk as an executable (or stub). Every plan-derived pattern (gitignore rule, filename, identifier) has been reality-tested.
-12. **For workstream-completion tasks**: every plan-named entity in `§Phase N → Workstream NX` has been enumerated, asserted in the convention checker, implemented, and tested. The milestone's Pre-gate hint list has been updated where it disagreed with the plan. If any entity was deferred, the deferral is named in the commit message and an explicit follow-up checker assertion encodes the deferral.
+12. **For workstream-completion tasks**: every plan-named entity in `§Phase N → Workstream NX` has been enumerated, asserted in the checker, implemented, and tested. The milestone's Pre-gate hint list has been updated where it disagreed with the plan. If any entity was deferred, the deferral is named in the commit message and an explicit opt-in follow-up checker assertion encodes the deferral. Intentionally failing TODO assertions must not break `scripts/test/all.sh`.
 13. The change is committed. If the change is *major* (per the criteria in **Autonomous Git Operations** above), it has also been pushed to `origin`.

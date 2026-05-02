@@ -32,6 +32,27 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-02: Open workstream TODOs broke the default test gate
+
+### Affected subsystem
+`scripts/dev/check_repo_conventions.sh`, `scripts/test/all.sh`, Phase 1 milestone tracking.
+
+### Symptoms
+Opening Phase 1 Workstreams 1C, 1D, and 1E inserted intentionally failing TODO assertions into the default convention checker. As a result, `./scripts/test/all.sh` failed before running pytest even though the implemented 1A/1B unit and integration tests were green. The TODO backlog also under-covered the plan: the 1C progress test was missing, the `run_backend.sh` Phase-0 stub satisfied only the generic executable check, and the 1D module template source/test files were not asserted.
+
+### Root cause
+The checker mixed two different concepts: hard repository invariants for completed work and intentionally failing assertions for open implementation backlog. Because `scripts/test/all.sh` calls the default checker, expected TODO failures became normal test failures. The workstream-opening checklist also counted grouped prose instead of every named file/assertion.
+
+### Fix
+Split the convention checker into default hard-gate mode and opt-in open-workstream mode. `scripts/dev/check_repo_conventions.sh` now passes for completed repository invariants, while `scripts/dev/check_repo_conventions.sh --include-open-workstreams` exposes the 1C/1D/1E backlog. Added missing opt-in assertions for `tests/unit/test_runtime_progress.py`, the real `scripts/dev/run_backend.sh` implementation, and `packages/physics_modules/templates/module_template/{src/__init__.py,tests/test_template.py}`. Updated README, docs, milestone notes, `AGENTS.md`, and `CLAUDE.md`.
+
+### Regression protection
+- `tests/regression/test_convention_checker_modes.py` asserts that default checker mode passes while opt-in mode reports the current corrected Phase 1 backlog.
+- `scripts/test/all.sh` continues to call only default checker mode before running pytest.
+
+### Agent warning
+Do not put intentionally failing workstream TODO assertions in the default checker path. The default convention checker is the hard gate for completed work; open backlog belongs behind `--include-open-workstreams` and must not break the normal test runner.
+
 ## 2026-05-02: Phase 1A/1B gate overstated implementation completeness
 
 ### Affected subsystem

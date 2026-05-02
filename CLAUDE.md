@@ -30,7 +30,7 @@ If `AGENTS.md` and this file ever drift, `AGENTS.md` is the source of truth for 
 
 10. Prefer precise validated modules over broad approximations. Missing coefficient → report, do not fabricate.
 
-11. The convention checker is the source of truth for phase completion. A markdown checkbox is not a check; `scripts/dev/check_repo_conventions.sh` is. See **Phase Gate Procedure** below.
+11. The convention checker is the source of truth for repository health and completed deliverables. Default `scripts/dev/check_repo_conventions.sh` is the hard gate and must stay green. Open workstream TODOs live behind `scripts/dev/check_repo_conventions.sh --include-open-workstreams`; that opt-in mode may fail by design and must not be wired into `scripts/test/all.sh`. See **Phase Gate Procedure** below.
 
 12. Every command path you mention in `README.md`, `CLAUDE.md`, `AGENTS.md`, or any docs page must exist on disk as an executable. Use stubs for unimplemented subsystems. Doc reference and stub land in the same commit.
 
@@ -227,7 +227,7 @@ Current state:
   - 2026-05-02 *Bare `build/` ignore rule swallowed `scripts/build/`*
   - 2026-05-02 *Phase 0 gate false positive for missing skeleton files*
   - 2026-05-02 *Phase 1A/1B gate overstated implementation completeness*
-- `bugs_and_fixes/agent_error_patterns.md` now carries 12 named patterns. Read them before changing: convention-checker logic, `.gitignore`, milestone-naming, ModelSpec validators (especially flexible-dict fields), test wrappers, or any cached singleton.
+- `bugs_and_fixes/agent_error_patterns.md` now carries 17 named patterns. Read them before changing: convention-checker logic, `.gitignore`, milestone-naming, ModelSpec validators (especially flexible-dict fields), test wrappers, or any cached singleton.
 
 Phase 1 remaining workstreams (1C runtime, 1D physics modules, 1E viz, 1F UI) start only after **Phase Gate Procedure → Starting a workstream** below — enumerate from the plan, not from the milestone hints.
 
@@ -241,9 +241,9 @@ Phase 0 was initially marked "complete" with stale README status, missing packag
 
 A phase is complete only when **all three** are true:
 
-1. `scripts/dev/check_repo_conventions.sh` exits zero.
+1. Default `scripts/dev/check_repo_conventions.sh` exits zero.
 2. The phase status reads identically in `README.md`, `program_development/milestones/phase_NN_*.md`, and `program_development/timeline.md`. Any ADR, `module.yaml`, `tool.yaml`, or `docs_site/src/content/*.tsx` page that names the status agrees too.
-3. Every deliverable in the milestone's Phase Gate, the plan's `§Phase NN`, and the README's status table has at least one assertion in the convention checker.
+3. Every deliverable in the milestone's Phase Gate, the plan's `§Phase NN`, and the README's status table has at least one assertion in the convention checker. Completed deliverables are default hard-gate assertions; open deliverables are opt-in `--include-open-workstreams` assertions until implemented.
 
 ### Starting a phase — the deliverables-to-checker translation
 
@@ -261,14 +261,14 @@ cat program_development/milestones/phase_NN_*.md
 grep -nE "Phase NN" README.md docs_site/src/content/*.tsx
 ```
 
-Then enumerate every deliverable into a checklist (see milestone "Pre-gate verification" template). For each deliverable, add a `check_file_exists`, `check_file_executable`, `check_dir_exists`, or `check_grep_in_file` call to `scripts/dev/check_repo_conventions.sh`. Run the checker — it should fail. The failures are the work.
+Then enumerate every open deliverable into a checklist (see milestone "Pre-gate verification" template). For each deliverable, add a `check_file_exists`, `check_file_executable`, `check_dir_exists`, `check_grep_in_file`, or negative grep call under the opt-in `--include-open-workstreams` section of `scripts/dev/check_repo_conventions.sh`. Run the opt-in checker — it should fail. The default checker must still pass unless a completed invariant regressed.
 
 ```bash
-bash scripts/dev/check_repo_conventions.sh
+bash scripts/dev/check_repo_conventions.sh --include-open-workstreams
 # Convention check FAILED — N failure(s), M check(s) ok.
 ```
 
-Implement until the checker is green. Then proceed to the closing-a-phase steps.
+Implement until the relevant TODO assertions are green, then promote completed deliverable assertions into the default hard gate before claiming the phase or workstream complete.
 
 ### Starting a workstream — enumerate from the plan, not from the milestone hints
 
@@ -292,7 +292,7 @@ awk '/Convention-checker assertions to add/,/Status sync at close/' \
 #    Pre-gate list must reflect the plan, not the agent's interpretation.
 ```
 
-Once the milestone Pre-gate matches the plan, every named entity gets one assertion:
+Once the milestone Pre-gate matches the plan, every open named entity gets one opt-in assertion:
 
 ```bash
 # In scripts/dev/check_repo_conventions.sh, prefer:
@@ -304,9 +304,9 @@ check_file_exists tests/integration/test_experiment_save_load.py
 # ... one assertion per plan-named entity, not one assertion per directory.
 ```
 
-Run the checker — every missing entity is one failure. The failures are the workstream's TODO list. Implement until green; only then is the workstream done.
+Run `bash scripts/dev/check_repo_conventions.sh --include-open-workstreams` — every missing entity is one failure. The failures are the workstream's TODO list. Also run the default checker; it must stay green and `scripts/test/all.sh` must not depend on intentionally failing TODO mode. Implement until the relevant TODOs are green; only then is the workstream done.
 
-If you choose to defer an entity to a follow-up workstream, **say so explicitly in the commit message** ("RunConfig deferred to Workstream 1C — see milestone phase_01") AND keep a failing convention-checker assertion that encodes the deferral, so the deferral remains visible until resolved.
+If you choose to defer an entity to a follow-up workstream, **say so explicitly in the commit message** ("RunConfig deferred to Workstream 1C — see milestone phase_01") AND keep a failing opt-in convention-checker assertion that encodes the deferral, so the deferral remains visible until resolved without breaking the normal test runner.
 
 ### Closing a phase — status flip in one commit
 
@@ -316,6 +316,9 @@ Before flipping any phase status to "Complete":
 # 1. Run the checker.
 bash scripts/dev/check_repo_conventions.sh
 # expect: Convention check PASSED
+
+# 1b. Confirm no relevant open TODO remains.
+bash scripts/dev/check_repo_conventions.sh --include-open-workstreams
 
 # 2. Run subsystem tests if any apply.
 bash scripts/test/all.sh   # or the most relevant subset
@@ -566,11 +569,11 @@ Commit locally, hold the push, and tell the user what you did and why you held b
 
 A Claude task is done when, in addition to the `AGENTS.md` checklist:
 
-- `scripts/dev/check_repo_conventions.sh` passes. If the task added or moved a deliverable named in the plan, README, milestone, or any docs page, the checker has been **extended** with a corresponding assertion — it is not enough that the existing checks still pass.
+- Default `scripts/dev/check_repo_conventions.sh` passes. If the task added or moved a deliverable named in the plan, README, milestone, or any docs page, the checker has been **extended** with a corresponding assertion — completed deliverables in default mode, open TODOs in `--include-open-workstreams`. It is not enough that the existing checks still pass.
 - Every documented command path the change introduced exists on disk and is executable (real implementation or stub).
 - Every plan-derived pattern (gitignore rule, filename, identifier) has been reality-tested per **Phase Gate Procedure → Reality-test plan-derived patterns**.
 - If the task changed phase or module status, the status reads identically across `README.md`, the relevant milestone file, `program_development/timeline.md`, and any ADR / `module.yaml` / `tool.yaml` / docs page that names it. The status flip lands in a single commit.
-- **For workstream-completion tasks**: every plan-named entity in `§Phase N → Workstream NX` has been enumerated, asserted in the convention checker, implemented, and tested. The milestone's Pre-gate hint list has been updated where it disagreed with the plan. Deferrals are named in the commit message with a corresponding failing assertion.
+- **For workstream-completion tasks**: every plan-named entity in `§Phase N → Workstream NX` has been enumerated, asserted in the convention checker, implemented, and tested. The milestone's Pre-gate hint list has been updated where it disagreed with the plan. Deferrals are named in the commit message with a corresponding failing opt-in assertion. Intentionally failing TODO assertions must not break `scripts/test/all.sh`.
 - The "Code-craft anti-patterns to grep before commit" checks have been run when the diff touches their domains: deepcopy in test fixtures, no `global` on cached singletons, raw-number rejection in any new flexible-dict scientific field.
 - The summary at the end of the response names the changed files and any decisions deferred to the user.
 - Any new public API has a usage example in the relevant docs page.

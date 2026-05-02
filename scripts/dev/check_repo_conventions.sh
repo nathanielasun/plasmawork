@@ -13,17 +13,21 @@
 #   1  one or more checks failed
 #
 # Flags:
-#   --verbose  print every check, not just failures
-#   --quiet    print only the final summary
-#   --help     show this message
+#   --verbose                    print every check, not just failures
+#   --quiet                      print only the final summary
+#   --include-open-workstreams   include intentionally failing TODO checks for
+#                                open workstreams
+#   --help                       show this message
 #
-# This script is part of the Phase 0 gate. It is the cheapest possible
-# regression test against accidental destruction of project structure.
+# Default mode checks hard repository invariants and completed deliverables.
+# Open-workstream TODOs are opt-in so documented test commands remain runnable
+# while unfinished work stays visible.
 
 set -uo pipefail
 
 VERBOSE=0
 QUIET=0
+INCLUDE_OPEN_WORKSTREAMS=0
 
 usage() {
   sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
@@ -34,6 +38,7 @@ for arg in "$@"; do
   case "$arg" in
     --verbose) VERBOSE=1 ;;
     --quiet)   QUIET=1 ;;
+    --include-open-workstreams|--workstream-todos) INCLUDE_OPEN_WORKSTREAMS=1 ;;
     --help|-h) usage ;;
     *)
       echo "Unknown argument: $arg" >&2
@@ -122,6 +127,24 @@ check_grep_in_file() {
   fi
 }
 
+check_grep_absent_in_file() {
+  local pattern="$1"
+  local file="$2"
+  local label="$3"
+  if [[ ! -f "$file" ]]; then
+    FAIL=$((FAIL+1))
+    fail "$label: file missing ($file)"
+    return
+  fi
+  if grep -qE "$pattern" "$file"; then
+    FAIL=$((FAIL+1))
+    fail "$label: forbidden pattern found in $file ($pattern)"
+  else
+    PASS=$((PASS+1))
+    note "$label"
+  fi
+}
+
 section() {
   if [[ $QUIET -eq 0 ]]; then
     echo
@@ -200,76 +223,95 @@ check_dir_exists packages/solver_backends
 check_dir_exists packages/visualization
 check_dir_exists packages/internal_tools
 
-# Phase 1C (Workstream 1C) — Simulation runtime.
-# Opened 2026-05-02. Each assertion below is one TODO until that workstream
-# closes. See program_development/milestones/phase_01_manual_workbench.md for
-# the full enumeration and bug-check carry-over.
-check_file_exists packages/core/src/simworkbench/runtime/__init__.py
-check_file_exists packages/core/src/simworkbench/runtime/runner.py
-check_file_exists packages/core/src/simworkbench/runtime/checkpoint.py
-check_file_exists packages/core/src/simworkbench/runtime/seeds.py
-check_file_exists packages/core/src/simworkbench/runtime/events.py
-check_file_exists packages/core/src/simworkbench/runtime/progress.py
-check_file_exists packages/core/src/simworkbench/paths/__init__.py
-check_file_exists tests/unit/test_runtime_runner.py
-check_file_exists tests/unit/test_runtime_checkpoint.py
-check_file_exists tests/unit/test_runtime_seeds.py
-check_file_exists tests/unit/test_runtime_events.py
-check_file_exists tests/unit/test_paths.py
-check_file_exists tests/integration/test_runtime_pause_resume.py
-check_file_exists tests/regression/test_runtime_writes_only_to_temp_runs.py
-check_file_exists examples/simple_rate_equations/run.py
+if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
+  # Phase 1C (Workstream 1C) — Simulation runtime.
+  # Opened 2026-05-02. Each assertion below is one TODO until that
+  # workstream closes. See program_development/milestones/
+  # phase_01_manual_workbench.md for the full enumeration and bug-check
+  # carry-over.
+  section "Open Workstream TODOs — Phase 1C runtime"
+  check_file_exists packages/core/src/simworkbench/runtime/__init__.py
+  check_file_exists packages/core/src/simworkbench/runtime/runner.py
+  check_file_exists packages/core/src/simworkbench/runtime/checkpoint.py
+  check_file_exists packages/core/src/simworkbench/runtime/seeds.py
+  check_file_exists packages/core/src/simworkbench/runtime/events.py
+  check_file_exists packages/core/src/simworkbench/runtime/progress.py
+  check_file_exists packages/core/src/simworkbench/paths/__init__.py
+  check_file_exists tests/unit/test_runtime_runner.py
+  check_file_exists tests/unit/test_runtime_checkpoint.py
+  check_file_exists tests/unit/test_runtime_seeds.py
+  check_file_exists tests/unit/test_runtime_events.py
+  check_file_exists tests/unit/test_runtime_progress.py
+  check_file_exists tests/unit/test_paths.py
+  check_file_exists tests/integration/test_runtime_pause_resume.py
+  check_file_exists tests/regression/test_runtime_writes_only_to_temp_runs.py
+  check_grep_absent_in_file 'Backend runtime is scheduled for Phase 1A-1C' scripts/dev/run_backend.sh "scripts/dev/run_backend.sh is no longer the Phase-0 stub"
 
-# Phase 1D (Workstream 1D) — Basic physics modules.
-# Opened 2026-05-02. Each module carries its own validators (assumptions,
-# validity_domain, equations) — the convention checker asserts module.yaml +
-# README.md + the module's primary unit test.
-check_file_exists packages/physics_modules/templates/module_template/module.yaml
-check_file_exists packages/physics_modules/templates/module_template/README.md
-check_file_exists packages/physics_modules/laser/gaussian_pulse/module.yaml
-check_file_exists packages/physics_modules/laser/gaussian_pulse/README.md
-check_file_exists tests/unit/test_gaussian_pulse.py
-check_file_exists packages/physics_modules/species/basic/module.yaml
-check_file_exists packages/physics_modules/species/basic/README.md
-check_file_exists tests/unit/test_basic_species.py
-check_file_exists packages/physics_modules/species/rate_equation_0d/module.yaml
-check_file_exists packages/physics_modules/species/rate_equation_0d/README.md
-check_file_exists tests/unit/test_rate_equation_0d.py
-check_file_exists packages/physics_modules/laser/simple_absorption/module.yaml
-check_file_exists packages/physics_modules/laser/simple_absorption/README.md
-check_file_exists tests/unit/test_simple_absorption.py
-check_file_exists packages/physics_modules/laser/simple_emission/module.yaml
-check_file_exists packages/physics_modules/laser/simple_emission/README.md
-check_file_exists tests/unit/test_simple_emission.py
-check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/module.yaml
-check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/README.md
-check_file_exists tests/unit/test_lennard_jones.py
-check_file_exists packages/physics_modules/phase_transition/ising_2d/module.yaml
-check_file_exists packages/physics_modules/phase_transition/ising_2d/README.md
-check_file_exists tests/unit/test_ising_2d.py
-check_file_exists examples/molecular_dynamics/run.py
-check_file_exists examples/ising_phase_transition/run.py
-check_file_exists tests/validation/test_rate_equation_conservation.py
-check_file_exists tests/validation/test_lennard_jones_energy_drift.py
-check_file_exists tests/validation/test_ising_2d_critical_temperature.py
+  # Shared Phase 1C/1D example. It is asserted once to avoid duplicate
+  # failures for the same missing file.
+  section "Open Workstream TODOs — Phase 1C/1D shared example"
+  check_file_exists examples/simple_rate_equations/run.py
 
-# Phase 1E (Workstream 1E) — Visualization and diagnostics.
-# Opened 2026-05-02. Diagnostics API + plotters live under simworkbench.diagnostics
-# during Phase 1; promotion to a separate packages/visualization/ Python package
-# is deferred to a future ADR if it becomes necessary.
-check_file_exists packages/core/src/simworkbench/diagnostics/__init__.py
-check_file_exists packages/core/src/simworkbench/diagnostics/api.py
-check_file_exists packages/core/src/simworkbench/diagnostics/statistics.py
-check_file_exists packages/core/src/simworkbench/diagnostics/streams.py
-check_file_exists packages/core/src/simworkbench/diagnostics/plotters/__init__.py
-check_file_exists packages/core/src/simworkbench/diagnostics/plotters/line.py
-check_file_exists packages/core/src/simworkbench/diagnostics/plotters/heatmap.py
-check_file_exists packages/core/src/simworkbench/diagnostics/plotters/particle_scatter.py
-check_file_exists tests/unit/test_diagnostics_api.py
-check_file_exists tests/unit/test_diagnostics_statistics.py
-check_file_exists tests/unit/test_plotters.py
-check_file_exists tests/integration/test_diagnostics_streaming.py
-check_grep_in_file '"matplotlib' packages/core/pyproject.toml "packages/core/pyproject.toml depends on matplotlib (Phase 1E)"
+  # Phase 1D (Workstream 1D) — Basic physics modules.
+  # Opened 2026-05-02. Each module carries its own validators (assumptions,
+  # validity_domain, equations) — the convention checker asserts the full
+  # starter template plus module.yaml + README.md + primary unit test per
+  # module.
+  section "Open Workstream TODOs — Phase 1D basic physics modules"
+  check_file_exists packages/physics_modules/templates/module_template/module.yaml
+  check_file_exists packages/physics_modules/templates/module_template/src/__init__.py
+  check_file_exists packages/physics_modules/templates/module_template/tests/test_template.py
+  check_file_exists packages/physics_modules/templates/module_template/README.md
+  check_file_exists packages/physics_modules/laser/gaussian_pulse/module.yaml
+  check_file_exists packages/physics_modules/laser/gaussian_pulse/README.md
+  check_file_exists tests/unit/test_gaussian_pulse.py
+  check_file_exists packages/physics_modules/species/basic/module.yaml
+  check_file_exists packages/physics_modules/species/basic/README.md
+  check_file_exists tests/unit/test_basic_species.py
+  check_file_exists packages/physics_modules/species/rate_equation_0d/module.yaml
+  check_file_exists packages/physics_modules/species/rate_equation_0d/README.md
+  check_file_exists tests/unit/test_rate_equation_0d.py
+  check_file_exists packages/physics_modules/laser/simple_absorption/module.yaml
+  check_file_exists packages/physics_modules/laser/simple_absorption/README.md
+  check_file_exists tests/unit/test_simple_absorption.py
+  check_file_exists packages/physics_modules/laser/simple_emission/module.yaml
+  check_file_exists packages/physics_modules/laser/simple_emission/README.md
+  check_file_exists tests/unit/test_simple_emission.py
+  check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/module.yaml
+  check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/README.md
+  check_file_exists tests/unit/test_lennard_jones.py
+  check_file_exists packages/physics_modules/phase_transition/ising_2d/module.yaml
+  check_file_exists packages/physics_modules/phase_transition/ising_2d/README.md
+  check_file_exists tests/unit/test_ising_2d.py
+  check_file_exists examples/molecular_dynamics/run.py
+  check_file_exists examples/ising_phase_transition/run.py
+  check_file_exists tests/validation/test_rate_equation_conservation.py
+  check_file_exists tests/validation/test_lennard_jones_energy_drift.py
+  check_file_exists tests/validation/test_ising_2d_critical_temperature.py
+
+  # Phase 1E (Workstream 1E) — Visualization and diagnostics.
+  # Opened 2026-05-02. Diagnostics API + plotters live under
+  # simworkbench.diagnostics during Phase 1; promotion to a separate
+  # packages/visualization/ Python package is deferred to a future ADR if it
+  # becomes necessary.
+  section "Open Workstream TODOs — Phase 1E diagnostics"
+  check_file_exists packages/core/src/simworkbench/diagnostics/__init__.py
+  check_file_exists packages/core/src/simworkbench/diagnostics/api.py
+  check_file_exists packages/core/src/simworkbench/diagnostics/statistics.py
+  check_file_exists packages/core/src/simworkbench/diagnostics/streams.py
+  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/__init__.py
+  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/line.py
+  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/heatmap.py
+  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/particle_scatter.py
+  check_file_exists tests/unit/test_diagnostics_api.py
+  check_file_exists tests/unit/test_diagnostics_statistics.py
+  check_file_exists tests/unit/test_plotters.py
+  check_file_exists tests/integration/test_diagnostics_streaming.py
+  check_grep_in_file '"matplotlib' packages/core/pyproject.toml "packages/core/pyproject.toml depends on matplotlib (Phase 1E)"
+elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
+  section "Open Workstream TODOs"
+  echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"
+fi
 
 # ---------------------------------------------------------------------------
 section "Tests, scripts, examples, configs"

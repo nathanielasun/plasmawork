@@ -78,6 +78,9 @@ This creates a Python virtualenv under `.venv/`, installs the Phase 1 core packa
 
 # Validate repository conventions
 ./scripts/dev/check_repo_conventions.sh
+
+# Inspect open workstream TODO assertions (expected to fail until implemented)
+./scripts/dev/check_repo_conventions.sh --include-open-workstreams
 ```
 
 The UI, backend, capsule, kernel, and export scripts exist so documented commands do not point at missing files. Scripts for later phases print an explicit scheduled-phase message until their subsystem is implemented.
@@ -109,6 +112,8 @@ The UI, backend, capsule, kernel, and export scripts exist so documented command
 ./scripts/test/validation.sh    # tests/validation (scientific properties)
 ./scripts/test/performance.sh   # tests/performance
 ```
+
+`./scripts/test/all.sh` runs the hard repository conventions plus the current test suite. It intentionally does not include open-workstream TODO assertions; use `./scripts/dev/check_repo_conventions.sh --include-open-workstreams` when inspecting the active implementation backlog.
 
 See `tests/README.md` for the testing strategy (also plan §20).
 

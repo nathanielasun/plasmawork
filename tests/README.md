@@ -28,3 +28,8 @@ and UI tests continue to land as the corresponding workstreams are implemented.
 The test scripts prefer `.venv/bin/python` when it exists, so running
 `./scripts/dev/install.sh` once is enough for the wrapper commands to use the
 repo-local dependencies.
+
+`./scripts/test/all.sh` runs the default convention checker and the current test
+suite. Open-workstream TODO assertions are opt-in and live behind
+`./scripts/dev/check_repo_conventions.sh --include-open-workstreams`, because
+unfinished backlog checks must not break the normal test runner.

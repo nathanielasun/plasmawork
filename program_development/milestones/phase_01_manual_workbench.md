@@ -42,7 +42,7 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 ### Convention-checker assertions to add when this phase opens
 
-Each workstream's deliverable list below is enumerated from `scientific_simulation_workbench_agent_plan.md` `§Phase 1 → Workstream 1X`, not from agent intuition. Every entity here corresponds to one assertion in `scripts/dev/check_repo_conventions.sh`. The checker is the source of truth for completion — markdown checkboxes alone are aspirational.
+Each workstream's deliverable list below is enumerated from `scientific_simulation_workbench_agent_plan.md` `§Phase 1 → Workstream 1X`, not from agent intuition. Open entities correspond to opt-in assertions in `scripts/dev/check_repo_conventions.sh --include-open-workstreams`; completed entities move into the default `scripts/dev/check_repo_conventions.sh` hard gate. The checker is the source of truth for completion — markdown checkboxes alone are aspirational.
 
 #### Workstream 1A — Core Experiment Model — ☑ Implementation landed 2026-05-02
 
@@ -62,7 +62,7 @@ Each workstream's deliverable list below is enumerated from `scientific_simulati
 
 Plan §Phase 1 / Workstream 1C tasks: start/stop/pause/resume, checkpointing, deterministic seed handling, event/log system, progress reporting. Deliverables: local simulation runner, checkpoint and restore.
 
-Per-entity assertions to add when this workstream opens:
+Per-entity TODO assertions tracked while this workstream is open:
 
 - ☐ `packages/core/src/simworkbench/runtime/__init__.py` — package entrypoint exporting Runner.
 - ☐ `packages/core/src/simworkbench/runtime/runner.py` — start/stop/pause/resume API. Driven by an `Experiment` and a backend.
@@ -75,10 +75,11 @@ Per-entity assertions to add when this workstream opens:
 - ☐ `tests/unit/test_runtime_checkpoint.py` — round-trip checkpoint write/restore.
 - ☐ `tests/unit/test_runtime_seeds.py` — same seed → same trajectory; different seeds → different trajectories.
 - ☐ `tests/unit/test_runtime_events.py` — event ordering and serialization.
+- ☐ `tests/unit/test_runtime_progress.py` — progress callbacks/generator reports monotonic progress and terminal completion.
 - ☐ `tests/unit/test_paths.py` — path helpers resolve relative to repo root, not user home.
 - ☐ `tests/integration/test_runtime_pause_resume.py` — pause/resume preserves identity (resume of a checkpoint reproduces the original trajectory bit-for-bit on `python_cpu`).
 - ☐ `tests/regression/test_runtime_writes_only_to_temp_runs.py` — regression for the `agent_error_patterns.md` "Writing program artifacts outside the project directory" pattern.
-- ☐ `scripts/dev/run_backend.sh` becomes a real implementation (no longer Phase-0 stub).
+- ☐ `scripts/dev/run_backend.sh` becomes a real implementation (no longer Phase-0 stub). The opt-in checker must fail while the stub message remains.
 - ☐ `examples/simple_rate_equations/run.py` runs the YAML model end-to-end and writes a checkpoint+result under `temp_runs/`.
 
 Bug-check carry-over from `bugs_and_fixes/agent_error_patterns.md`:
@@ -89,7 +90,7 @@ Bug-check carry-over from `bugs_and_fixes/agent_error_patterns.md`:
 
 Plan §Phase 1 / Workstream 1D initial modules (one per item): Gaussian laser pulse, Basic species definition, 0D rate-equation solver, Simple absorption model, Simple emission model, Lennard-Jones MD example, 2D Ising model example. Deliverables: minimal validated modules + example simulations.
 
-Each module follows the AGENTS.md Module SDK layout: `module.yaml`, `src/`, `tests/`, `README.md`, `assumptions.md`, `validity_domain.md`, `equations.md`, `changelog.md`, `examples/`. The convention checker asserts `module.yaml` + the test file per module; the rest are required by the module template and reviewed before module status flips `draft → candidate`.
+Each module follows the AGENTS.md Module SDK layout: `module.yaml`, `src/`, `tests/`, `README.md`, `assumptions.md`, `validity_domain.md`, `equations.md`, `changelog.md`, `examples/`. The opt-in convention checker asserts the full starter template and `module.yaml` + `README.md` + the primary unit test per module; the rest are required by the module template and reviewed before module status flips `draft → candidate`.
 
 Per-entity assertions:
 
@@ -101,7 +102,7 @@ Per-entity assertions:
 - ☐ `packages/physics_modules/laser/simple_emission/{module.yaml,README.md}` + `tests/unit/test_simple_emission.py`. Spontaneous emission with explicit lifetime input.
 - ☐ `packages/physics_modules/molecular_dynamics/lennard_jones/{module.yaml,README.md}` + `tests/unit/test_lennard_jones.py`. LJ MD example — second-domain proof per ADR-0001 generality requirement.
 - ☐ `packages/physics_modules/phase_transition/ising_2d/{module.yaml,README.md}` + `tests/unit/test_ising_2d.py`. 2D Ising example — third-domain proof.
-- ☐ `examples/simple_rate_equations/run.py` — wires the existing `model.yaml` + 1C runtime + 1D modules into a runnable script. (Crosses Workstreams 1C and 1D.)
+- ☐ `examples/simple_rate_equations/run.py` — wires the existing `model.yaml` + 1C runtime + 1D modules into a runnable script. (Crosses Workstreams 1C and 1D; asserted once in the checker to avoid duplicate failures for the same file.)
 - ☐ `examples/molecular_dynamics/run.py` — runnable LJ MD example.
 - ☐ `examples/ising_phase_transition/run.py` — runnable Ising example.
 - ☐ `tests/validation/test_rate_equation_conservation.py` — particle-conservation invariant for the rate-equation example (validates the laser-species example).
@@ -138,4 +139,4 @@ Add more as workstreams evolve.
 
 ### Status sync at close
 
-Flip the status to `Complete` only in a single commit that touches every place it is mirrored: this milestone (Status header + Phase Gate boxes), `README.md` Current Development Status table, `program_development/timeline.md`, any new ADR Status field, any `module.yaml` lifecycle field that transitioned, and any `docs_site/src/content/*.tsx` page that named "Phase 1 — pending" anywhere.
+Flip the status to `Complete` only in a single commit that touches every place it is mirrored: this milestone (Status header + Phase Gate boxes), `README.md` Current Development Status table, `program_development/timeline.md`, any new ADR Status field, any `module.yaml` lifecycle field that transitioned, and any `docs_site/src/content/*.tsx` page that named "Phase 1 — pending" anywhere. Before the flip, the default checker must pass and `--include-open-workstreams` must have no Phase 1 TODOs remaining.
