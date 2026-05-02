@@ -145,6 +145,24 @@ check_grep_absent_in_file() {
   fi
 }
 
+check_path_is_ignored() {
+  # Asserts a probe path IS matched by a .gitignore rule. Used to verify build-
+  # output ignore tiers (root, per-app, per-package) per the
+  # `bugs_and_fixes/agent_error_patterns.md` "Bare gitignore globs" pattern.
+  local probe="$1"
+  local label="${2:-$1}"
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return
+  fi
+  if git check-ignore -q "$probe" 2>/dev/null; then
+    PASS=$((PASS+1))
+    note "$label gitignore-matched"
+  else
+    FAIL=$((FAIL+1))
+    fail "$label NOT gitignore-matched (probe: $probe)"
+  fi
+}
+
 section() {
   if [[ $QUIET -eq 0 ]]; then
     echo
@@ -173,6 +191,19 @@ check_grep_in_file '^!simulation_capsules/\.gitkeep' .gitignore "simulation_caps
 check_grep_in_file '^\*\.log$' .gitignore "*.log ignored"
 check_grep_in_file '^__pycache__/' .gitignore "__pycache__ ignored"
 check_grep_in_file '^node_modules/' .gitignore "node_modules ignored"
+
+# build/ output ignore tiers — see bugs_and_fixes/bugfixes.md 2026-05-02
+# *Per-app and per-package `build/` outputs were not gitignored*. The pattern
+# requires /build/ AND apps/*/build/ AND packages/*/build/; root-anchored alone
+# left per-app outputs exposed. The probes below assert each tier; the
+# scripts/build source paths must remain trackable (covered by the source-paths
+# regression below).
+check_grep_in_file '^/build/' .gitignore "/build/ root-anchored ignore"
+check_grep_in_file '^apps/\*/build/' .gitignore "apps/*/build/ per-app ignore"
+check_grep_in_file '^packages/\*/build/' .gitignore "packages/*/build/ per-package ignore"
+check_path_is_ignored "build/foo.tmp" "root build/ output"
+check_path_is_ignored "apps/workbench-ui/build/foo.js" "apps/workbench-ui/build/ output"
+check_path_is_ignored "packages/core/build/foo.py" "packages/core/build/ output"
 
 # ---------------------------------------------------------------------------
 section "Local-only directories (with .gitkeep markers)"
@@ -308,6 +339,47 @@ if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   check_file_exists tests/unit/test_plotters.py
   check_file_exists tests/integration/test_diagnostics_streaming.py
   check_grep_in_file '"matplotlib' packages/core/pyproject.toml "packages/core/pyproject.toml depends on matplotlib (Phase 1E)"
+
+  # Phase 1F (Workstream 1F) — UI Workbench.
+  # Opened 2026-05-02. The UI consumes the 1A core types over an HTTP API and
+  # the 1C runtime + 1D modules + 1E diagnostics for actual data. Each plan-
+  # named entity below has one assertion. Implementation order: pick a
+  # framework (ADR-0005) → backend API → app shell → per-panel components.
+  section "Open Workstream TODOs — Phase 1F UI workbench"
+  # ADR — UI framework choice (Vite + React vs. Next.js vs. ...).
+  check_file_exists program_development/architectural_decisions/ADR-0005-ui-framework.md
+  # Backend HTTP API (consumed by the UI; lives under packages/core).
+  check_file_exists packages/core/src/simworkbench/api/__init__.py
+  check_file_exists packages/core/src/simworkbench/api/server.py
+  check_file_exists tests/integration/test_api_server.py
+  # UI app shell + entry.
+  check_file_exists apps/workbench-ui/index.html
+  check_file_exists apps/workbench-ui/vite.config.ts
+  check_file_exists apps/workbench-ui/src/main.tsx
+  check_file_exists apps/workbench-ui/src/App.tsx
+  # Plan-named UI panels (one component file per task line in §Phase 1 / 1F).
+  check_file_exists apps/workbench-ui/src/components/SimulationList.tsx
+  check_file_exists apps/workbench-ui/src/components/RunControls.tsx
+  check_file_exists apps/workbench-ui/src/components/CodeViewer.tsx
+  check_file_exists apps/workbench-ui/src/components/DocsViewer.tsx
+  check_file_exists apps/workbench-ui/src/components/DiagnosticsPanel.tsx
+  check_file_exists apps/workbench-ui/src/components/PlotPanel.tsx
+  check_file_exists apps/workbench-ui/src/components/CapsuleExplorer.tsx
+  # Typed API client.
+  check_file_exists apps/workbench-ui/src/api/client.ts
+  # UI tests (Vitest or equivalent).
+  check_file_exists apps/workbench-ui/src/__tests__/App.test.tsx
+  check_file_exists apps/workbench-ui/src/__tests__/SimulationList.test.tsx
+  check_file_exists apps/workbench-ui/src/__tests__/RunControls.test.tsx
+  check_file_exists apps/workbench-ui/src/__tests__/DocsViewer.test.tsx
+  # Real package manifest (no longer the Phase-0 placeholder).
+  check_grep_absent_in_file 'placeholder package for the Scientific Simulation Workbench UI' apps/workbench-ui/package.json "apps/workbench-ui/package.json no longer Phase-0 placeholder"
+  # Real wrapper scripts (no longer Phase-0 stubs).
+  check_grep_absent_in_file 'Workbench UI shell is scheduled for Phase 1F' scripts/dev/run_ui.sh "scripts/dev/run_ui.sh is no longer the Phase-0 stub"
+  check_grep_absent_in_file 'UI build is scheduled for Phase 1F' scripts/build/ui.sh "scripts/build/ui.sh is no longer the Phase-0 stub"
+  # Docs viewer integration: the in-app DocsViewer must load from the
+  # canonical docs_site source (per AGENTS.md — no duplicated doc strings).
+  check_grep_in_file 'docs_site' apps/workbench-ui/src/components/DocsViewer.tsx "DocsViewer.tsx loads from docs_site/ canonical source"
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

@@ -32,6 +32,34 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-02: Per-app and per-package `build/` outputs were not gitignored
+
+### Affected subsystem
+`.gitignore` (root-level), discovered while opening Workstream 1F.
+
+### Symptoms
+`git check-ignore -v apps/workbench-ui/build/foo.js` reported the path was **not** matched by any ignore rule. Same for `packages/core/build/foo.py`. Once the UI ships and its build tool emits to `apps/workbench-ui/build/` (some tools — Astro/CRA — do), those outputs would be staged by accident.
+
+### Root cause
+The earlier `build/` → `/build/` fix anchored the rule to the repository root to stop it swallowing `scripts/build/` — correct, but it left every per-app and per-package `build/` directory unprotected. The `bugs_and_fixes/agent_error_patterns.md` "Bare gitignore globs" pattern explicitly prescribes the full fix:
+> Anchor build-output ignores to where they are produced:
+> - `/build/` for top-level outputs
+> - `apps/*/build/` for per-app outputs
+> - `packages/*/build/` for per-package Python build artifacts (if used)
+
+The first bullet was applied earlier; the other two were not. The Workstream 1F open ran the bug-memory grep procedure, which surfaced the pattern, then ran `git check-ignore -v apps/workbench-ui/build/foo.js` and confirmed the gap.
+
+### Fix
+Added `apps/*/build/` and `packages/*/build/` to `.gitignore` directly below `/build/`. Reality-test reconfirms: `apps/workbench-ui/build/foo.js` and `packages/core/build/foo.py` are now ignored, while `scripts/build/ui.sh` and `scripts/build/.gitkeep` remain tracked.
+
+Caught and fixed as part of the Workstream 1F open commit.
+
+### Regression protection
+- `scripts/dev/check_repo_conventions.sh` extended with a "build/ output ignore tiers" section that probes `apps/workbench-ui/build/`, `packages/core/build/`, and `/build/` and asserts each is matched by an ignore rule. Cross-references the existing source-paths-not-ignored regression which asserts `scripts/build/ui.sh` is NOT ignored. Both regressions live in the default checker so a future overly-narrow change shows up immediately.
+
+### Agent warning
+When you anchor a `build/` ignore, do not stop at `/build/`. The pattern requires `/build/` AND `apps/*/build/` AND `packages/*/build/` together — root-anchored alone leaves per-app and per-package outputs exposed. After any `.gitignore` change, run `git check-ignore -v` against probes in every directory tier (`apps/<name>/build/`, `packages/<name>/build/`, `/build/`, `scripts/build/<name>`) before commit.
+
 ## 2026-05-02: Open workstream TODOs broke the default test gate
 
 ### Affected subsystem

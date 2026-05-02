@@ -1,6 +1,6 @@
 # Phase 1 — Manual Scientific Workbench
 
-**Status: In progress (started 2026-05-02). Workstreams 1A and 1B complete; 1C, 1D, 1E open (opened 2026-05-02); 1F pending.**
+**Status: In progress (started 2026-05-02). Workstreams 1A and 1B complete; 1C, 1D, 1E, 1F open (opened 2026-05-02).**
 
 ## Objective
 Build a functioning non-agentic workbench that can define, run, pause, save, load, visualize, and export simple scientific simulations. (Plan §Phase 1.)
@@ -134,6 +134,45 @@ Per-entity assertions:
 - ☐ `packages/core/pyproject.toml` gains a `matplotlib` dependency (plot backend; minimal-display-friendly so headless CI works).
 
 Plot-quality rule (carries into 1E from plan §12.3): plots created for steering a simulation are not necessarily publication-quality. Plotters in 1E target the **steering** lane; the **publication** lane is a follow-up.
+
+#### Workstream 1F — UI Workbench — ☐ Open 2026-05-02
+
+Plan §Phase 1 / Workstream 1F tasks: build TypeScript UI shell, simulation list, run controls, code viewer, docs viewer, diagnostics panel, plot panel, capsule explorer. Deliverables: usable local UI; program documentation accessible inside the UI.
+
+1F is the only Phase 1 workstream that **consumes** the others — it talks to 1A's types over an HTTP API, drives 1C's runtime, displays 1D's modules, and renders 1E's diagnostics. Implementation order (recommended): land ADR-0005 (UI framework) → backend HTTP API → app shell → per-panel components.
+
+Per-entity TODO assertions tracked while this workstream is open:
+
+- ☐ `program_development/architectural_decisions/ADR-0005-ui-framework.md` — UI framework decision (recommendation: Vite + React to match `docs_site/`, but the ADR records the alternatives and the choice). Status moves `Proposed → Accepted` in the same commit that lands the framework deps in `apps/workbench-ui/package.json`.
+- ☐ `packages/core/src/simworkbench/api/__init__.py` — backend HTTP API package entrypoint.
+- ☐ `packages/core/src/simworkbench/api/server.py` — HTTP server (FastAPI or equivalent) exposing the experiment / runtime / diagnostics surface the UI needs. Lives under `packages/core/.../api/` per AGENTS.md "Repository Architecture Rules → Packaging boundary".
+- ☐ `tests/integration/test_api_server.py` — end-to-end smoke: start server, list experiments, run, retrieve diagnostics.
+- ☐ `apps/workbench-ui/index.html` — Vite HTML root.
+- ☐ `apps/workbench-ui/vite.config.ts` — Vite config (path aliases for `docs_site/src/content/`, dev server port matching `configs/default.yaml` ui.port=5173).
+- ☐ `apps/workbench-ui/src/main.tsx` — Vite entry; mounts `App.tsx` to `#root`.
+- ☐ `apps/workbench-ui/src/App.tsx` — top-level shell: layout, router, provides API client context.
+- ☐ `apps/workbench-ui/src/components/SimulationList.tsx` — lists simulations from the backend API.
+- ☐ `apps/workbench-ui/src/components/RunControls.tsx` — start/pause/resume/stop/checkpoint buttons; subscribes to 1C progress stream.
+- ☐ `apps/workbench-ui/src/components/CodeViewer.tsx` — read-only viewer of the active experiment's source. **Reads `<capsule>/src/generated/` and `<capsule>/src/user_edits/` separately and never offers UI affordances that would write back to `user_edits/`** — honors `agent_error_patterns.md` "Overwriting `<capsule>/src/user_edits/` during regeneration".
+- ☐ `apps/workbench-ui/src/components/DocsViewer.tsx` — in-app documentation. **Loads from `docs_site/src/content/*.tsx` (the canonical source) — does NOT duplicate doc strings** per AGENTS.md rule 2.
+- ☐ `apps/workbench-ui/src/components/DiagnosticsPanel.tsx` — table of registered diagnostics (1E API).
+- ☐ `apps/workbench-ui/src/components/PlotPanel.tsx` — renders 1E plotters (line / heatmap / particle scatter). Plot-quality rule applies: this is the steering lane, not publication.
+- ☐ `apps/workbench-ui/src/components/CapsuleExplorer.tsx` — directory-form capsule explorer reading `simulation_capsules/<name>.lxp/`. Phase 1F renders the directory layout; full manifest validation lands in Phase 2.
+- ☐ `apps/workbench-ui/src/api/client.ts` — typed HTTP client wrapping the backend API. Single source of types — UI components import the request/response types from here.
+- ☐ `apps/workbench-ui/src/__tests__/App.test.tsx` — smoke render.
+- ☐ `apps/workbench-ui/src/__tests__/SimulationList.test.tsx` — renders mocked simulations.
+- ☐ `apps/workbench-ui/src/__tests__/RunControls.test.tsx` — emits start/pause/resume/stop events through the API client.
+- ☐ `apps/workbench-ui/src/__tests__/DocsViewer.test.tsx` — verifies the canonical `docs_site/src/content/*.tsx` pages load (no duplication).
+- ☐ `apps/workbench-ui/package.json` — real dependencies (React, Vite, Vitest, @testing-library/react, plus the chosen routing library); the Phase-0 placeholder language is removed.
+- ☐ `scripts/dev/run_ui.sh` — real implementation: `npm --prefix apps/workbench-ui run dev`. The Phase-0 stub language is removed.
+- ☐ `scripts/build/ui.sh` — real implementation: `npm --prefix apps/workbench-ui run build`. The Phase-0 stub language is removed.
+- ☐ `docs_site/src/content/usage.tsx`, `docs_site/src/content/architecture.tsx`, and `docs_site/src/content/troubleshooting.tsx` — Phase-1F banner replaced when UI is functional; usage adds the in-app workflow walkthrough.
+
+Bug-check carry-over from `bugs_and_fixes/agent_error_patterns.md`:
+- *Overwriting `<capsule>/src/user_edits/` during regeneration* — CodeViewer is read-only for `user_edits/`; any future "edit" affordance writes only to `src/generated/`.
+- *Documented path that does not exist as an executable on disk* — when `scripts/dev/run_ui.sh` and `scripts/build/ui.sh` flip from stub to real, the docs that reference them remain accurate; if a path is removed, the docs are removed in the same commit.
+- *Aspirational documentation — status drift across README, milestone, and timeline* — the moment the UI is usable end-to-end, all four `docs_site/src/content/*.tsx` pages with Phase-1 banners need updating in one commit.
+- *Per-app and per-package `build/` outputs were not gitignored* (logged 2026-05-02 during this open) — `apps/*/build/` is now ignored. Verify with `git check-ignore -v apps/workbench-ui/build/foo.js` after any UI build-tool change.
 
 Add more as workstreams evolve.
 

@@ -16,10 +16,13 @@ env/
 node_modules/
 dist/
 # Anchored to root: top-level build output only. We have a `scripts/build/`
-# directory of build scripts that must remain versioned. Same caution applies
-# to per-package `build/` artifacts — if those appear, ignore them with a more
-# specific rule rather than reintroducing a bare `build/` here.
+# directory of build scripts that must remain versioned. Per-app and per-package
+# `build/` artifacts are ignored explicitly below. NEVER reintroduce a bare
+# `build/` rule — it swallows `scripts/build/` (see bugs_and_fixes/bugfixes.md
+# 2026-05-02 *Bare `build/` ignore rule*).
 /build/
+apps/*/build/
+packages/*/build/
 .next/
 out/
 .turbo/

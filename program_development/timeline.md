@@ -24,6 +24,26 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1 — Workstream 1F opened; build-output gitignore gap fixed)
+
+### Completed
+- **Bug-check before opening 1F.** Ran the three code-craft greps (clean) and the bug-memory grep against UI/TS/frontend/capsule keywords. The grep surfaced the `apps/workbench-ui/{package,tsconfig}.json` Phase-0-precedent and the "Bare gitignore globs" pattern. Reality-test (`git check-ignore -v apps/workbench-ui/build/foo.js`) confirmed the gap: per-app and per-package `build/` outputs were **not** gitignored. The earlier `build/` → `/build/` fix anchored to root only — the pattern's required behavior calls for `/build/` AND `apps/*/build/` AND `packages/*/build/`. Logged in `bugs_and_fixes/bugfixes.md` 2026-05-02 *Per-app and per-package `build/` outputs were not gitignored*. Fix landed in this commit; default checker now enforces all three tiers.
+- **Workstream 1F — UI Workbench — opened.** Plan §Phase 1 / Workstream 1F translated into 22 per-entity opt-in convention-checker assertions covering ADR-0005 (UI framework choice), the backend HTTP API under `simworkbench.api`, the Vite + React app shell (index.html, vite.config.ts, main.tsx, App.tsx), seven plan-named UI components (SimulationList, RunControls, CodeViewer, DocsViewer, DiagnosticsPanel, PlotPanel, CapsuleExplorer), the typed API client, four Vitest tests, real `package.json` (no longer Phase-0 placeholder), real `scripts/dev/run_ui.sh` and `scripts/build/ui.sh` (no longer stubs), and a positive `check_grep_in_file` ensuring `DocsViewer.tsx` loads from the canonical `docs_site/` source rather than duplicating doc strings.
+- **Convention checker.** Default mode now reports `148 check(s) ok` (was 142; +6 new build-output-tier regressions). Opt-in mode reports `82 failure(s), 150 check(s) ok` (was `60 failure(s), 142 check(s) ok`; +22 new 1F TODOs).
+- **Phase 1 milestone Pre-gate verification.** Added the 1F section with full plan-named entity enumeration and four bug-check carry-over notes (CodeViewer must not write to `user_edits/`; documented stub→real transitions; status sync at the moment the UI becomes usable; per-app `build/` ignore reality-test).
+- **Status sync.** README Phase 1 row, milestone Status header, and this timeline now agree: Workstreams 1A and 1B complete; 1C, 1D, 1E, 1F open.
+
+### Open questions
+- ADR-0005: UI framework choice. Recommendation pending — Vite + React matches `docs_site/` and reuses the same toolchain, but Next.js gives stronger SSR for the docs viewer if internal docs ever need server-rendered indexing. Decision lands in a small commit when 1F implementation starts.
+- Whether the backend HTTP API should be FastAPI or a lighter alternative; deferred to API server commit.
+
+### Next steps
+- Implement Workstream 1C first (runtime is the dependency for 1D modules and 1E diagnostics, all of which 1F displays).
+- Once 1C is green, 1D and 1E can land in parallel.
+- 1F lands last — its components depend on the API surface that 1C/1E define.
+
+---
+
 ## 2026-05-02 (Phase 1 — open-workstream checker mode correction)
 
 ### Completed
