@@ -1,0 +1,135 @@
+# Solver-backend registry.
+#
+# Each entry describes a backend that the runtime can dispatch to. Backends are
+# implemented under `packages/solver_backends/<name>/`. The runtime selects a
+# backend per `runtime.default_backend` in default.yaml, or per-experiment in a
+# capsule's `configs/backend_config.yaml`.
+#
+# `status: candidate` backends are not selected by `backend: auto`. They must be
+# named explicitly. Promotion to `validated` requires the criteria in plan §15.
+#
+# Phase 0 — only python_cpu is planned for Phase 1. The others are recorded so
+# the registry exists; their `status: planned` keeps `auto` from picking them.
+
+backends:
+
+  - name: python_cpu
+    status: planned                  # planned → in_progress → validated → trusted
+    phase: 1
+    description: NumPy/SciPy-based local CPU backend. Default for small models.
+    supports:
+      domains: [laser_species, rate_equations, phase_transition, molecular_dynamics, pde]
+      geometries: [0, 1, 2, 3]
+      precision: [float64]
+    dependencies:
+      python: [numpy, scipy]
+    determinism: true
+
+  - name: numba_cpu
+    status: planned
+    phase: 8
+    description: Numba-accelerated CPU kernels for hot loops in Python backends.
+    supports:
+      domains: [molecular_dynamics, monte_carlo, rate_equations]
+      geometries: [0, 1, 2, 3]
+      precision: [float64]
+    dependencies:
+      python: [numpy, numba]
+    determinism: true
+
+  - name: cpp
+    status: planned
+    phase: 8
+    description: Compiled C++ kernel pathway for performance-critical numerics.
+    supports:
+      domains: [pde, molecular_dynamics]
+      geometries: [1, 2, 3]
+      precision: [float64, float32]
+    dependencies:
+      build: [cmake, c++17_compiler]
+    determinism: true
+
+  - name: fortran
+    status: planned
+    phase: 8
+    description: Fortran kernel pathway, primarily for legacy plasma codes.
+    supports:
+      domains: [plasma, pde]
+      geometries: [1, 2, 3]
+      precision: [float64]
+    dependencies:
+      build: [meson, gfortran]
+    determinism: true
+
+  - name: cuda
+    status: planned
+    phase: 8
+    description: CUDA-based GPU backend.
+    supports:
+      domains: [pde, particle, molecular_dynamics]
+      geometries: [1, 2, 3]
+      precision: [float64, float32]
+    dependencies:
+      runtime: [cuda_toolkit]
+    determinism: false             # GPU determinism is hardware-dependent
+
+  - name: kokkos
+    status: planned
+    phase: 8
+    description: Kokkos-based portable performance backend.
+    supports:
+      domains: [pde, particle]
+      geometries: [1, 2, 3]
+      precision: [float64, float32]
+    dependencies:
+      build: [kokkos]
+    determinism: false
+
+  - name: petsc
+    status: planned
+    phase: 8
+    description: PETSc-based PDE solver adapter for large linear / nonlinear systems.
+    supports:
+      domains: [pde]
+      geometries: [1, 2, 3]
+      precision: [float64]
+    dependencies:
+      build: [petsc, mpi]
+    determinism: true
+
+  - name: amrex
+    status: planned
+    phase: 8
+    description: AMReX-based adaptive mesh refinement backend.
+    supports:
+      domains: [pde, particle]
+      geometries: [2, 3]
+      precision: [float64]
+    dependencies:
+      build: [amrex, mpi]
+    determinism: true
+
+  - name: external_pic
+    status: planned
+    phase: 8
+    description: Adapter for external particle-in-cell codes (e.g. WarpX). Wraps job submission and result import.
+    supports:
+      domains: [plasma, laser_plasma]
+      geometries: [2, 3]
+      precision: [float64, float32]
+    dependencies:
+      external: [warpx_or_compatible]
+    determinism: false
+
+selection_policy:
+  # Used by `backend: auto`. Backends are filtered by status (validated/trusted)
+  # and capability, then ranked by these criteria in order.
+  ranking:
+    - module_compatibility    # backend supports the modules the experiment uses
+    - precision_required
+    - determinism_required
+    - estimated_cost
+    - user_preference
+
+  fallback:
+    - python_cpu              # always last-resort if validated

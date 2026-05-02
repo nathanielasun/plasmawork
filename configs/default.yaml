@@ -1,0 +1,64 @@
+# Default workbench configuration.
+#
+# This file is committed and represents the project-wide defaults. Per-machine
+# overrides go in `local.yaml` (copy from `local.yaml.example`); per-environment
+# overrides go in `*.local.yaml` (gitignored).
+#
+# Phase 0 — keys below are placeholders and may be renamed before Phase 1 ships.
+# Treat the structure as illustrative until the core Python config loader lands.
+
+workbench:
+  name: scientific-simulation-workbench
+  version: 0.0.0
+  paths:
+    # All paths are resolved relative to the repository root.
+    local_cache: local_cache
+    temp_imports: temp_imports
+    temp_runs: temp_runs
+    simulation_capsules: simulation_capsules
+
+logging:
+  level: INFO            # DEBUG | INFO | WARN | ERROR
+  log_file: bugs_and_fixes/program.log
+  format: "%(asctime)s | %(levelname)-5s | %(name)s | %(message)s"
+  console: true
+
+runtime:
+  default_backend: python_cpu     # see configs/backends.yaml for the registry
+  deterministic: true             # request deterministic seeds where possible
+  default_seed: 0                 # base seed; runs derive per-run seeds from this
+  checkpoint_interval_steps: 1000
+  pause_on_validation_warning: true   # halt and surface warnings before continuing
+
+units:
+  library: pending                # pint | astropy | custom — locked by Phase 1B ADR
+  display:
+    energy: J
+    length: m
+    time: s
+    density: "1/m^3"
+    field: "V/m"
+
+validation:
+  default_status_for_new_modules: candidate
+  block_promotion_without_review: true
+  required_checks:
+    - dimensional
+    - smoke
+  optional_checks:
+    - conservation
+    - convergence
+    - benchmark
+
+ui:
+  port: 5173
+  api_base_url: http://localhost:8000
+  show_validation_status_badge: true
+
+agents:
+  enabled: false        # disabled in Phase 0; enabled per role in configs/agents.yaml
+  human_approval_required_for:
+    - module_promotion_to_trusted
+    - external_export
+    - destructive_edits
+    - high_compute_runs

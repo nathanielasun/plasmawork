@@ -1,0 +1,198 @@
+# AGENTS.md — Operating Instructions for All Development Agents
+
+This file is the canonical instruction set for autonomous and semi-autonomous coding, review, and documentation agents working in the **Scientific Simulation Workbench** repository. The full architectural design is in `scientific_simulation_workbench_agent_plan.md`. This file distills the durable rules that survive across phases.
+
+`CLAUDE.md` duplicates these rules and adds operational specifics for Claude Code.
+
+---
+
+## Mandatory Repository Rules for Development Agents
+
+1. **Documentation stays synchronized with code.** If behavior, configuration, APIs, simulation modules, build instructions, or capsule format change, update the relevant page in `docs_site/src/content/` and `README.md` *before* completing the task.
+
+2. **Maintain program documentation inside `docs_site/`** as TypeScript/MDX-compatible pages accessible from the workbench UI. Do not duplicate documentation strings into the UI source — load from the canonical docs.
+
+3. **Maintain a root-level `README.md`** with build instructions, installation instructions, repository structure, development workflow, testing commands, and update procedures.
+
+4. **Maintain `.gitignore`** so local cache directories, temporary simulation files, intermediate paper imports, generated run outputs, and local environment files are never committed.
+
+5. **Keep temporary files local to the program installation directory.** Do not write program artifacts into arbitrary user directories. The allowed local-only roots are:
+   - `local_cache/`
+   - `temp_imports/`
+   - `temp_runs/`
+   - `simulation_capsules/`
+
+   External writes (export of code, data, or report) only occur when the user explicitly exports a capsule.
+
+6. **Maintain `bugs_and_fixes/`** with:
+   - `program.log.example` (template — actual `*.log` files are ignored)
+   - `bugfixes.md`
+   - `known_failures.md`
+   - `regression_tests.md`
+   - `agent_error_patterns.md`
+
+7. **Before modifying code related to an existing subsystem, inspect `bugs_and_fixes/`** for relevant historical bugs. Do not reintroduce known errors. If you fix a bug, log it in `bugfixes.md` and add or link a regression test.
+
+8. **Maintain `program_development/`** with implementation timeline, development history, architectural decision records, and milestone phase notes.
+
+9. **Generated scientific simulations must be inspectable, editable, modular, exportable, and reloadable**, and must be tied to explicit assumptions, units, parameters, and validation checks.
+
+10. **Prefer precise validated modules over broad approximations.** Fast nonsense is still nonsense. If a coefficient or sub-model is missing, mark the run `exploratory` and surface the gap — do not silently invent values.
+
+---
+
+## Repository Architecture Rules
+
+- **Languages**: Python for core/runtime/physics (`packages/core`, `packages/physics_modules`, `packages/solver_backends`); TypeScript for UI (`apps/workbench-ui`) and docs (`docs_site/`).
+- **Packaging boundary**: a Python package and a TS package never import each other directly. They communicate via the documented HTTP/IPC API in `packages/core/.../api/`.
+- **Module SDK**: physics modules and internal tools live under `packages/physics_modules/<domain>/<name>/` and `packages/internal_tools/registry/<name>/` respectively, each with `module.yaml` or `tool.yaml`, `src/`, `tests/`, `docs/`, `examples/`, `README.md`, `changelog.md`.
+- **Capsules**: simulation outputs are isolated inside `.lxp/` capsule directories (see plan §7). Generated code lives in `<capsule>/src/generated/`; user-edited code in `<capsule>/src/user_edits/`. Agents never overwrite `user_edits/` silently.
+- **No circular imports across phase boundaries.** The dependency direction is: `physics_modules → core`, `solver_backends → core`, `agent_orchestration → core`, `apps/workbench-ui → core` (via API), `docs_site` is standalone.
+
+---
+
+## Required Documentation Practices
+
+- Every behavioral change updates the matching docs page (see plan §4.2 for the page list).
+- Every new physics module and internal tool ships with a `README.md`, `assumptions.md` (or equivalent inline doc), input/output units, validity domain, at least one test, and at least one example.
+- Every public Python function gets a docstring stating: purpose, inputs (with units), outputs (with units), assumptions, references.
+- Every TypeScript public API gets a TSDoc block.
+
+---
+
+## Required Testing Practices
+
+- New code lands with tests. The test layout is: `tests/{unit,integration,regression,validation,performance}`.
+- Every bug fix adds or updates a regression test where feasible, linked from `bugs_and_fixes/bugfixes.md`.
+- Validation tests assert scientific properties (dimensions, conservation, analytical limits, convergence, benchmark reproduction). Performance tests must not silently relax correctness tolerances.
+
+---
+
+## Code Style and Module Boundaries
+
+- Python: type hints on all public APIs; `ruff` clean; explicit error handling at boundaries; no bare `except`.
+- TypeScript: strict `tsconfig`; no `any` in exported types.
+- Units are first-class. No raw floats for physical quantities crossing module boundaries — use the units subsystem (`packages/core/src/simworkbench/units/`).
+- Module boundaries are enforced by the registry. New cross-module coupling requires an ADR in `program_development/architectural_decisions/`.
+
+---
+
+## Bug Memory and Regression Prevention
+
+- Before editing a subsystem, `grep` the relevant subsystem path inside `bugs_and_fixes/` to check for prior bugs.
+- After fixing a bug, append to `bugfixes.md` using the template in plan §5.1 (date, subsystem, symptoms, root cause, fix, regression protection, agent warning).
+- Patterns of repeated agent mistakes go in `agent_error_patterns.md`.
+
+---
+
+## Safety Limits for Generated Scientific Code
+
+- Generated code must declare its assumptions, units, validity regime, and source paper.
+- Generated code never replaces a validated solver call with a naive timestep loop without an explicit ADR.
+- Generated coefficients must be sourced. Missing data is reported, never fabricated.
+- Generated code is placed inside a capsule sandbox (`<capsule>/src/generated/`). Promotion to a registry module requires validation evidence and human approval.
+
+---
+
+## Adding Internal Tools and Simulation Modules
+
+- Use the templates in `packages/internal_tools/templates/` and `packages/physics_modules/templates/`.
+- Lifecycle: `draft → candidate → validated → trusted → deprecated`. Agents may create `draft` and `candidate` only. Promotion to `trusted` requires a human reviewer.
+- Promotion criteria are in plan §14.3.
+
+---
+
+## File Locality
+
+- Imported papers, datasets, and tools are copied into local project-controlled directories before use:
+  - papers → `temp_imports/papers/` then capsule `paper_sources/`
+  - imported tools → `local_cache/imported_tools/`
+  - run artifacts → `temp_runs/<run_id>/` and the owning capsule
+- Agents must not write outside these roots without an explicit export step initiated by the user.
+
+---
+
+## Program Development History
+
+- Major implementation work appends an entry to `program_development/timeline.md` (date, completed, changed, open questions, next steps).
+- Architectural decisions get an ADR (see plan §6.2) numbered sequentially in `program_development/architectural_decisions/`.
+- Milestone phase completions update `program_development/milestones/phase_NN_*.md`.
+
+---
+
+## Explicit Warnings Against Reproducing Already-Fixed Bugs
+
+- The most common agent failure is removing a defensive check or rewriting validated code with a "simpler" version that loses an invariant. Read the surrounding tests and `bugs_and_fixes/bugfixes.md` first.
+- Do not "clean up" or "simplify" code in `validated`/`trusted` modules without an ADR.
+- Do not change tolerances in validation tests to make them pass. Investigate the root cause.
+- Do not switch backends to make a number look better. Backend choice never silently changes physics.
+
+---
+
+## Autonomous Git Operations
+
+Agents working in this repository are **authorized to commit and push without per-action user approval**, subject to the rules below. This is a durable authorization recorded here in `AGENTS.md` and in `CLAUDE.md` — it overrides the default "always ask before pushing" behavior of coding-agent harnesses *for this repository only*.
+
+### What agents must do
+
+After completing a meaningful unit of work, agents commit. After a *major* change, they also push to `origin` on the current branch.
+
+A change is **major** — and warrants an immediate push — if any of the following are true:
+
+- A workstream within a phase is completed (e.g. "Phase 0 / Workstream 0B done").
+- A phase gate is passed.
+- A bug is fixed and logged in `bugs_and_fixes/bugfixes.md`.
+- A module or tool transitions status (`draft → candidate → validated → trusted → deprecated`).
+- An ADR is added, accepted, deprecated, or superseded.
+- The diff spans more than three files of meaningful change, or crosses subsystem boundaries.
+- A milestone file or `program_development/timeline.md` entry is added.
+- A user-visible feature is shipped or removed.
+
+Routine tweaks (typo fixes, single-file polish, in-progress edits) commit but do not necessarily push immediately — batch them under the next major push so the remote history remains a useful changelog.
+
+### What agents must not do without explicit user approval
+
+- Force-push of any kind (`--force`, `--force-with-lease`) to any branch.
+- Destructive rewrites of published history (interactive rebase that drops or edits commits already on `origin`).
+- Skipping hooks (`--no-verify`, `--no-gpg-sign`, `-c commit.gpgsign=false`).
+- Committing files that might contain secrets — `.env`, `*.local.yaml`, credential files, API keys, service-account JSON. If such a file appears in the diff, stop and surface it.
+- Committing tracked artifacts the convention checker forbids (logs, simulation outputs, capsule contents).
+- Deleting branches (`-D`, `-d`) other than transient agent-created branches the agent itself created in the same session.
+- Pushing to a branch other than the current branch's tracked upstream.
+- Creating, closing, or commenting on PRs, issues, or releases — these are user actions.
+- `git reset --hard`, `git checkout --` of files with uncommitted user work, or any operation that throws away work without it being recoverable.
+
+### Commit and push hygiene
+
+- Stage specific files by path. Never use `git add -A` or `git add .` — those are how secrets and stray artifacts slip in.
+- Before committing, run the convention checker (`scripts/dev/check_repo_conventions.sh`) and the tests relevant to the touched subsystem. If either fails, fix the underlying problem before the commit. Do not bypass.
+- Commit messages are imperative, ≤ 72 characters in the subject, with a body explaining *why*. Reference the ADR, bugfix entry, workstream ID, or milestone where relevant.
+- Always create a new commit rather than amending — amending after a hook failure modifies the wrong commit and risks losing work.
+- The `Co-Authored-By:` trailer for the Claude model that did the work is required.
+- After a successful push, update `program_development/timeline.md` if the change is milestone-relevant.
+
+### When pre-commit or pre-push hooks fail
+
+Fix the underlying issue and create a new commit. Never use `--no-verify`. The hook is a defensive check installed deliberately — bypassing it is the same class of mistake as lowering a validation tolerance to make a test pass.
+
+### When in doubt
+
+If the action being taken is described above as "must not do without explicit user approval", or if the agent is uncertain whether a change qualifies as major, the agent commits locally but waits to push. The user can always trigger the push later.
+
+---
+
+## Agent Definition of Done
+
+A task is done when:
+
+1. Code changes complete.
+2. Tests added or updated.
+3. Tests run, or it is documented why they were not.
+4. Documentation updated.
+5. `README.md` updated if build/usage changed.
+6. `bugs_and_fixes/bugfixes.md` updated if bug-related.
+7. `program_development/timeline.md` updated if milestone-relevant.
+8. No local temp/cache/generated files staged.
+9. Generated code remains inspectable, with units and assumptions surfaced.
+10. Convention checker (`scripts/dev/check_repo_conventions.sh`) passes.
+11. The change is committed. If the change is *major* (per the criteria in **Autonomous Git Operations** above), it has also been pushed to `origin`.

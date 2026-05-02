@@ -1,36 +1,77 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.tox/
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# local env files
-.env*.local
-.env
-
-# vercel
-.vercel
-
-# typescript
+# Node / TypeScript
+node_modules/
+dist/
+# Anchored to root: top-level build output only. We have a `scripts/build/`
+# directory of build scripts that must remain versioned. Same caution applies
+# to per-package `build/` artifacts — if those appear, ignore them with a more
+# specific rule rather than reintroducing a bare `build/` here.
+/build/
+.next/
+out/
+.turbo/
+coverage/
 *.tsbuildinfo
 next-env.d.ts
+.pnp
+.pnp.js
+
+# Local program directories — keep folders, ignore contents
+local_cache/*
+temp_imports/*
+temp_runs/*
+simulation_capsules/*
+!local_cache/.gitkeep
+!temp_imports/.gitkeep
+!temp_runs/.gitkeep
+!simulation_capsules/.gitkeep
+
+# Simulation outputs
+*.h5
+*.hdf5
+*.zarr/
+*.openpmd/
+*.vtk
+*.vti
+*.vtu
+*.xdmf
+*.bp
+*.bp5
+*.parquet
+*.npy
+*.npz
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.cache
+.DS_Store
+
+# Keep canonical bug log template under a non-.log name (program.log.example)
+!bugs_and_fixes/program.log.example
+
+# Local config / secrets
+.env
+.env.*
+*.local.yaml
+*.local.json
+.vercel
+
+# IDE / editor
+.vscode/
+.idea/
+*.pem

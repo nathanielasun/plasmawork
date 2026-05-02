@@ -1,0 +1,113 @@
+# Agent role configuration.
+#
+# Each entry defines an agent role from plan §16.1. Roles are gated: `enabled`
+# turns the role on, and `human_approval_required_for` lists actions that
+# require explicit user approval even when the role is enabled.
+#
+# Phase 0 — every agent role is disabled by default. Roles flip to enabled in
+# the phases that introduce them (notably Phase 4–10).
+
+defaults:
+  enabled: false
+  log_actions_to: bugs_and_fixes/program.log
+  trace_to: provenance/agent_trace.md   # path is relative to capsule
+  refuse_on:
+    - writing outside allowed roots
+    - overwriting <capsule>/src/user_edits/
+    - silently fabricating physical coefficients
+    - module promotion to trusted without human review
+    - external file export without explicit user action
+
+agents:
+
+  - role: orchestrator
+    description: Maintains the global task graph and merges parallel agent work.
+    enabled: false
+    phase: 6
+
+  - role: repository_steward
+    description: Enforces repository structure, documentation, and conventions.
+    enabled: false
+    phase: 0
+    capabilities: [edit_docs, run_convention_checker]
+
+  - role: paper_ingestion
+    description: Extracts paper content (PDF, arXiv, supplementary).
+    enabled: false
+    phase: 4
+    capabilities: [download_paper, extract_text, extract_tables]
+    human_approval_required_for:
+      - downloading from external sources outside an allow-list
+
+  - role: physics_interpretation
+    description: Converts paper claims into model assumptions and validity domains.
+    enabled: false
+    phase: 4
+
+  - role: model_spec
+    description: Creates and validates structured ModelSpecs from interpretation artifacts.
+    enabled: false
+    phase: 5
+
+  - role: module_retrieval
+    description: Finds reusable modules in the registry that match a ModelSpec.
+    enabled: false
+    phase: 5
+
+  - role: code_generation
+    description: Generates candidate implementation code into a capsule sandbox.
+    enabled: false
+    phase: 6
+    capabilities: [write_to_capsule_generated]
+    refuse_on:
+      - writing outside <capsule>/src/generated/
+      - overwriting <capsule>/src/user_edits/
+
+  - role: numerical_methods
+    description: Reviews solver choices and numerical stability.
+    enabled: false
+    phase: 6
+
+  - role: backend_optimization
+    description: Chooses and optimizes execution backend.
+    enabled: false
+    phase: 8
+
+  - role: validation
+    description: Creates and runs validation tests.
+    enabled: false
+    phase: 6
+    capabilities: [run_tests, write_validation_reports]
+
+  - role: visualization
+    description: Builds plots and UI panels.
+    enabled: false
+    phase: 6
+
+  - role: documentation
+    description: Updates docs, README, and usage guides.
+    enabled: false
+    phase: 1
+
+  - role: bug_memory
+    description: Checks bugs_and_fixes/ before subsystem modifications.
+    enabled: false
+    phase: 1
+
+  - role: security_sandbox
+    description: Prevents unsafe file or execution behavior. Always-on once any agent is enabled.
+    enabled: false
+    phase: 4
+    capabilities: [veto]
+
+  - role: release
+    description: Packages stable builds and examples.
+    enabled: false
+    phase: 7
+
+human_approval_gates:
+  module_promotion_to_trusted: required
+  external_export: required
+  destructive_edits: required
+  high_compute_runs: required
+  destructive_git_operations: required

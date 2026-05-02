@@ -1,0 +1,18 @@
+# Per-machine local overrides. Copy this file to `local.yaml` and edit.
+# `local.yaml` is gitignored; `local.yaml.example` is committed as a template.
+#
+# Any key here is merged on top of `default.yaml`.
+
+# logging:
+#   level: DEBUG
+
+# runtime:
+#   default_backend: numba_cpu
+#   default_seed: 42
+
+# ui:
+#   port: 5174
+#   api_base_url: http://localhost:8001
+
+# agents:
+#   enabled: false   # keep agents off for local exploratory work

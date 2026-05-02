@@ -1,0 +1,17 @@
+# Example program.log
+#
+# This is the canonical template for the runtime log file. Real `program.log`
+# files are gitignored — only this `.example` is committed. Format below is
+# illustrative; the runtime logger (Phase 1C) will define the authoritative
+# schema.
+
+# Format: ISO-8601 timestamp | level | subsystem | message [| key=value ...]
+
+2026-05-02T12:00:00Z | INFO  | runtime         | Workbench started | version=0.0.0 backend=python_cpu
+2026-05-02T12:00:01Z | INFO  | model_spec      | Loaded ModelSpec | path=examples/simple_rate_equations/model.yaml schema_version=0.1
+2026-05-02T12:00:01Z | DEBUG | units           | Dimensional check passed | equations=4 quantities=12
+2026-05-02T12:00:02Z | INFO  | experiment      | Run started | run_id=run-20260502-120002 capsule=temp_runs/run-20260502-120002
+2026-05-02T12:00:03Z | WARN  | validation      | Coefficient marked exploratory | name=krf_emission_cross_section reason=missing_source
+2026-05-02T12:00:10Z | INFO  | runtime         | Checkpoint written | step=1000 path=temp_runs/run-20260502-120002/checkpoints/step_1000.h5
+2026-05-02T12:00:30Z | ERROR | solver_backends | Stiffness exceeded threshold | dt=1e-12 error_norm=4.2e-3
+2026-05-02T12:00:31Z | INFO  | runtime         | Run paused for review | reason=stiffness
