@@ -2,7 +2,7 @@
  * App shell smoke test.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "../App";
 
@@ -32,6 +32,9 @@ describe("App shell", () => {
         <App />
       </MemoryRouter>,
     );
+    // Some labels (e.g. "Simulations") appear both as a nav link and as the
+    // landing page's heading, so we scope the query to the sidebar nav.
+    const nav = screen.getByRole("navigation");
     for (const label of [
       "Simulations",
       "Run Controls",
@@ -41,7 +44,7 @@ describe("App shell", () => {
       "Capsules",
       "Documentation",
     ]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(within(nav).getByText(label)).toBeInTheDocument();
     }
   });
 });

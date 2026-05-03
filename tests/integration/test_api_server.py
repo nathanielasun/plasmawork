@@ -137,3 +137,114 @@ def test_list_temp_runs_returns_list():
     r = _client().get("/api/temp_runs")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2D — capsule inspection endpoints. We build a real capsule from the
+# example rate-equations spec via save_capsule, then assert every detail
+# endpoint surfaces something useful.
+# ---------------------------------------------------------------------------
+
+
+import shutil  # noqa: E402
+import uuid  # noqa: E402
+
+import pytest  # noqa: E402
+from simworkbench.experiment import Experiment, RunConfig  # noqa: E402
+from simworkbench.model_spec import load_yaml  # noqa: E402
+from simworkbench.paths import repo_root, simulation_capsules_root  # noqa: E402
+from simworkbench.runtime import Runner  # noqa: E402
+from simworkbench.serialization import save_capsule  # noqa: E402
+
+
+@pytest.fixture
+def real_capsule():
+    """Build a capsule directly under simulation_capsules_root() and yield its
+    name. The API's capsule lookup walks the top level of that directory, so
+    the capsule must land there (not in a nested scratch dir)."""
+    spec = load_yaml(repo_root() / "examples" / "simple_rate_equations" / "model.yaml")
+    exp = Experiment.from_model_spec(
+        spec,
+        run_config=RunConfig(start_time="0 s", end_time="100 ns", max_steps=5),
+    )
+    result = Runner(exp).run()
+    capsule_name = f"_pytest-api-{uuid.uuid4().hex[:8]}"
+    capsule_dir = save_capsule(
+        experiment=exp,
+        result=result,
+        name=capsule_name,
+        base=simulation_capsules_root(),
+    )
+    try:
+        yield capsule_dir.name, capsule_dir
+    finally:
+        shutil.rmtree(capsule_dir, ignore_errors=True)
+
+
+def test_get_capsule_returns_manifest_and_subtrees(real_capsule):
+    name, _ = real_capsule
+    r = _client().get(f"/api/capsules/{name}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == name
+    assert body["manifest"] is not None
+    assert body["manifest"]["capsule"]["format_version"] == "0.1"
+    subtree_names = {s["name"] for s in body["subtrees"]}
+    assert "model" in subtree_names
+    assert "results" in subtree_names
+    assert "provenance" in subtree_names
+
+
+def test_get_capsule_404_for_unknown_name():
+    r = _client().get("/api/capsules/no-such.lxp")
+    assert r.status_code == 404
+
+
+def test_get_capsule_400_for_path_escape():
+    r = _client().get("/api/capsules/..%2Fetc")
+    # The escape attempt either resolves outside simulation_capsules/ (400)
+    # or doesn't exist (404). Either is acceptable; what we MUST not see is
+    # 200 with content from outside the sandbox.
+    assert r.status_code in (400, 404)
+
+
+def test_get_capsule_file_returns_modelspec_text(real_capsule):
+    name, _ = real_capsule
+    r = _client().get(f"/api/capsules/{name}/files/model/model_spec.yaml")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "schema_version" in body["content"]
+
+
+def test_get_capsule_file_refuses_path_escape(real_capsule):
+    name, _ = real_capsule
+    r = _client().get(f"/api/capsules/{name}/files/..%2F..%2Fetc%2Fpasswd")
+    assert r.status_code in (400, 404)
+
+
+def test_get_capsule_file_refuses_binary(real_capsule):
+    name, capsule_dir = real_capsule
+    # Drop a fake binary into results/ so the suffix check engages.
+    (capsule_dir / "results" / "junk.h5").write_bytes(b"\x89HDF\r\n\x1a\n")
+    r = _client().get(f"/api/capsules/{name}/files/results/junk.h5")
+    assert r.status_code == 415
+
+
+def test_validate_capsule_returns_report(real_capsule):
+    name, _ = real_capsule
+    r = _client().get(f"/api/capsules/{name}/validate")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == name
+    assert "violations" in body
+    assert isinstance(body["ok"], bool)
+
+
+def test_get_capsule_diagnostics_returns_series(real_capsule):
+    name, _ = real_capsule
+    r = _client().get(f"/api/capsules/{name}/diagnostics")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source"] in ("h5", "json")
+    assert "A" in body["series"]
+    assert isinstance(body["series"]["A"], list)

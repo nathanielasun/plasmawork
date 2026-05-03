@@ -17,6 +17,11 @@ Endpoints:
 - ``POST /api/runs/{run_id}/stop``     — stop a run (best-effort).
 - ``GET  /api/docs/pages``             — list available docs pages.
 - ``GET  /api/capsules``               — list directories under simulation_capsules/.
+- ``GET  /api/capsules/{name}``        — manifest + structural summary (Phase 2D).
+- ``GET  /api/capsules/{name}/files/{path}``   — read a text file under the capsule (Phase 2D).
+- ``GET  /api/capsules/{name}/validate``       — run CapsuleValidator (Phase 2D).
+- ``GET  /api/capsules/{name}/diagnostics``    — diagnostics series for the
+  capsule's ``results/`` directory (Phase 2D).
 
 Phase 1F runs are synchronous: the server starts the run on the request
 thread and returns the final state. Async / pause-resume across HTTP is a
@@ -26,6 +31,7 @@ Phase 1F+ enhancement; the in-process Runner already supports it (see
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -46,6 +52,7 @@ from simworkbench.paths import (
     temp_runs_root,
 )
 from simworkbench.runtime import Runner
+from simworkbench.serialization import CapsuleValidator, load_manifest
 
 # ---------------------------------------------------------------------------
 # Request / response schemas
@@ -225,6 +232,159 @@ def create_app() -> FastAPI:
             for p in sorted(root.iterdir())
             if p.is_dir() and p.name != ".gitkeep"
         ]
+
+    # -----------------------------------------------------------------------
+    # Phase 2D — capsule inspection endpoints. The UI's CapsuleExplorer reads
+    # these to render manifest, ModelSpec, code, results, validation, and
+    # provenance views without learning the on-disk layout itself.
+    # -----------------------------------------------------------------------
+
+    def _resolve_capsule(name: str) -> Path:
+        """Look up a capsule by directory name, refusing path-escape inputs.
+
+        Honors agent_error_patterns.md "Side-effecting before validating": we
+        validate the resolved path is inside ``simulation_capsules/`` BEFORE
+        any read. ``..`` segments would otherwise let a caller escape the
+        sandbox.
+        """
+        root = simulation_capsules_root().resolve()
+        target = (root / name).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid capsule name") from exc
+        if not target.is_dir():
+            raise HTTPException(status_code=404, detail=f"Capsule {name!r} not found")
+        return target
+
+    @app.get("/api/capsules/{name}")
+    def get_capsule(name: str) -> dict[str, Any]:
+        """Manifest + structural summary for a single capsule.
+
+        The UI's ManifestView consumes this. We return raw JSON-friendly dicts
+        so the frontend doesn't need to parse TOML.
+        """
+        capsule_path = _resolve_capsule(name)
+        manifest_path = capsule_path / "manifest.toml"
+        manifest_dump: dict[str, Any] | None = None
+        manifest_error: str | None = None
+        if manifest_path.is_file():
+            try:
+                manifest_dump = load_manifest(manifest_path).model_dump(mode="python")
+            except Exception as exc:  # noqa: BLE001 — surfaced to caller verbatim.
+                manifest_error = str(exc)
+
+        # Top-level subtree listing — what a user sees in CapsuleExplorer.
+        subtrees: list[dict[str, Any]] = []
+        for child in sorted(capsule_path.iterdir()):
+            if child.is_dir():
+                subtrees.append(
+                    {
+                        "name": child.name,
+                        "kind": "dir",
+                        "entries": sum(1 for _ in child.rglob("*") if _.is_file()),
+                    }
+                )
+            else:
+                subtrees.append(
+                    {"name": child.name, "kind": "file", "size_bytes": child.stat().st_size}
+                )
+        return {
+            "name": name,
+            "path": str(capsule_path.relative_to(repo_root())),
+            "manifest": manifest_dump,
+            "manifest_error": manifest_error,
+            "subtrees": subtrees,
+        }
+
+    @app.get("/api/capsules/{name}/files/{file_path:path}")
+    def get_capsule_file(name: str, file_path: str) -> dict[str, Any]:
+        """Read a single text file from a capsule.
+
+        Restricted to the capsule directory subtree. Binary files (HDF5,
+        images) are refused with a 415 — the UI uses different surfaces for
+        those (diagnostics endpoint, plot images).
+        """
+        capsule_path = _resolve_capsule(name)
+        target = (capsule_path / file_path).resolve()
+        try:
+            target.relative_to(capsule_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Path escapes capsule") from exc
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+        binary_suffixes = {".h5", ".hdf5", ".zarr", ".png", ".jpg", ".jpeg", ".pdf", ".zip"}
+        if target.suffix.lower() in binary_suffixes:
+            raise HTTPException(
+                status_code=415,
+                detail=f"Refusing to return binary file as text: {file_path}",
+            )
+        try:
+            text = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=415, detail=f"Not a UTF-8 text file: {file_path}"
+            ) from exc
+        return {
+            "name": name,
+            "path": file_path,
+            "size_bytes": target.stat().st_size,
+            "content": text,
+        }
+
+    @app.get("/api/capsules/{name}/validate")
+    def validate_capsule(name: str) -> dict[str, Any]:
+        """Run the canonical CapsuleValidator and return its report."""
+        capsule_path = _resolve_capsule(name)
+        report = CapsuleValidator().validate(capsule_path)
+        return {
+            "name": name,
+            "ok": report.ok,
+            "violations": [
+                {
+                    "severity": v.severity,
+                    "code": v.code,
+                    "message": v.message,
+                    "path": v.path,
+                }
+                for v in report.violations
+            ],
+            "errors": [v.code for v in report.errors],
+            "warnings": [v.code for v in report.warnings],
+        }
+
+    @app.get("/api/capsules/{name}/diagnostics")
+    def get_capsule_diagnostics(name: str) -> dict[str, Any]:
+        """Read ``results/diagnostics.h5`` (preferred) or ``diagnostics.json``.
+
+        Returns ``{"series": {<name>: [floats...]}, "source": "h5"|"json"}``.
+        Phase 1's minimal capsule used JSON; Phase 2A added HDF5 — both are
+        accepted so older capsules still inspect correctly.
+        """
+        import json
+
+        capsule_path = _resolve_capsule(name)
+        h5_path = capsule_path / "results" / "diagnostics.h5"
+        json_path = capsule_path / "results" / "diagnostics.json"
+        if h5_path.is_file():
+            from simworkbench.serialization import read_diagnostics_h5
+
+            data, _meta = read_diagnostics_h5(h5_path)
+            return {
+                "name": name,
+                "source": "h5",
+                "series": {k: v.tolist() for k, v in data.items()},
+            }
+        if json_path.is_file():
+            return {
+                "name": name,
+                "source": "json",
+                "series": json.loads(json_path.read_text(encoding="utf-8")),
+            }
+        raise HTTPException(
+            status_code=404,
+            detail=f"No diagnostics found in capsule {name!r} (results/diagnostics.{{h5,json}})",
+        )
 
     return app
 

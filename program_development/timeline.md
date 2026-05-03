@@ -24,6 +24,26 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 2 closes — Simulation Capsule System complete)
+
+### Completed
+- **Workstream 2A — Capsule Format & Validator — shipped.** ADR-0002 ratified `Accepted` with HDF5 lock-in. Pydantic `Manifest` with `[capsule] [paper] [model] [runtime] [provenance]` sections at schema `v0.1`. `CapsuleValidator` returns a structured `ValidationReport` with severity-stratified violations. HDF5 `bulk_data.write_diagnostics_h5` with gzip-3 compression, JSON kept as a fallback. Migration registry with identity v0.1→v0.1 step. 207→239 default-checker entities; 207→260 tests after 2A unit/integration suites.
+- **Workstream 2B — Provenance System — shipped.** `ProvenanceLock` (TOML) captures workbench/Python/platform versions, run_id, base_seed, backend, ModelSpec hash, source-file hashes, format version, parent capsule hash, placeholders. `capture_environment()` writes `environment.yaml` with pip freeze + system info. `AgentTraceWriter` is append-only and refuses any record naming `<capsule>/src/user_edits/` (carries `agent_error_patterns.md` "Overwriting `<capsule>/src/user_edits/` during regeneration" into the writer's contract). `SourceRegistry` SHA-256-hashes `paper_sources/`, `src/generated/`, `src/user_edits/` with an aggregate-hash collapse for capsule identity.
+- **Workstream 2C — Export System — shipped.** Six exporters (code/data/plots/notebook/report/archive) behind `export_capsule()`; every exporter validates `is_under_workbench()` BEFORE side-effecting (carries `agent_error_patterns.md` "Side-effecting before validating"). `fork_capsule()` copies every subtree except `provenance/`, computes parent's source-aggregate hash, and writes a fresh provenance lock + `agent_trace.md` + `environment.yaml`. Real shell wrappers under `scripts/export/{capsule,fork_capsule}.sh` replace the Phase-0 stubs. New regression test `tests/regression/test_user_edits_not_overwritten.py` locks the user_edits invariant across fork + export + re-fork.
+- **Workstream 2D — Capsule UI — shipped.** Six React components (`ManifestView`, `ModelSpecView`, `CapsuleCodeView`, `ResultsView`, `ValidationView`, `ProvenanceView`) under `apps/workbench-ui/src/components/capsule/`. `CapsuleExplorer.tsx` expanded into a tabbed detail panel that drills into a selected capsule. Four new backend endpoints (`GET /api/capsules/{name}`, `/files/{path:path}`, `/validate`, `/diagnostics`) — every one validates the resolved path is inside `simulation_capsules/` BEFORE any read (path-escape `..` returns 400/404). `CapsuleCodeView` renders a "user-owned — agents must not overwrite" badge on `src/user_edits/` so the long-standing pattern is visible in the UI as well as the writer.
+- **Status flip.** README, CLAUDE.md, milestone, timeline, and `docs_site/src/content/simulation_capsules.tsx` all flipped in this commit. Milestone checkboxes flipped from `☐` to `☑`; workstream subheaders flipped from "Open" to "Closed".
+- **Convention checker ratchet.** All Phase 2A/2B/2C/2D entity assertions promoted from the `--include-open-workstreams` opt-in branch into the default hard gate (per `agent_error_patterns.md` "Closing a workstream without promoting its assertions from opt-in to default"). Default mode now 290/290 ok; opt-in mode passes with the "no open workstreams — Phase 3 not yet opened" message. Regression test `tests/regression/test_convention_checker_modes.py` flipped to its closed-phase form.
+- **Bug check.** 311 Python tests pass, 11 UI vitest tests pass, ruff clean (added `PLR0915` to the ignore list — large FastAPI factory functions register many routes in a single closure, which is intended; matches the existing rationale for `PLR0913`).
+- **App.test.tsx** fixed for a pre-existing failure: `screen.getByText("Simulations")` matched both the sidebar nav `<a>` and the page `<h2>`. Test now scopes to `getByRole("navigation")` then `within(nav).getByText(label)`.
+
+### Open questions
+- None Phase-2-blocking. Phase 3 opens next per plan §Phase 3.
+
+### Next steps
+- Open Phase 3 per plan §Phase 3 using the existing milestone Pre-gate template. First action: enumerate plan §Phase 3 deliverables and add per-entity opt-in convention-checker assertions, mirroring the procedure that worked for Phases 1 and 2.
+
+---
+
 ## 2026-05-02 (Phase 2 opens — Simulation Capsule System)
 
 ### Completed

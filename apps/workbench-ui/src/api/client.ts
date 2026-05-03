@@ -46,6 +46,63 @@ export interface CapsuleEntry {
   path: string;
 }
 
+/**
+ * Phase 2D — capsule inspection types. Mirrors the FastAPI server
+ * responses one-to-one so the contract is enforced at the type level.
+ */
+export interface CapsuleSubtreeEntry {
+  name: string;
+  kind: "dir" | "file";
+  entries?: number;
+  size_bytes?: number;
+}
+
+export interface CapsuleManifestSection {
+  [key: string]: unknown;
+}
+
+export interface CapsuleDetail {
+  name: string;
+  path: string;
+  manifest: {
+    capsule?: CapsuleManifestSection;
+    paper?: CapsuleManifestSection;
+    model?: CapsuleManifestSection;
+    runtime?: CapsuleManifestSection;
+    provenance?: CapsuleManifestSection;
+  } | null;
+  manifest_error: string | null;
+  subtrees: CapsuleSubtreeEntry[];
+}
+
+export interface CapsuleFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  content: string;
+}
+
+export interface CapsuleViolation {
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+  path: string | null;
+}
+
+export interface CapsuleValidation {
+  name: string;
+  ok: boolean;
+  violations: CapsuleViolation[];
+  errors: string[];
+  warnings: string[];
+}
+
+export interface CapsuleDiagnostics {
+  name: string;
+  source: "h5" | "json";
+  series: Record<string, number[]>;
+}
+
 const DEFAULT_BASE = "/api";
 
 async function fetchJson<T>(
@@ -70,6 +127,10 @@ export interface ApiClient {
   listDocsPages(): Promise<DocsPage[]>;
   listCapsules(): Promise<CapsuleEntry[]>;
   listTempRuns(): Promise<CapsuleEntry[]>;
+  getCapsule(name: string): Promise<CapsuleDetail>;
+  getCapsuleFile(name: string, path: string): Promise<CapsuleFile>;
+  validateCapsule(name: string): Promise<CapsuleValidation>;
+  getCapsuleDiagnostics(name: string): Promise<CapsuleDiagnostics>;
 }
 
 export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
@@ -92,6 +153,25 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
     listDocsPages: () => fetchJson("/docs/pages", undefined, baseUrl),
     listCapsules: () => fetchJson("/capsules", undefined, baseUrl),
     listTempRuns: () => fetchJson("/temp_runs", undefined, baseUrl),
+    getCapsule: (name) =>
+      fetchJson(`/capsules/${encodeURIComponent(name)}`, undefined, baseUrl),
+    getCapsuleFile: (name, path) =>
+      fetchJson(
+        `/capsules/${encodeURIComponent(name)}/files/${path
+          .split("/")
+          .map(encodeURIComponent)
+          .join("/")}`,
+        undefined,
+        baseUrl,
+      ),
+    validateCapsule: (name) =>
+      fetchJson(`/capsules/${encodeURIComponent(name)}/validate`, undefined, baseUrl),
+    getCapsuleDiagnostics: (name) =>
+      fetchJson(
+        `/capsules/${encodeURIComponent(name)}/diagnostics`,
+        undefined,
+        baseUrl,
+      ),
   };
 }
 
