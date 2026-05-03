@@ -32,6 +32,72 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-02: Phase 2 false close — six legitimate review findings
+
+### Affected subsystem
+Repository-wide. Phase 2 close at commit `d88db3e` claimed Phase 2 complete; user review identified seven outstanding issues spanning capsule reload, `save_capsule`'s use of the Phase 2B writers, `CapsuleValidator`'s required-files list, the exporters' destruct-before-guard ordering, the Capsule UI's code viewer, the diagnostics API JSON fallback, and the source-aggregate hash's subtree set. Plus the README's two-place phase-status string drifted, and the build scripts emitted `.js` files into the source tree.
+
+### Symptoms
+1. **Reload was a stub.** `scripts/dev/run_capsule.sh` still printed `Capsule loading is scheduled for Phase 2.` and exited 2. README:239 documents this script as the reload entrypoint, so the Phase 2 gate ("portable, inspectable, **reloadable**, exportable") was unmet.
+2. **`save_capsule` ignored the Phase 2B writers.** `provenance.lock` was a hand-rolled minimal dict (didn't validate as `ProvenanceLock` — `load_lock()` raised); `environment.yaml` was never written; `agent_trace.md` was overwritten on each save instead of appended via `AgentTraceWriter`. Phase 2B writers existed and had unit tests, but no producer actually invoked them.
+3. **`CapsuleValidator` accepted broken Phase 2 capsules.** `REQUIRED_FILES` listed `results/diagnostics.json` (legacy) but not `results/diagnostics.h5` (Phase 2A canonical), and didn't require `provenance/environment.yaml` (Phase 2B). Deleting `diagnostics.h5` left the validator green.
+4. **Exporters destructively `rmtree`d the destination before checking source/target overlap.** `export_capsule(capsule, capsule, kinds=("code",))` deleted `<capsule>/src/generated` before raising. The notebook exporter embedded `Path('/Users/.../capsule.lxp')` as a literal — exports were not portable.
+5. **`CapsuleCodeView` never showed any code.** It fetched `src/generated/__index__` from the file endpoint, which only serves files, so the call always returned 404 and the panel stayed empty. The convention checker's existence assertion was satisfied because the component file existed.
+6. **`/api/capsules/{name}/diagnostics` JSON fallback returned the wrong shape.** It returned the whole capsule JSON sidecar (`run_id`, `state`, `elapsed_seconds`, `placeholders`, `diagnostics`, ...) as `series`, leaking metadata keys into the UI's series table.
+7. **`SourceRegistry.DEFAULT_SUBTREES` didn't include `paper_sources/`.** Editing `paper_sources/paper.txt` did not shift the capsule's identity hash — silent break of the provenance chain after a paper edit.
+
+Plus: README:5 said "Phase 2 complete" while README:33 said "In progress (2A, 2B, 2C, 2D open)"; `scripts/build/ui.sh` and `scripts/docs/build.sh` failed (the former emitted `.js` into `src/`, the latter had no local `tsc`). Vitest was picking up the leaked `.js` test duplicates.
+
+### Root cause
+Six new agent failure modes, each now logged in `agent_error_patterns.md`:
+
+- *Convention-checker existence ≠ phase-gate behavior* — issues 1, 5. The checker proved files existed; nobody proved the gate-criterion behaviors worked end-to-end.
+- *Building writers without wiring producers* — issue 2. Phase 2B's writers had unit tests; the producer that should have called them did not.
+- *Schema drift between writers and validators* — issue 3. Phase 2A made HDF5 canonical; the validator's required list didn't follow.
+- *Destructive-before-guard in exporters* — issue 4 (first half).
+- *Embedding absolute paths in exported artifacts* — issue 4 (second half).
+- *Build script emits compile artifacts into the source tree* — the `.js` leak.
+- *Duplicated phase status across nearby paragraphs* — README:5 vs README:33.
+
+Issue 6 (diagnostics API JSON fallback) is a plain wiring bug in the JSON-sidecar-shape contract; issue 7 is a narrow `DEFAULT_SUBTREES` omission. Both were caught by the audit grepping the actual user-facing surface, not the convention checker.
+
+### Fix
+A single follow-up commit (this one) addresses all seven:
+
+- `scripts/dev/run_capsule.sh` becomes a real implementation calling `load_capsule` + `Runner`. Smoke test at `tests/integration/test_run_capsule_script.py`.
+- `save_capsule` calls `ProvenanceLock` + `write_lock`, `write_environment`, `AgentTraceWriter(...).append(...)`. The hand-rolled `_write_toml`/`_toml_value` helpers are deleted.
+- `CapsuleValidator.REQUIRED_FILES` adds `results/diagnostics.h5` and `provenance/environment.yaml`; `RECOMMENDED_FILES` (new) holds `results/diagnostics.json` (warning-only sidecar). Three new validator tests assert the new requirements.
+- Exporters validate the entire plan before any `rmtree`. Notebook uses `Path('..') / 'results'` instead of an absolute path. Tests assert the source survives a self-export attempt and that no absolute path appears in the notebook source.
+- New `GET /api/capsules/{name}/tree?subtree=<path>` endpoint enumerates files. `CapsuleCodeView` calls it, groups by `src/generated`, `src/user_edits`, `src/kernels`, and lets the user click a file to view it.
+- `/api/capsules/{name}/diagnostics` JSON fallback returns `payload["diagnostics"]` (or the payload itself if no `diagnostics` key) — never the whole sidecar.
+- `SourceRegistry.DEFAULT_SUBTREES` includes `paper_sources/`. New regression test asserts editing `paper_sources/paper.txt` shifts the aggregate hash.
+- README's status-table line flipped to **Complete**; build scripts use `tsc --noEmit && vite build`; tsconfig sets `noEmit: true`; `.gitignore` carries defensive rules for `apps/*/src/**/*.js` and `docs_site/src/**/*.js`.
+
+### Regression protection
+Each new pattern has a Detection section. Concrete tests added:
+- `tests/integration/test_run_capsule_script.py` exercises the reload script end-to-end and asserts the script is not the Phase-0 stub.
+- `tests/unit/test_capsule_validator.py` adds `test_validator_requires_diagnostics_h5`, `test_validator_requires_environment_yaml`, `test_validator_warns_on_missing_diagnostics_json_sidecar`.
+- `tests/unit/test_export_code.py::test_export_code_refuses_self_overwrite` and the matching test in `test_export_data.py` assert source-survival after a self-export attempt.
+- `tests/unit/test_export_notebook.py::test_notebook_uses_relative_capsule_path` asserts no absolute path leaks into the notebook source.
+- `tests/integration/test_api_server.py` adds `test_get_capsule_diagnostics_json_fallback` and `test_get_capsule_tree_lists_src_files`.
+- `tests/unit/test_provenance_sources.py::test_paper_sources_in_default_aggregate_hash`.
+
+### Agent warning
+A close commit must verify gate-criterion *behavior*, not just existence. The eight checks for any future close:
+
+1. Every plan §Phase-N gate criterion exercised end-to-end on a real artifact (save → load → run → export → fork → reload).
+2. Every documented script path runs successfully on a typical input — `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases.
+3. Every writer that landed in this phase has an integration test proving the producer actually invokes it (round-trip the producer's output through the writer's `load_*`).
+4. Every new validator field corresponds to a producer field that was added in the same workstream — diff the validator and producer commits.
+5. Every exporter validates the full plan before any destructive op; tests assert source-survival on self-export.
+6. Every UI panel that promises to show X has a test that asserts X is in the rendered output, not just that the component file exists.
+7. README + CLAUDE.md + milestone + timeline all agree on phase status — `grep -nE "Phase NN" <files>` reads every match.
+8. `scripts/build/*.sh` succeeds; the source tree has no `.js` or `.d.ts` artifacts after the build.
+
+A close commit that skips any of these is rolled back, the new patterns are re-read, and the work is finished. Phases 1 and 2 each shipped a false-close — the third has one less excuse.
+
+---
+
 ## 2026-05-02: Phase 1 false close — seven legitimate review findings
 
 ### Affected subsystem

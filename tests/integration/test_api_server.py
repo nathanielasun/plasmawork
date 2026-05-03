@@ -240,6 +240,28 @@ def test_validate_capsule_returns_report(real_capsule):
     assert isinstance(body["ok"], bool)
 
 
+def test_get_capsule_tree_lists_src_files(real_capsule):
+    """Regression for the post-Phase-2-close finding "CapsuleCodeView never
+    actually showed code". The /tree endpoint must enumerate files under
+    a subtree so the UI can render the picker.
+    """
+    name, capsule_dir = real_capsule
+    # Drop a file under src/generated so the tree has something to list.
+    (capsule_dir / "src" / "generated").mkdir(parents=True, exist_ok=True)
+    (capsule_dir / "src" / "generated" / "runner.py").write_text("# hi\n")
+    r = _client().get(f"/api/capsules/{name}/tree?subtree=src")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    paths = [f["path"] for f in body["files"]]
+    assert "src/generated/runner.py" in paths
+
+
+def test_get_capsule_tree_refuses_subtree_escape(real_capsule):
+    name, _ = real_capsule
+    r = _client().get(f"/api/capsules/{name}/tree?subtree=..%2F..")
+    assert r.status_code in (400, 404)
+
+
 def test_get_capsule_diagnostics_returns_series(real_capsule):
     name, _ = real_capsule
     r = _client().get(f"/api/capsules/{name}/diagnostics")
@@ -248,3 +270,24 @@ def test_get_capsule_diagnostics_returns_series(real_capsule):
     assert body["source"] in ("h5", "json")
     assert "A" in body["series"]
     assert isinstance(body["series"]["A"], list)
+    # Regression: the JSON fallback used to return the whole sidecar as
+    # `series`, leaking run_id/state/elapsed_seconds into the series table.
+    for forbidden_key in ("run_id", "state", "elapsed_seconds", "final_simulation_time"):
+        assert forbidden_key not in body["series"]
+
+
+def test_get_capsule_diagnostics_json_fallback(real_capsule):
+    """Force the JSON fallback path by removing diagnostics.h5; the response
+    must still be the `{name, source, series: {<diagnostic>: [...]}}` shape,
+    with metadata keys NOT bleeding into series.
+    """
+    name, capsule_dir = real_capsule
+    (capsule_dir / "results" / "diagnostics.h5").unlink()
+    r = _client().get(f"/api/capsules/{name}/diagnostics")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source"] == "json"
+    assert "A" in body["series"]
+    # No metadata keys leaked.
+    for forbidden_key in ("run_id", "state", "elapsed_seconds", "placeholders"):
+        assert forbidden_key not in body["series"]

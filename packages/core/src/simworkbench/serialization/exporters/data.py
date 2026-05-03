@@ -14,6 +14,26 @@ from simworkbench.paths import is_under_workbench
 DATA_SUBDIRS = ("data", "results")
 
 
+def _refuse_overlap(source: Path, dest: Path) -> None:
+    """Raise before any destructive op if dest is the source or its ancestor.
+
+    Honors `agent_error_patterns.md` "Destructive-before-guard in exporters".
+    """
+    src = source.resolve()
+    dst = dest.resolve()
+    if src == dst:
+        raise ValueError(
+            f"Refusing to export onto the source itself: {src} == {dst}."
+        )
+    try:
+        src.relative_to(dst)
+    except ValueError:
+        return
+    raise ValueError(
+        f"Refusing to export into a parent of the source: {dst} contains {src}."
+    )
+
+
 def export_data(
     capsule_dir: str | Path,
     target: str | Path,
@@ -21,7 +41,9 @@ def export_data(
     require_workbench_target: bool = True,
 ) -> tuple[Path, ...]:
     """Copy data + results subtrees. Returns the destination directories."""
-    targets: list[Path] = []
+    # Validate every overlap and workbench-target rule BEFORE any rmtree, so
+    # self-export never deletes the source.
+    plan: list[tuple[Path, Path]] = []
     for sub in DATA_SUBDIRS:
         source = Path(capsule_dir) / sub
         if not source.is_dir():
@@ -31,6 +53,11 @@ def export_data(
             raise PermissionError(
                 f"Refusing to export {sub} outside workbench-managed roots: {dest}"
             )
+        _refuse_overlap(source, dest)
+        plan.append((source, dest))
+
+    targets: list[Path] = []
+    for source, dest in plan:
         if dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(source, dest)

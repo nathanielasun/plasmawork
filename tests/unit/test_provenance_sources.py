@@ -92,3 +92,26 @@ def test_filehash_is_immutable():
     fh = FileHash(path="x", sha256="0" * 64, size_bytes=4)
     with pytest.raises(AttributeError):
         fh.sha256 = "1" * 64  # type: ignore[misc]
+
+
+def test_paper_sources_in_default_aggregate_hash(tmp_path):
+    """Regression for the post-Phase-2-close finding "source hashing
+    ignores paper_sources/".
+
+    Editing a paper source must shift the aggregate hash. Without this,
+    the hash claims the capsule is unchanged after a paper edit, which
+    silently breaks the provenance chain.
+    """
+    capsule = tmp_path / "with-paper.lxp"
+    (capsule / "paper_sources").mkdir(parents=True)
+    (capsule / "model").mkdir(parents=True)
+    (capsule / "paper_sources" / "paper.txt").write_text("v1\n")
+    (capsule / "model" / "model_spec.yaml").write_text("name: x\n")
+    registry = SourceRegistry(capsule)
+    before = registry.aggregate_hash()
+    (capsule / "paper_sources" / "paper.txt").write_text("v2\n")
+    after = registry.aggregate_hash()
+    assert before != after, (
+        "Editing paper_sources/ did NOT shift the aggregate hash; "
+        "DEFAULT_SUBTREES must include paper_sources/."
+    )

@@ -103,6 +103,17 @@ export interface CapsuleDiagnostics {
   series: Record<string, number[]>;
 }
 
+export interface CapsuleTreeFile {
+  path: string;
+  size_bytes: number;
+}
+
+export interface CapsuleTree {
+  name: string;
+  subtree: string;
+  files: CapsuleTreeFile[];
+}
+
 const DEFAULT_BASE = "/api";
 
 async function fetchJson<T>(
@@ -129,6 +140,7 @@ export interface ApiClient {
   listTempRuns(): Promise<CapsuleEntry[]>;
   getCapsule(name: string): Promise<CapsuleDetail>;
   getCapsuleFile(name: string, path: string): Promise<CapsuleFile>;
+  getCapsuleTree(name: string, subtree?: string): Promise<CapsuleTree>;
   validateCapsule(name: string): Promise<CapsuleValidation>;
   getCapsuleDiagnostics(name: string): Promise<CapsuleDiagnostics>;
 }
@@ -164,6 +176,14 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
         undefined,
         baseUrl,
       ),
+    getCapsuleTree: (name, subtree = "") => {
+      const qs = subtree ? `?subtree=${encodeURIComponent(subtree)}` : "";
+      return fetchJson(
+        `/capsules/${encodeURIComponent(name)}/tree${qs}`,
+        undefined,
+        baseUrl,
+      );
+    },
     validateCapsule: (name) =>
       fetchJson(`/capsules/${encodeURIComponent(name)}/validate`, undefined, baseUrl),
     getCapsuleDiagnostics: (name) =>

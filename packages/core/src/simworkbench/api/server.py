@@ -297,6 +297,34 @@ def create_app() -> FastAPI:
             "subtrees": subtrees,
         }
 
+    @app.get("/api/capsules/{name}/tree")
+    def list_capsule_tree(name: str, subtree: str = "") -> dict[str, Any]:
+        """List files (recursively) under a capsule's subtree.
+
+        Used by the UI's CapsuleCodeView to enumerate files in
+        ``src/{generated,user_edits,kernels}/`` so the user can pick one
+        to open via ``/files/{path}``. Without this, the view had no way
+        to discover what existed and was effectively dead.
+        """
+        capsule_path = _resolve_capsule(name)
+        base = (capsule_path / subtree).resolve() if subtree else capsule_path
+        try:
+            base.relative_to(capsule_path)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="Subtree escapes capsule"
+            ) from exc
+        if not base.is_dir():
+            raise HTTPException(
+                status_code=404, detail=f"Subtree not found: {subtree}"
+            )
+        files: list[dict[str, Any]] = []
+        for path in sorted(base.rglob("*")):
+            if path.is_file():
+                rel = path.relative_to(capsule_path).as_posix()
+                files.append({"path": rel, "size_bytes": path.stat().st_size})
+        return {"name": name, "subtree": subtree, "files": files}
+
     @app.get("/api/capsules/{name}/files/{file_path:path}")
     def get_capsule_file(name: str, file_path: str) -> dict[str, Any]:
         """Read a single text file from a capsule.
@@ -376,10 +404,22 @@ def create_app() -> FastAPI:
                 "series": {k: v.tolist() for k, v in data.items()},
             }
         if json_path.is_file():
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+            # Phase 1's minimal capsule wrote the JSON sidecar with a top-
+            # level "diagnostics" key holding the series; metadata fields
+            # (run_id, state, elapsed_seconds, ...) sit alongside. The earlier
+            # implementation returned the whole payload as `series`, which
+            # leaked metadata keys into the UI's series table. Pull
+            # `diagnostics` if present; otherwise treat the payload itself
+            # as the series map (older sidecars).
+            if isinstance(payload, dict) and "diagnostics" in payload:
+                series_obj = payload["diagnostics"] or {}
+            else:
+                series_obj = payload or {}
             return {
                 "name": name,
                 "source": "json",
-                "series": json.loads(json_path.read_text(encoding="utf-8")),
+                "series": series_obj,
             }
         raise HTTPException(
             status_code=404,

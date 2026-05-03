@@ -187,9 +187,24 @@ Before flipping any phase status to "Complete":
    ```bash
    grep -nE "Phase NN" README.md program_development/milestones/phase_NN_*.md program_development/timeline.md
    ```
-   Confirm every match agrees with the new status.
+   Confirm every match agrees with the new status. **Read every match the grep returns**, not just the first paragraph — the same status is often mirrored in a banner *and* a status table within the same file.
 5. Commit the status flip in one commit that touches all status-bearing files at once.
 6. Push (this is a major change per **Autonomous Git Operations**).
+
+### Behavioral verification — the lesson of the Phase 2 false close
+
+Existence checks (steps 1–6 above) are necessary but not sufficient. The convention checker proves files exist. It does not prove that the phase gate's *behaviors* work. Phase 1 and Phase 2 each shipped a false close because the agent confused "all entities exist" with "the gate criteria are satisfied". Add these eight behavioral checks before any close commit:
+
+1. **End-to-end gate walk.** Each plan §Phase-N gate criterion exercised on a real artifact. For "portable, inspectable, reloadable, exportable": save → load → run → export → fork → reload, each step a separate integration test.
+2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README/CLAUDE.md/docs page advertises as a current entrypoint runs successfully on a typical input.
+3. **Producer-writer wiring.** Every writer that landed in this phase appears in the producer's call site. Round-trip the producer's output through the writer's `load_*` to catch hand-rolled equivalents that bypass the new writer.
+4. **Validator field parity.** Every new producer output has a matching validator required-field. Diff the validator's `REQUIRED_FILES` and the producer's outputs in the same review.
+5. **Destructive-after-validate in exporters.** Every exporter validates the entire plan before any `rmtree` / `unlink` / write. Tests assert source-survival on self-export.
+6. **UI panels actually render.** Every UI panel that promises to show X has a Vitest test that mounts the component, mocks the backend, and asserts X is in the rendered output.
+7. **Status-sync grep reads every match.** When `grep -nE "Phase NN"` returns multiple lines in the same file (banner + table), read all of them.
+8. **Build scripts succeed and emit no source-tree artifacts.** `scripts/build/*.sh` exit 0; `find apps/*/src docs_site/src -name '*.js' -o -name '*.d.ts'` is empty afterwards.
+
+The named patterns each of these defends against live in `bugs_and_fixes/agent_error_patterns.md` (24 patterns; the latest six are post-Phase-2-close).
 
 ### When a checker assertion is wrong
 

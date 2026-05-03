@@ -114,3 +114,40 @@ def test_validator_reports_missing_referenced_model_spec(saved_capsule):
     # The MISSING_REQUIRED_FILE check fires (model/model_spec.yaml is required)
     # AND the manifest-pointer check fires.
     assert "missing_required_file" in codes
+
+
+def test_validator_requires_diagnostics_h5(saved_capsule):
+    """HDF5 is the canonical bulk-data format (ADR-0002 Accepted).
+    Removing it must flip the validator to a hard failure.
+
+    Regression for the post-Phase-2-close finding "validator accepts a
+    capsule with no diagnostics.h5".
+    """
+    (saved_capsule / "results" / "diagnostics.h5").unlink()
+    report = CapsuleValidator().validate(saved_capsule)
+    assert not report.ok
+    error_paths = [v.path for v in report.errors]
+    assert "results/diagnostics.h5" in error_paths
+
+
+def test_validator_requires_environment_yaml(saved_capsule):
+    """provenance/environment.yaml is part of the Phase 2B triad.
+    Removing it must flip the validator to a hard failure.
+
+    Regression for the post-Phase-2-close finding "validator does not
+    require provenance/environment.yaml".
+    """
+    (saved_capsule / "provenance" / "environment.yaml").unlink()
+    report = CapsuleValidator().validate(saved_capsule)
+    assert not report.ok
+    error_paths = [v.path for v in report.errors]
+    assert "provenance/environment.yaml" in error_paths
+
+
+def test_validator_warns_on_missing_diagnostics_json_sidecar(saved_capsule):
+    """JSON sidecar is only recommended (warning, not error)."""
+    (saved_capsule / "results" / "diagnostics.json").unlink()
+    report = CapsuleValidator().validate(saved_capsule)
+    assert report.ok, f"Unexpected errors: {report.errors}"
+    codes = [v.code for v in report.warnings]
+    assert "missing_recommended_file" in codes

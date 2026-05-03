@@ -15,6 +15,7 @@
     "isolatedModules": true,
     "useDefineForClassFields": true,
     "allowSyntheticDefaultImports": true,
+    "noEmit": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

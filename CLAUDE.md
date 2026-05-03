@@ -346,6 +346,21 @@ git commit -m "..."   # Use the HEREDOC pattern below.
 git push
 ```
 
+### Closing a phase — eight behavioral checks (the Phase 2 false-close lesson)
+
+Phase 1 and Phase 2 each shipped a false close. Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these eight before the close commit:
+
+1. **End-to-end gate walk.** Every plan §Phase-N gate criterion exercised on a real artifact. For Phase 2 that meant: run the example, save it as a capsule, reload it via `scripts/dev/run_capsule.sh`, validate it, export it, fork it, reload the fork. Each step on its own integration test, not just a manual demo.
+2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README, CLAUDE.md, or any docs page advertises as a current entrypoint runs successfully on a typical input. (Phase 2 close shipped `scripts/dev/run_capsule.sh` still as the Phase-0 stub even though README documented it as the reload path.)
+3. **Producer-writer wiring.** Every writer that landed in this phase appears in the producer's call site by file:line. Round-trip the producer's output through the writer's `load_*` to catch hand-rolled equivalents. (Phase 2 close shipped `save_capsule` writing a hand-rolled `provenance.lock` that didn't validate as `ProvenanceLock`; `environment.yaml` wasn't written; `agent_trace.md` was overwritten instead of appended.)
+4. **Validator field parity.** Every new producer output corresponds to a validator required-field added in the same workstream. Diff the validator's `REQUIRED_FILES` and the producer's outputs — they must agree. (Phase 2 close shipped the validator requiring `diagnostics.json` while the canonical format had become `diagnostics.h5`.)
+5. **Destructive-after-validate in exporters.** Every exporter validates the entire plan before any `rmtree` / `unlink` / write. Tests assert source-survival on self-export (`export_X(capsule, capsule, ...)` raises AND the source is still on disk afterwards).
+6. **UI panels actually render.** Every UI panel that promises to show X has a Vitest test that mounts the component, mocks the backend, and asserts X is in the rendered output. (Phase 2 close shipped `CapsuleCodeView` requesting `src/generated/__index__` from the file endpoint — always 404 — and the test suite never noticed because there was no test that asserted code actually rendered.)
+7. **Status-sync grep reads every match.** `grep -nE "Phase NN" README.md` will sometimes return multiple lines in the same file (banner + table). Read all of them. (Phase 2 close shipped README:5 saying "complete" while README:33 said "In progress".)
+8. **Build scripts succeed and emit no source-tree artifacts.** `scripts/build/ui.sh` and `scripts/docs/build.sh` exit 0; `find apps/*/src docs_site/src -name '*.js' -o -name '*.d.ts'` is empty afterwards. (Phase 2 close shipped `tsc -b && vite build` which leaked `.js` files into `src/` whenever typecheck failed; Vitest then double-counted them.)
+
+The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 24 patterns; the six new ones from the Phase 2 audit are at the bottom).
+
 ### Reality-test plan-derived patterns
 
 Anything copied from `scientific_simulation_workbench_agent_plan.md` gets reality-tested before commit.

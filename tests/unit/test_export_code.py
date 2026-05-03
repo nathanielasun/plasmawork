@@ -66,3 +66,21 @@ def test_export_code_no_src_dir_raises(tmp_path):
     target = tmp_path / "target"
     with pytest.raises(FileNotFoundError, match="no src/ directory"):
         export_code(tmp_path / "no-such-capsule.lxp", target, require_workbench_target=False)
+
+
+def test_export_code_refuses_self_overwrite(tmp_path):
+    """Regression for the post-Phase-2-close finding "exporters destructively
+    rmtree the destination before checking source/target overlap".
+
+    `export_code(capsule, capsule, ...)` previously deleted
+    <capsule>/src/generated before raising. The guard now fires first and
+    leaves the source intact.
+    """
+    capsule = _make_capsule(tmp_path)
+    generated = capsule / "src" / "generated" / "runner.py"
+    original = generated.read_text()
+    with pytest.raises(ValueError, match="onto the source itself|parent of the source"):
+        export_code(capsule, capsule, require_workbench_target=False)
+    # Source must still be intact.
+    assert generated.is_file()
+    assert generated.read_text() == original

@@ -76,10 +76,22 @@ REQUIRED_FILES: tuple[str, ...] = (
     "manifest.toml",
     "model/model_spec.yaml",
     "configs/run_config.yaml",
-    "results/diagnostics.json",
+    # Phase 2A made HDF5 the canonical bulk-data format (ADR-0002 Accepted).
+    # The validator requires diagnostics.h5; the JSON sidecar is acceptable
+    # but warning-only (see RECOMMENDED_FILES below).
+    "results/diagnostics.h5",
+    # Phase 2B provenance triad — every saved capsule MUST carry the lock,
+    # environment snapshot, and append-only agent trace. Honors
+    # `agent_error_patterns.md` "Schema drift between writers and validators":
+    # the validator's required-file list mirrors the producer's outputs.
     "provenance/provenance.lock",
+    "provenance/environment.yaml",
     "provenance/agent_trace.md",
     "README.md",
+)
+RECOMMENDED_FILES: tuple[str, ...] = (
+    # JSON sidecar for non-HDF5 readers — optional but standard.
+    "results/diagnostics.json",
 )
 
 
@@ -150,6 +162,21 @@ class CapsuleValidator:
                     )
                 )
 
+        # Recommended files — warnings only.
+        for relative in RECOMMENDED_FILES:
+            if not (capsule_path / relative).is_file():
+                report.violations.append(
+                    Violation(
+                        severity="warning",
+                        code="missing_recommended_file",
+                        message=(
+                            f"Recommended capsule file missing: {relative}. "
+                            "Tools that don't read HDF5 fall back on this sidecar."
+                        ),
+                        path=relative,
+                    )
+                )
+
         # Manifest schema check (only if manifest.toml exists).
         manifest_path = capsule_path / "manifest.toml"
         if manifest_path.is_file():
@@ -202,6 +229,7 @@ class CapsuleValidator:
 
 __all__ = [
     "CapsuleValidator",
+    "RECOMMENDED_FILES",
     "RECOMMENDED_SUBDIRS",
     "REQUIRED_FILES",
     "REQUIRED_SUBDIRS",

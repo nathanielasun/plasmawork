@@ -29,6 +29,16 @@ out/
 coverage/
 *.tsbuildinfo
 next-env.d.ts
+# Defensive: TypeScript should never emit .js / .d.ts into src/ — production
+# builds use bundlers (vite) and tsconfig's `noEmit: true` enforces that. If a
+# `tsc -b` invocation slips through, these rules keep emitted artifacts out
+# of git. (Regression-driven: post-Phase-2-close audit found leaked .js
+# duplicates next to .tsx files; see agent_error_patterns.md "Build script
+# emits compile artifacts into the source tree".)
+apps/*/src/**/*.js
+apps/*/src/**/*.d.ts
+docs_site/src/**/*.js
+docs_site/src/**/*.d.ts
 .pnp
 .pnp.js
 

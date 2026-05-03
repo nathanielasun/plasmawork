@@ -17,6 +17,31 @@ from simworkbench.paths import is_under_workbench
 CODE_SUBDIRS = ("generated", "user_edits", "kernels")
 
 
+def _refuse_overlap(source: Path, dest: Path) -> None:
+    """Raise if ``dest`` is the source itself or a parent of it.
+
+    Honors `agent_error_patterns.md` "Destructive-before-guard in exporters":
+    every exporter validates source/target overlap BEFORE any rmtree, so a
+    self-export never deletes the source.
+    """
+    src = source.resolve()
+    dst = dest.resolve()
+    if src == dst:
+        raise ValueError(
+            f"Refusing to export onto the source itself: {src} == {dst}. "
+            "Pick a target outside the source capsule."
+        )
+    # Refuse if dest is an ancestor of source (would delete source via rmtree).
+    try:
+        src.relative_to(dst)
+    except ValueError:
+        return
+    raise ValueError(
+        f"Refusing to export into a parent of the source: {dst} contains {src}. "
+        "Pick a target outside the source capsule's subtree."
+    )
+
+
 def export_code(
     capsule_dir: str | Path,
     target: str | Path,
@@ -41,8 +66,16 @@ def export_code(
             "Pass require_workbench_target=False if the user has explicitly "
             "chosen an external destination via the export menu."
         )
-    out_root.mkdir(parents=True, exist_ok=True)
+    # Validate every per-subdir overlap BEFORE any rmtree. A target that
+    # equals or contains the source would otherwise delete the source first
+    # and only then notice the overlap.
+    for subdir in CODE_SUBDIRS:
+        source = src_root / subdir
+        if not source.is_dir():
+            continue
+        _refuse_overlap(source, out_root / subdir)
 
+    out_root.mkdir(parents=True, exist_ok=True)
     for subdir in CODE_SUBDIRS:
         source = src_root / subdir
         if not source.is_dir():

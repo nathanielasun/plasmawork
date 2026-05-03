@@ -30,7 +30,7 @@ Initial focus is laser–species interaction (KrF excimer, photoionization, rate
 |---|---|---|
 | 0 | Repository bootstrap, governance, docs skeleton, bug-memory and dev-history systems | **Complete** |
 | 1 | Manual workbench: ModelSpec, units, runtime, basic modules, UI shell | **Complete** |
-| 2 | Simulation capsule format & provenance | **In progress** (2A, 2B, 2C, 2D open) |
+| 2 | Simulation capsule format & provenance | **Complete** |
 | 3 | Internal tool SDK and registry | Pending |
 | 4 | Agent-assisted paper ingestion | Pending |
 | 5 | ModelSpec generation and module mapping | Pending |

@@ -436,3 +436,157 @@ Backend selection follows the criteria in plan §15.2 (problem size, stiffness, 
 
 ### Detection
 Review backend changes in PRs. Any backend switch that is justified by appearance rather than the §15.2 criteria is rejected.
+
+---
+
+## Error Pattern: Convention-checker existence ≠ phase-gate behavior
+
+### Why it is bad
+The convention checker enforces *that files exist*, not *that they do what the gate promises*. The Phase 2 close shipped with `scripts/dev/run_capsule.sh` still as the Phase-0 stub (`echo "Capsule loading is scheduled for Phase 2." && exit 2`). The checker's `check_file_executable` was happily green because the stub was executable. The Phase 2 gate says "portable, inspectable, **reloadable**, exportable" — and reload was broken. Same pattern hit `CapsuleCodeView.tsx`: the file existed, satisfied the checker, but its `getCapsuleFile(..., "src/generated/__index__")` call always returned 404, so the panel never rendered any source.
+
+### Required behavior
+Every gate criterion in the plan that names a *behavior* (reload, validate, export, render) must have at least one **behavioral test**, not just an existence assertion. Concretely:
+
+- For each of the four "portable / inspectable / reloadable / exportable" promises in plan §Phase 2, there is one integration test in `tests/integration/` that exercises the user-facing flow (or a `tests/regression/` test if the bug already happened).
+- For each UI deliverable that "shows X", there is one Vitest test that mounts the component, mocks the backend, and asserts the X is in the rendered output (not just that the component file exists).
+- Documented script paths get a smoke test that runs the script with a typical input and asserts exit code 0 + recognizable stdout. The convention checker's `check_grep_absent_in_file 'scheduled for Phase' scripts/.../foo.sh` only catches the literal stub message; it does not prove the script does its job.
+
+### Detection
+- `grep -rn "scheduled for Phase" scripts/` should return only stubs in *not-yet-opened* phases, never in scripts the README or CLAUDE.md documents as a current entrypoint.
+- Phase Gate Procedure: before flipping status, walk the gate criteria *as a user*, end-to-end, on a real capsule. The convention checker is a necessary condition, not a sufficient one.
+
+### Bug log
+- 2026-05-02 *Phase 2 false close — six legitimate review findings*
+
+---
+
+## Error Pattern: Building writers without wiring producers
+
+### Why it is bad
+Phase 2B shipped four provenance writers (`ProvenanceLock`, `write_environment`, `AgentTraceWriter`, `SourceRegistry`) and 21 unit tests for them. The unit tests proved each writer worked in isolation. But the *producer* — `save_capsule` — was never updated. It still wrote a Phase-1-style minimal `provenance.lock` (a hand-rolled TOML dict that didn't validate against `ProvenanceLock`), didn't write `environment.yaml`, and overwrote `agent_trace.md` instead of appending. So every saved capsule was missing a third of its Phase 2B contract; every fork inherited the bug; the validator (which didn't require `environment.yaml`) silently accepted the broken capsules.
+
+### Required behavior
+When a workstream introduces a writer/encoder/serializer, the same workstream wires it into every existing producer. The Definition of Done lists the producer call site by file:line. Concretely for Phase 2B:
+
+- `save_capsule` calls `ProvenanceLock(...)` + `write_lock`, `write_environment`, and `AgentTraceWriter(...).append(...)`. No hand-rolled provenance writes.
+- `fork_capsule` does the same and additionally records `parent_capsule_hash` from `SourceRegistry.aggregate_hash()`.
+- An integration test asserts that a freshly-saved capsule's `provenance/provenance.lock` round-trips through `load_lock` (i.e. validates as a `ProvenanceLock`).
+
+### Detection
+- Grep for the writer's API in producer code: every Phase 2B writer must appear in `save_capsule` and `fork_capsule`. If a writer has only test imports, the wiring is missing.
+- Grep for hand-rolled equivalents next to the import — `_write_toml`, `provenance = {...}`, `write_text(...).format(...)` near `provenance/` — those are the residue of the original producer that was never replaced.
+- Round-trip test: a freshly-saved capsule's `provenance.lock` must `load_lock()` cleanly, and `environment.yaml` must `load_environment()` to a non-empty dict.
+
+### Bug log
+- 2026-05-02 *Phase 2 false close*: `save_capsule` wrote Phase-1 provenance triad, ignoring Phase 2B writers.
+
+---
+
+## Error Pattern: Schema drift between writers and validators
+
+### Why it is bad
+Phase 2A made HDF5 the canonical bulk-data format (ADR-0002 Accepted). `save_capsule` was updated to write `results/diagnostics.h5`. The `CapsuleValidator`'s `REQUIRED_FILES` was *not* updated — it still listed `results/diagnostics.json` as required and didn't mention `.h5` at all. Result: a capsule with the canonical HDF5 file but no JSON sidecar would fail validation; a capsule with neither would pass (because the JSON sidecar wasn't actually required either, after the deferred-update). Same drift hit `provenance/environment.yaml` — the writer existed, `save_capsule` (eventually) wrote it, but the validator didn't require it, so capsules with no environment snapshot validated clean.
+
+### Required behavior
+The validator's required-files / required-fields list mirrors the producer's outputs. When a workstream changes what gets written, the same workstream changes what gets validated, in the same commit. Concretely:
+
+- Whenever `save_capsule` (or any other producer) gains a new output path, `CapsuleValidator.REQUIRED_FILES` (or `REQUIRED_SUBDIRS`) gains the corresponding entry.
+- Whenever a producer changes a canonical format (e.g. JSON → HDF5), the validator's required entry changes alongside, and the old format moves to `RECOMMENDED_FILES` (warning) or is removed.
+- The "freshly-saved capsule passes the validator" test (`test_validator_passes_on_freshly_saved_capsule`) is the canary — the producer + validator must agree, by construction.
+
+### Detection
+- One regression test per required artifact: delete the file, run the validator, assert non-OK with the expected violation code. The post-Phase-2-close audit added these for `results/diagnostics.h5` and `provenance/environment.yaml`.
+- Code review: a commit that touches a producer's outputs must also touch the validator's required list. PR diffs that change one file and not the other are a flag.
+
+### Bug log
+- 2026-05-02 *Phase 2 false close*: validator required `diagnostics.json` (legacy), didn't require `diagnostics.h5` or `environment.yaml`.
+
+---
+
+## Error Pattern: Destructive-before-guard in exporters
+
+### Why it is bad
+The Phase 2C exporters did `if dest.exists(): shutil.rmtree(dest)` *before* checking whether `dest` overlapped with the source. Calling `export_capsule(capsule, capsule, kinds=("code",))` (a plausible UI-driven mistake — "export to my current capsule directory") would `rmtree(<capsule>/src/generated)`, *then* try to copytree from the now-empty source, and either succeed silently with empty output or fail mid-way with the source already mangled. Carries the deeper "Side-effecting before validating" pattern into export tooling specifically.
+
+### Required behavior
+Exporters validate the entire plan (workbench-target check, source/target overlap check, missing-source check) **before any destructive op**. Concretely:
+
+```python
+# 1. Walk the plan and validate.
+plan = []
+for sub in SUBDIRS:
+    source = Path(capsule_dir) / sub
+    if not source.is_dir():
+        continue
+    dest = Path(target) / sub
+    refuse_if_outside_workbench(dest)
+    refuse_if_overlaps_source(source, dest)   # ← key new check
+    plan.append((source, dest))
+
+# 2. Only now does the destructive loop run.
+for source, dest in plan:
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(source, dest)
+```
+
+The overlap guard refuses three cases: `dest == source`, `dest is an ancestor of source`, and (implicitly via `relative_to`) any path that would let `rmtree(dest)` walk into the source.
+
+### Detection
+- One test per exporter: `export_X(capsule, capsule, ...)` raises `ValueError` AND the source is still on disk afterwards. (The "still on disk" assertion is essential — a guard that raises after the rmtree is no guard at all.)
+- Code review: `shutil.rmtree` (or `shutil.copytree(..., dirs_exist_ok=True)` with destructive semantics) must be preceded by validation that does not mutate filesystem.
+
+### Bug log
+- 2026-05-02 *Phase 2 false close*: `export_capsule(capsule, capsule, kinds=("code",))` deleted `<capsule>/src/generated` before raising.
+
+---
+
+## Error Pattern: Embedding absolute paths in exported artifacts
+
+### Why it is bad
+The Phase 2C notebook exporter wrote `capsule = Path('/Users/.../simulation_capsules/foo.lxp')` as a literal in the generated `analysis.ipynb`. The whole point of an export is to be portable across machines — an absolute path breaks that the moment the recipient unzips the export anywhere other than the original author's home directory. Same hazard applies to any exported config, README, or shell script that records a source location.
+
+### Required behavior
+Exported artifacts use relative paths, anchored to the export's own layout. The notebook's `CAPSULE_RESULTS = Path('..') / 'results'` works for the standard `<export>/notebooks/analysis.ipynb` layout; users who reorganize the export override the variable in one cell. README references inside an export use relative links. Shell scripts inside an export resolve relative to `${BASH_SOURCE[0]}`, never to the build machine's filesystem layout.
+
+### Detection
+- Test: assert `str(capsule.resolve())` is NOT a substring of any exported artifact (notebook source, README, etc.). The post-Phase-2-close audit added this assertion to `tests/unit/test_export_notebook.py`.
+- Pre-commit grep on exporters: `/Users/`, `/home/`, or any absolute path outside of comments is suspicious in exporter code.
+
+### Bug log
+- 2026-05-02 *Phase 2 false close*: notebook exporter embedded the absolute capsule path.
+
+---
+
+## Error Pattern: Build script emits compile artifacts into the source tree
+
+### Why it is bad
+`apps/workbench-ui/package.json` had `"build": "tsc -b && vite build"`. When `tsc -b` failed (because some test files referenced `global` and `node:fs` without the right types), it had already emitted `.js` and `.d.ts` files next to every `.tsx` source. Those leaked into the source tree and were picked up as duplicate test files by Vitest (`App.test.js` running alongside `App.test.tsx`). They also stayed across runs — every subsequent build kept polluting more source.
+
+### Required behavior
+TypeScript's `tsc` runs in *typecheck-only* mode for production builds in this repo: `tsc --noEmit && vite build`. The bundler (Vite) is the only thing that emits bundles, and it emits to `dist/`. The tsconfig sets `"noEmit": true` as a belt-and-suspenders defense. Test files use vitest's `tsconfig` (or vitest's built-in TS handling) and never go through `tsc -b`. `.gitignore` carries a defensive rule for `apps/*/src/**/*.js` and `docs_site/src/**/*.js` so a stray `tsc -b` invocation can't accidentally commit emitted artifacts.
+
+### Detection
+- Pre-commit: `find apps/*/src docs_site/src -name '*.js' -o -name '*.d.ts'` should be empty.
+- Build-script audit: any `tsc -b` invocation is a flag — use `tsc --noEmit` instead.
+- Vitest output: if `*.test.js` and `*.test.tsx` both appear in the test-file count, the source tree is polluted.
+
+### Bug log
+- 2026-05-02 *Phase 2 false close*: `scripts/build/ui.sh` emitted `.js` files into `apps/workbench-ui/src/` and `docs_site/src/`; Vitest picked them up as duplicate test files.
+
+---
+
+## Error Pattern: Duplicated phase status across nearby paragraphs
+
+### Why it is bad
+README's status banner read "Phase 2 — Simulation Capsule System complete" at line 5; the status table at line 33 read "Phase 2 | In progress (2A, 2B, 2C, 2D open)". Both refer to the same phase, in the same file, twenty-eight lines apart. The status-flip commit updated the banner but not the table. Same pattern hits CLAUDE.md (multiple "Phase N — complete" paragraphs that drift independently) and `docs_site/src/content/*.tsx` (when the same phase is named in two pages).
+
+### Required behavior
+A phase's status string lives in one place per file when possible. When two places must mention it (e.g., README's narrative banner *and* the at-a-glance table), the status-flip commit's git diff includes both lines. The Phase Gate Procedure's status-sync grep is `grep -nE "Phase NN" README.md ...`, and the agent reads *every* match in the output, not just the first paragraph.
+
+### Detection
+- Pre-close grep: `grep -nE "Phase NN" README.md` should show every match agreeing with the new status. The agent reads all of them.
+- Quick test: a regression test in `tests/regression/test_phase_status_consistency.py` greps the README + CLAUDE.md for forbidden status pairs (e.g. "Phase N — complete" anywhere AND "Phase N | In progress" elsewhere in the same file).
+
+### Bug log
+- 2026-05-02 *Phase 2 false close*: README:5 said "Phase 2 complete" while README:33 said "In progress".

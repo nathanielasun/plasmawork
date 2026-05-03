@@ -24,6 +24,29 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 2 false-close audit — six review findings fixed)
+
+### Completed
+- **Audit.** User review of the Phase 2 close (commit `d88db3e`) surfaced six legitimate findings — every one logged in `bugs_and_fixes/bugfixes.md` (2026-05-02 *Phase 2 false close — six legitimate review findings*) and translated into a named pattern in `agent_error_patterns.md` (24 patterns total now). The audit happened because the convention checker proves *files exist*, not *gate criteria work*; behavioral verification was missing.
+- **Critical 1 — `scripts/dev/run_capsule.sh` was still the Phase-0 stub.** Replaced with a real implementation that calls `load_capsule` + `Runner` and prints run_id / state / final time / placeholders. Phase 2 gate's "reloadable" promise is now actually exercised by `tests/integration/test_run_capsule_script.py`.
+- **Critical 2 — `save_capsule` ignored Phase 2B writers.** Now invokes `ProvenanceLock` + `write_lock`, `write_environment`, and `AgentTraceWriter(...).append(...)`. Hand-rolled `_write_toml` helpers deleted. Capsules saved or forked now carry the full triad and the provenance.lock validates as `ProvenanceLock` round-trip. New named pattern: *Building writers without wiring producers*.
+- **High 3 — `CapsuleValidator` accepted broken Phase 2 capsules.** `REQUIRED_FILES` now includes `results/diagnostics.h5` and `provenance/environment.yaml`; `RECOMMENDED_FILES` (new) holds `results/diagnostics.json` (warning-only sidecar). Three new tests assert deletion of each canonical artifact flips the validator to non-OK with the correct violation code. New named pattern: *Schema drift between writers and validators*.
+- **High 4 — Exporters destructively `rmtree`d the destination before checking source/target overlap.** `export_code` and `export_data` now build a full plan (workbench-target check + `_refuse_overlap` per subdir) BEFORE any destructive op. Tests assert source-survival on `export_X(capsule, capsule, ...)`. The notebook exporter now uses `Path('..') / 'results'` instead of an absolute path; tests assert `str(capsule.resolve())` is NOT a substring of the notebook source. New named patterns: *Destructive-before-guard in exporters* + *Embedding absolute paths in exported artifacts*.
+- **High 5 — `CapsuleCodeView` never showed any code.** New backend endpoint `GET /api/capsules/{name}/tree?subtree=<path>` enumerates files; the React component now lists files grouped by `src/{generated,user_edits,kernels}` and lets the user click to view content. The `user_edits/` "user-owned — agents must not overwrite" badge is preserved.
+- **High 6 — `/api/capsules/{name}/diagnostics` JSON fallback returned the wrong shape.** Now returns `payload["diagnostics"]` (or the payload itself if it lacks the key for older sidecars). Two regression tests assert metadata keys (`run_id`, `state`, `elapsed_seconds`, `placeholders`) never leak into `series`.
+- **Medium 7 — `SourceRegistry.DEFAULT_SUBTREES` didn't include `paper_sources/`.** Fixed; new test asserts editing `paper_sources/paper.txt` shifts the aggregate hash.
+- **Medium 8 — README double phase-status string + build-script failures.** README:33 status table flipped to **Complete**. `apps/workbench-ui/package.json` and `docs_site/package.json` now use `tsc --noEmit && vite build` instead of `tsc -b && vite build` (the latter emitted `.js` files into `src/` whenever typecheck failed). Both tsconfigs set `"noEmit": true` defensively. `.gitignore` carries fallback rules for `apps/*/src/**/*.{js,d.ts}` and `docs_site/src/**/*.{js,d.ts}`. New named patterns: *Build script emits compile artifacts into the source tree* + *Duplicated phase status across nearby paragraphs*.
+- **Phase Gate Procedure updated.** Both CLAUDE.md and AGENTS.md now carry an "eight behavioral checks" subsection that the existence checks alone don't cover (end-to-end gate walk, documented scripts run, producer-writer wiring, validator field parity, destructive-after-validate in exporters, UI panels actually render, status-sync grep reads every match, build scripts succeed and emit no source-tree artifacts). New regression test `tests/regression/test_phase_status_consistency.py` greps README + CLAUDE.md for the forbidden "complete in one paragraph, in progress in another" pair.
+- **Final state.** Default checker 290/290 ok; opt-in checker 290/290 ok; 326 Python tests pass (was 311; +13 regression/integration); 11 UI vitest tests pass; ruff clean (added `PLR0912` to the ignore list — capsule validators legitimately enumerate many file/dir checks).
+
+### Open questions
+- None Phase-2-blocking. Phase 3 opens next per plan §Phase 3 with the strengthened Phase Gate Procedure.
+
+### Next steps
+- Open Phase 3 per plan §Phase 3 using the existing milestone Pre-gate template, augmented with the eight behavioral checks before any close commit.
+
+---
+
 ## 2026-05-02 (Phase 2 closes — Simulation Capsule System complete)
 
 ### Completed

@@ -2,8 +2,10 @@
 
 Tracks SHA-256 hashes of capsule files so that ``provenance.lock`` can
 record an integrity stamp and so that fork chains have a stable parent
-identifier. Phase 2B covers ``model/``, ``configs/``, and ``src/`` sub-
-trees; Phase 4+ extends to ``paper_sources/``.
+identifier. Hashes the *input-side* subtrees: paper sources, model spec,
+configs, and source code. Output-side subtrees (results/, validation/,
+notebooks/) are deliberately excluded — re-running a capsule must not
+shift its identity hash.
 """
 
 from __future__ import annotations
@@ -13,10 +15,14 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-# Subtrees the registry hashes by default. Keep this list narrow on
-# purpose: we want a stable, fast hash that doesn't change because, say,
-# results/diagnostics.h5 was rewritten.
+# Subtrees the registry hashes by default. ``paper_sources/`` is included so
+# editing the source paper shifts the capsule's identity hash — without it,
+# a paper edit would be invisible in the provenance chain (regression for
+# the post-Phase-2-close finding "source hashing ignores paper_sources/").
+# ``results/`` is intentionally excluded so re-running a capsule's diagnostics
+# (which is expected, idempotent) doesn't shift the identity hash.
 DEFAULT_SUBTREES: tuple[str, ...] = (
+    "paper_sources",
     "model",
     "configs",
     "src",

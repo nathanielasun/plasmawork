@@ -40,3 +40,14 @@ def test_export_data_skips_missing_subdirs(tmp_path):
     target = tmp_path / "target"
     out = export_data(capsule, target, require_workbench_target=False)
     assert {p.name for p in out} == {"data"}
+
+
+def test_export_data_refuses_self_overwrite(tmp_path):
+    """Regression: exporting onto the source must not rmtree the source first."""
+    capsule = _make_capsule(tmp_path)
+    diag = capsule / "results" / "diagnostics.json"
+    original = diag.read_text()
+    with pytest.raises(ValueError, match="onto the source itself|parent of the source"):
+        export_data(capsule, capsule, require_workbench_target=False)
+    assert diag.is_file()
+    assert diag.read_text() == original
