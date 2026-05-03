@@ -95,30 +95,38 @@ def save_capsule(
         )
     target.mkdir(parents=True, exist_ok=True)
 
-    # Manifest.
-    manifest = {
-        "capsule": {
-            "name": capsule_name.removesuffix(".lxp"),
-            "format_version": CAPSULE_FORMAT_VERSION,
-            "workbench_version": workbench_version,
-            "created_at": _utc_now_iso(),
-        },
-        "model": {
-            "name": experiment.model_spec.model.name,
-            "domain": experiment.model_spec.model.domain,
-            "schema_version": experiment.model_spec.schema_version,
-        },
-        "runtime": {
-            "backend": experiment.backend_config.name,
-            "default_seed": experiment.run_config.seed,
-            "final_state": result.state.value,
-            "final_simulation_time_seconds": result.final_simulation_time,
-            "elapsed_seconds": result.elapsed_seconds,
-            "placeholder_used": bool(result.placeholders),
-            "placeholders": list(result.placeholders),
-        },
-    }
-    _write_toml(target / "manifest.toml", manifest)
+    # Manifest — Phase 2A canonical schema (Pydantic Manifest model).
+    from simworkbench.serialization.manifest import (
+        CapsuleSection,
+        Manifest,
+        ModelSection,
+        RuntimeSection,
+        write_manifest,
+    )
+
+    manifest = Manifest(
+        capsule=CapsuleSection(
+            name=capsule_name.removesuffix(".lxp"),
+            format_version=CAPSULE_FORMAT_VERSION,
+            workbench_version=workbench_version,
+            created_at=_utc_now_iso(),
+        ),
+        model=ModelSection(
+            name=experiment.model_spec.model.name,
+            domain=experiment.model_spec.model.domain,
+            schema_version=experiment.model_spec.schema_version,
+        ),
+        runtime=RuntimeSection(
+            backend=experiment.backend_config.name,
+            default_seed=experiment.run_config.seed,
+            final_state=result.state.value,
+            final_simulation_time_seconds=result.final_simulation_time,
+            elapsed_seconds=result.elapsed_seconds,
+            placeholder_used=bool(result.placeholders),
+            placeholders=list(result.placeholders),
+        ),
+    )
+    write_manifest(manifest, target / "manifest.toml")
 
     # Model spec.
     (target / "model").mkdir(parents=True, exist_ok=True)
@@ -149,6 +157,23 @@ def save_capsule(
             indent=2,
         ),
         encoding="utf-8",
+    )
+
+    # HDF5 sidecar for the same diagnostics — Phase 2A authoritative bulk
+    # format per ADR-0002 (Accepted). The JSON above is preserved for
+    # tools that don't read HDF5.
+    from simworkbench.serialization.bulk_data import write_diagnostics_h5
+
+    write_diagnostics_h5(
+        result.diagnostics,
+        target / "results" / "diagnostics.h5",
+        metadata={
+            "run_id": result.run_id,
+            "state": result.state.value,
+            "elapsed_seconds": result.elapsed_seconds,
+            "final_simulation_time_seconds": result.final_simulation_time,
+            "placeholder_used": bool(result.placeholders),
+        },
     )
 
     # Minimal provenance.

@@ -1,13 +1,15 @@
 """Serialization APIs for workbench objects.
 
-Phase 1A provides experiment YAML save/load. Phase 1's minimal capsule
-save/reload (Phase Gate items 4 and 5) lands in ``capsule.py``; Phase 2
-finalizes the bulk-data format (HDF5 vs Zarr) and the full provenance
-writer per ADR-0002.
+Phase 1A provided experiment YAML save/load. Phase 1's minimal capsule
+save/reload landed in ``capsule.py``. Phase 2A adds the canonical manifest
+schema (``manifest.py``), the directory validator (``validator.py``), the
+HDF5 bulk-data writer (``bulk_data.py``), and the migration registry
+(``migrations/``). Per ADR-0002 (Accepted), HDF5 is the bulk-data format.
 """
 
 from __future__ import annotations
 
+from .bulk_data import read_diagnostics_h5, write_diagnostics_h5
 from .capsule import (
     CAPSULE_FORMAT_VERSION,
     LoadedCapsule,
@@ -15,12 +17,40 @@ from .capsule import (
     save_capsule,
 )
 from .experiment import load_experiment, save_experiment
+from .manifest import (
+    CapsuleSection,
+    Manifest,
+    ModelSection,
+    PaperSection,
+    ProvenanceSection,
+    RuntimeSection,
+    load_manifest,
+    write_manifest,
+)
+from .validator import (
+    CapsuleValidator,
+    ValidationReport,
+    Violation,
+)
 
 __all__ = [
     "CAPSULE_FORMAT_VERSION",
+    "CapsuleSection",
+    "CapsuleValidator",
     "LoadedCapsule",
+    "Manifest",
+    "ModelSection",
+    "PaperSection",
+    "ProvenanceSection",
+    "RuntimeSection",
+    "ValidationReport",
+    "Violation",
     "load_capsule",
     "load_experiment",
+    "load_manifest",
+    "read_diagnostics_h5",
     "save_capsule",
     "save_experiment",
+    "write_diagnostics_h5",
+    "write_manifest",
 ]

@@ -1,10 +1,11 @@
 # ADR-0002: Simulation Capsule Format
 
 ## Status
-Proposed (formalized in Phase 2)
+Accepted
 
 ## Date
-2026-05-02
+2026-05-02 (Proposed)
+2026-05-02 (Accepted with HDF5 chosen for bulk data — see Implementation notes below)
 
 ## Context
 The simulation capsule is the central project artifact (plan §7). It bundles the scientific, computational, and provenance state of a single experiment so it can be inspected, exported, reloaded, forked, and reproduced.
@@ -33,20 +34,20 @@ A simulation capsule is a **directory** with the suffix `.lxp` and the layout in
   README.md
 ```
 
-**Format choices to be finalized in Phase 2:**
+**Format choices — finalized 2026-05-02 in Phase 2A:**
 
-1. **`manifest.toml`** — TOML, frozen schema in `packages/core/src/simworkbench/serialization/manifest_schema.py`. Fields per plan §7.2.
-2. **`model/model_spec.yaml`** — YAML for human-readable structured spec. JSON-schema-validated.
-3. **Bulk numerical data** — primary format **HDF5** for portability and tooling support; **Zarr** considered for chunked / cloud-friendly use. The decision is deferred until Phase 2 with a benchmark of:
-   - file size,
-   - read/write throughput on the canonical KrF capsule,
-   - support across the Python scientific stack and the UI viewer,
-   - chunk-friendliness for 2D/3D field data later.
-   The chosen primary format is set in stone in a follow-up ADR. Capsules may carry secondary data in the alternative format if both are well-supported.
-4. **Tabular diagnostics** — Parquet.
-5. **Plots** — PNG + SVG (PNG for UI thumbnails; SVG for publication exports).
-6. **Provenance lock** — TOML or JSON (decision deferred to Phase 2; lean toward TOML for human readability since locks are small).
-7. **Archive form** — `.lxp.zip` (deflate) for export. The directory form is canonical; the archive is a transport format.
+1. **`manifest.toml`** — TOML, schema lives in `packages/core/src/simworkbench/serialization/manifest.py` (Pydantic model + TOML reader/writer). Fields per plan §7.2.
+2. **`model/model_spec.yaml`** — YAML for human-readable structured spec. JSON-schema-validated by `simworkbench.model_spec` from Phase 1A.
+3. **Bulk numerical data** — primary format **HDF5** (h5py-based). Reasons:
+   - Single-file containers fit cleanly inside `.lxp/` (one `.h5` file per array group, vs. Zarr's directory-of-directories shape that nests inside the capsule directory).
+   - h5py is a single mature dependency with broad scientific-Python tooling support (`h5dump`, hdfview, the matplotlib + xarray + pandas readers).
+   - For Phase 1's small 0D rate-equation diagnostics and Phase 2's single-machine inspection workflow, HDF5's read/write throughput is more than adequate.
+   - **Zarr is explicitly deferred to Phase 8** if HPC parallel-write parity becomes the constraint. The bulk-data writer is wrapped behind `simworkbench.serialization.bulk_data` so a future ADR can swap implementations without breaking call sites.
+   - Capsules may carry a JSON sidecar of the same data for tooling that doesn't read HDF5 (Phase 1 minimal capsule already does this for `results/diagnostics.json`).
+4. **Tabular diagnostics** — Parquet (Phase 8 onwards if needed; Phase 2 keeps everything in HDF5 for one-format simplicity).
+5. **Plots** — PNG + SVG (PNG for UI thumbnails; SVG for publication exports). Plots generated in `<capsule>/results/plots/` by the export system (2C).
+6. **Provenance lock** — **TOML**. Phase 1's minimal capsule already writes `provenance/provenance.lock` as TOML; Phase 2 keeps the format. JSON considered and rejected: TOML is more human-readable for the flat-ish lock structure, and it matches `manifest.toml`'s format choice.
+7. **Archive form** — `.lxp.zip` (deflate) for export. The directory form is canonical; the archive is a transport format. Implementation in `simworkbench.serialization.exporters.archive` (2C).
 
 **Capsule lifecycle**
 
