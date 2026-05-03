@@ -65,8 +65,22 @@ class GapAnalyzer:
 
         # 5C.1 — Missing modules: the match report's unmatched_requirements
         # column already enumerates these for the matcher's perspective.
+        # We also independently re-derive "no compatible module" — the
+        # matcher's flag fires on aggregate, but the gap analyzer is the
+        # consumer and should not trust that the matcher always populates
+        # the field. Defense-in-depth on a cross-cutting invariant.
         for req in matches.unmatched_requirements:
             report.missing_modules.append(req)
+        if matches.matches and not any(m.is_compatible for m in matches.matches):
+            report.missing_modules.append(
+                f"No fully-compatible physics module for ModelSpec domain "
+                f"{spec.model.domain!r}: best aggregate score = "
+                f"{matches.matches[0].score:.2f}, but unit_compat / "
+                "domain_match thresholds were not met. The reviewer must "
+                "either add a new module under "
+                "packages/physics_modules/ or pin a different domain on "
+                "the ModelSpec."
+            )
 
         # 5C.2 — Missing data: any species without a finite initial density,
         # any interaction whose coefficient_sources list a placeholder.

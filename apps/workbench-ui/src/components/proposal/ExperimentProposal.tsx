@@ -60,8 +60,8 @@ export default function ExperimentProposal() {
         validated <code>ModelSpec</code>, maps it against the physics-
         module registry, runs gap analysis, and writes{" "}
         <code>experiment_proposal.md</code> under the capsule. Plan §Phase 4
-        forbids consuming agent-only interpretation; uncheck "require
-        reviewer signatures" only for dry runs.
+        forbids consuming agent-only interpretation, and the backend
+        enforces this unconditionally — there is no UI bypass.
       </p>
 
       <section aria-label="Generate proposal">

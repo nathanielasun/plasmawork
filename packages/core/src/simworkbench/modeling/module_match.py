@@ -39,6 +39,25 @@ class ModuleMatch:
     reasons: list[str] = field(default_factory=list)
     directory: str = ""
 
+    @property
+    def is_compatible(self) -> bool:
+        """Strict compatibility — distinct from "this module is in the
+        registry and shares a domain". A module is compatible only when:
+
+        - Its domain matches the spec's (``domain_match >= 0.5``).
+        - It covers EVERY required output dimension (``unit_compat == 1.0``).
+
+        Aggregate ``score`` can be high (e.g. ``0.625`` for a fake
+        species-domain module that emits only ``second``) while
+        ``is_compatible`` is False. Carries the post-Phase-5 audit
+        finding that the previous "score > 0.5" heuristic let
+        dimensionally-wrong modules pass as matches.
+        """
+        return (
+            self.sub_scores.get("domain_match", 0.0) >= 0.5
+            and self.sub_scores.get("unit_compat", 0.0) >= 1.0
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -48,6 +67,7 @@ class ModuleMatch:
             "sub_scores": dict(self.sub_scores),
             "reasons": list(self.reasons),
             "directory": self.directory,
+            "is_compatible": self.is_compatible,
         }
 
 
@@ -116,6 +136,21 @@ class ModuleMatcher:
             report.unmatched_requirements.append(
                 f"No physics module found for domain {spec.model.domain!r}"
             )
+        # If no module is FULLY compatible (domain match + every required
+        # output dim covered), flag that too — a "high-score" partial
+        # match is not a real match. Carries the post-Phase-5-audit
+        # pattern "Compatibility checks that pattern-match instead of
+        # validating dimensionality": the per-port `unit_compat` fix
+        # was necessary; this aggregate check is also necessary.
+        if not any(m.is_compatible for m in report.matches):
+            req_dims = _required_output_dims(spec)
+            if req_dims:
+                report.unmatched_requirements.append(
+                    f"No physics module fully covers the ModelSpec's required "
+                    f"output dimensionalities for domain "
+                    f"{spec.model.domain!r} (need: "
+                    f"{[str(d) for d in req_dims]!r})"
+                )
         # If recommended solvers exist but no module of the same name is in
         # the registry, flag.
         recommended = {s.name for s in spec.solvers.recommended}

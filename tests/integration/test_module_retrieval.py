@@ -105,4 +105,51 @@ def test_unit_compat_rejects_dimensionally_incompatible_outputs(tmp_path):
     # And the overall score is below 1.0; nothing about this module
     # genuinely matches a species-density spec.
     assert fake_match.score < 1.0
+    # Aggregate compatibility: even though score=0.625 the match is NOT
+    # compatible (unit_compat == 0). Carries the post-Phase-5-audit
+    # round-2 finding that "0 < score < 1" was treated as "match found".
+    assert fake_match.is_compatible is False, (
+        "fake_only_seconds is_compatible should be False; aggregate "
+        "score-above-threshold is not the same as covering the spec's "
+        "required output dimensions."
+    )
+    # And unmatched_requirements explicitly flags "no module fully covers
+    # required output dimensions" so downstream consumers (gap analysis,
+    # UI) don't have to re-derive the predicate.
+    assert any(
+        "fully covers" in row or "required output" in row
+        for row in report.unmatched_requirements
+    ), report.unmatched_requirements
     _ = Path  # keep import used
+
+
+def test_gap_analysis_flags_no_compatible_module(tmp_path):
+    """Regression: when ModuleMatcher returns matches with score>0 but
+    none is fully compatible, GapAnalyzer.missing_modules must surface
+    the gap. Earlier the analyzer only consumed
+    ``unmatched_requirements`` and missed score-above-zero-but-still-
+    incompatible matches.
+    """
+    from simworkbench.modeling import GapAnalyzer
+
+    fake_root = tmp_path / "fake_modules"
+    fake = fake_root / "species" / "fake_only_seconds"
+    fake.mkdir(parents=True)
+    (fake / "module.yaml").write_text(
+        "name: fake_only_seconds\n"
+        "version: 0.1.0\n"
+        "domain: species\n"
+        "status: candidate\n"
+        "outputs:\n"
+        "  - name: t\n"
+        "    units: second\n",
+        encoding="utf-8",
+    )
+    matcher = ModuleMatcher(modules_root=fake_root)
+    spec = _bare_spec()
+    matches = matcher.match(spec)
+    gaps = GapAnalyzer().analyze(spec, matches)
+    assert gaps.missing_modules, (
+        "GapAnalyzer should populate missing_modules when no module is "
+        "fully compatible — even when matches has rows with score > 0."
+    )
