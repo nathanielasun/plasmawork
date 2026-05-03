@@ -24,6 +24,29 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 2 opens — Simulation Capsule System)
+
+### Completed
+- **Bug-checks before opening.** Default + opt-in convention checker green (239/239), 207 tests pass, ruff clean. Code-craft greps clean (no shallow-copied fixtures, no module-mutable singletons, no `global` declarations in `packages/core/src/`). Bug-memory grep against `capsule | provenance | export | archive | manifest | hdf5 | zarr | fork` surfaces three patterns to carry forward into Phase 2: *Overwriting `<capsule>/src/user_edits/` during regeneration* (carries into 2C export and 2D capsule UI), *Writing program artifacts outside the project directory* (carries into 2C export tooling), *Treating the plan document as a check instead of as a draft* (carries into 2A — the manifest schema is reality-tested against the Phase 1 minimal capsule before any rename).
+- **Workstream 2A — Capsule Format & Validator — opened.** Plan §Phase 2 / 2A translated into 12 per-entity opt-in convention-checker assertions covering ADR-0002 transition (Proposed → Accepted with HDF5 chosen), `simworkbench.serialization.{manifest, validator, bulk_data}`, `simworkbench.serialization.migrations.{__init__, v0_1}`, `h5py` dep, and four unit/integration tests.
+- **Workstream 2B — Provenance System — opened.** Plan §Phase 2 / 2B translated into 9 assertions covering `simworkbench.provenance.{__init__, lock, environment, agent_trace, sources}` and four unit tests.
+- **Workstream 2C — Export System — opened.** Plan §Phase 2 / 2C translated into 19 assertions covering `simworkbench.serialization.{export, exporters/{code,data,plots,notebook,report,archive}, fork}`, real `scripts/export/{capsule,fork_capsule}.sh`, six unit tests, two integration tests, and a regression test for the `user_edits/` invariant.
+- **Workstream 2D — Capsule UI — opened.** Plan §Phase 2 / 2D translated into 9 assertions covering six new `apps/workbench-ui/src/components/capsule/*View.tsx` components, the existing CapsuleExplorer Vitest test, and two new backend API routes (`/api/capsules/{name}` + `/validate`).
+- **Phase 2 milestone Pre-gate verification** restructured by workstream with full plan-named entity enumeration (~50 entities total). Bug-check carry-over notes per workstream cite the relevant `agent_error_patterns.md` patterns. Recommended decisions for the two pending choices: **HDF5** for the bulk-data format (Zarr revisited in Phase 8 if HPC parallel-write parity becomes the constraint); **TOML** for `provenance.lock` (matching the Phase 1 minimal capsule's existing format).
+- **Status flip.** Phase 2 row in README → "In progress (2A, 2B, 2C, 2D open)". Milestone status header → "In progress (opened 2026-05-02). All four workstreams 2A, 2B, 2C, 2D open."
+- **Convention checker.** Default mode unchanged at 239/239 ok. Opt-in mode now reports the Phase 2 TODO backlog with ~50 failing assertions — the explicit deliverable list per `agent_error_patterns.md` "Implementing the agent's checklist instead of the plan's deliverable list".
+
+### Open questions
+- ADR-0002: HDF5 vs Zarr — **recommended HDF5**, ratification lands in the 2A implementation commit that creates `bulk_data.py`.
+- `provenance.lock` format: JSON vs TOML — **recommended TOML** (matches Phase 1 minimal capsule's existing serializer).
+- Whether `fork_capsule()` should also fork `provenance/` (read-only copy with parent-hash chain) or omit it entirely (Phase 1 minimal capsule treats provenance as append-only). Decision lands in the 2C `fork.py` commit.
+
+### Next steps
+- Implement 2A first (the schema + validator + bulk_data unblock 2B/2C). 2B and 2D can land in parallel after 2A.
+- Each workstream closes by promoting its assertions out of `--include-open-workstreams` into the default branch, per the lesson from `bugs_and_fixes/bugfixes.md` *Phase 1 false close*.
+
+---
+
 ## 2026-05-02 (Phase 1 — REAL CLOSE after review-fix sweep)
 
 ### Completed

@@ -380,13 +380,78 @@ check_grep_in_file 'lint\.sh' scripts/test/all.sh "scripts/test/all.sh runs lint
 check_file_exists ruff.toml
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch — used by future phases. Currently empty
-# because all Phase 1 entities have been promoted out of opt-in.
+# Open-workstream TODO branch.
+# Phase 2 (Simulation Capsule System) opened 2026-05-02. Each assertion below
+# is one TODO until that workstream closes; assertions promote into the
+# default flow above as workstreams close (per agent_error_patterns.md
+# "Closing a workstream without promoting its assertions from opt-in to
+# default").
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
-  section "Open Workstream TODOs"
-  if [[ $QUIET -eq 0 ]]; then
-    echo "  no open workstreams; Phase 1 entities have all been promoted to default."
-  fi
+  # Phase 2A — Capsule Format & Validator.
+  section "Open Workstream TODOs — Phase 2A capsule format"
+  check_grep_in_file '^Accepted$' program_development/architectural_decisions/ADR-0002-simulation-capsule-format.md "ADR-0002 status Accepted (HDF5/Zarr lock-in)"
+  check_file_exists packages/core/src/simworkbench/serialization/manifest.py
+  check_file_exists packages/core/src/simworkbench/serialization/validator.py
+  check_file_exists packages/core/src/simworkbench/serialization/migrations/__init__.py
+  check_file_exists packages/core/src/simworkbench/serialization/migrations/v0_1.py
+  check_file_exists packages/core/src/simworkbench/serialization/bulk_data.py
+  check_grep_in_file '"h5py' packages/core/pyproject.toml "packages/core/pyproject.toml depends on h5py (Phase 2A bulk data)"
+  check_file_exists tests/unit/test_capsule_manifest.py
+  check_file_exists tests/unit/test_capsule_validator.py
+  check_file_exists tests/unit/test_capsule_bulk_data.py
+  check_file_exists tests/unit/test_capsule_migrations.py
+  check_file_exists tests/integration/test_capsule_roundtrip.py
+
+  # Phase 2B — Provenance system.
+  section "Open Workstream TODOs — Phase 2B provenance"
+  check_file_exists packages/core/src/simworkbench/provenance/__init__.py
+  check_file_exists packages/core/src/simworkbench/provenance/lock.py
+  check_file_exists packages/core/src/simworkbench/provenance/environment.py
+  check_file_exists packages/core/src/simworkbench/provenance/agent_trace.py
+  check_file_exists packages/core/src/simworkbench/provenance/sources.py
+  check_file_exists tests/unit/test_provenance_lock.py
+  check_file_exists tests/unit/test_provenance_environment.py
+  check_file_exists tests/unit/test_provenance_agent_trace.py
+  check_file_exists tests/unit/test_provenance_sources.py
+
+  # Phase 2C — Export system.
+  section "Open Workstream TODOs — Phase 2C export"
+  check_file_exists packages/core/src/simworkbench/serialization/export.py
+  check_file_exists packages/core/src/simworkbench/serialization/exporters/__init__.py
+  check_file_exists packages/core/src/simworkbench/serialization/exporters/code.py
+  check_file_exists packages/core/src/simworkbench/serialization/exporters/data.py
+  check_file_exists packages/core/src/simworkbench/serialization/exporters/plots.py
+  check_file_exists packages/core/src/simworkbench/serialization/exporters/notebook.py
+  check_file_exists packages/core/src/simworkbench/serialization/exporters/report.py
+  check_file_exists packages/core/src/simworkbench/serialization/exporters/archive.py
+  check_file_exists packages/core/src/simworkbench/serialization/fork.py
+  check_grep_absent_in_file 'capsule export is scheduled for Phase 2' scripts/export/capsule.sh "scripts/export/capsule.sh is no longer the Phase-0 stub"
+  check_file_executable scripts/export/fork_capsule.sh "scripts/export/fork_capsule.sh executable"
+  check_file_exists tests/unit/test_export_code.py
+  check_file_exists tests/unit/test_export_data.py
+  check_file_exists tests/unit/test_export_plots.py
+  check_file_exists tests/unit/test_export_notebook.py
+  check_file_exists tests/unit/test_export_report.py
+  check_file_exists tests/unit/test_export_archive.py
+  check_file_exists tests/integration/test_export_capsule_roundtrip.py
+  check_file_exists tests/integration/test_capsule_fork.py
+  check_file_exists tests/regression/test_user_edits_not_overwritten.py
+
+  # Phase 2D — Capsule UI.
+  section "Open Workstream TODOs — Phase 2D capsule UI"
+  check_file_exists apps/workbench-ui/src/components/capsule/ManifestView.tsx
+  check_file_exists apps/workbench-ui/src/components/capsule/ModelSpecView.tsx
+  check_file_exists apps/workbench-ui/src/components/capsule/CapsuleCodeView.tsx
+  check_file_exists apps/workbench-ui/src/components/capsule/ResultsView.tsx
+  check_file_exists apps/workbench-ui/src/components/capsule/ValidationView.tsx
+  check_file_exists apps/workbench-ui/src/components/capsule/ProvenanceView.tsx
+  check_file_exists apps/workbench-ui/src/__tests__/CapsuleExplorer.test.tsx
+  check_grep_in_file '/api/capsules/\{name\}' packages/core/src/simworkbench/api/server.py "API exposes /api/capsules/{name} (Phase 2D)"
+  check_grep_in_file '/api/capsules/\{name\}/validate' packages/core/src/simworkbench/api/server.py "API exposes /api/capsules/{name}/validate (Phase 2D)"
+
+  # Cross-cutting Phase 2 deliverables.
+  section "Open Workstream TODOs — Phase 2 cross-cutting"
+  check_grep_in_file 'v0\.1' docs_site/src/content/simulation_capsules.tsx "docs_site simulation_capsules page references the v0.1 schema"
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

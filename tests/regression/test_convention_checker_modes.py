@@ -6,17 +6,16 @@ Asserts the convention checker's two-mode contract:
 1. **Default mode** is the hard gate. It must always exit 0. ``scripts/test/all.sh``
    calls this mode.
 2. **Opt-in mode** (``--include-open-workstreams``) exposes any open
-   implementation backlog. While Phase 1 was open it returned non-zero with
-   the failing TODO list; now that Phase 1 is complete it also exits 0.
-   When the next phase opens its workstreams, this test will fail until it is
-   updated to reflect the new backlog — that's the explicit ratchet point.
+   implementation backlog. Phase 2 is currently open, so opt-in mode exits
+   non-zero with the Phase 2 TODO list visible. When Phase 2 closes, this
+   test flips back to "passes" — that's the explicit ratchet point.
 
 Update procedure when opening a new phase:
-- Add a test like ``test_opt_in_mode_lists_known_open_anchors`` checking that
-  at least one expected open-anchor entity from the newly-opened
-  workstream(s) appears in opt-in output.
-- When closing the phase, drop that test or replace it with the "passes"
-  variant below.
+- Update ``test_opt_in_mode_lists_known_open_anchors`` to point at entities
+  from the newly-opened workstream(s).
+- When closing a phase, either point the anchors at the next phase's
+  entities (if it has been opened) or convert the test back to "passes" if
+  no workstream is open.
 """
 
 from __future__ import annotations
@@ -45,29 +44,65 @@ def test_default_convention_checker_excludes_open_workstream_todos() -> None:
     assert "Convention check PASSED" in result.stdout
 
 
-def test_opt_in_mode_passes_when_no_workstreams_open() -> None:
-    """Phase 1 is complete; opt-in mode currently exposes no failing TODOs.
+def test_opt_in_mode_exits_nonzero_with_phase_2_backlog() -> None:
+    """Phase 2 is open; opt-in mode exposes its TODO list and exits non-zero.
 
-    When the next phase opens workstreams, replace this with a test that
-    asserts opt-in mode returns non-zero with the new backlog.
+    When Phase 2 closes (with all its assertions promoted into the default
+    branch), flip this test back to the "passes" form below.
     """
     result = _run_checker("--include-open-workstreams")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "Convention check PASSED" in result.stdout
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "Convention check FAILED" in output
+
+
+def test_opt_in_mode_lists_known_open_anchors() -> None:
+    """At least three of these stable Phase 2 open-anchor entities are
+    currently failing. Spans 2A/2B/2C/2D so no single workstream closure
+    flips them all green prematurely.
+
+    When Phase 2 closes, update this list to point at Phase 3 entities (or
+    drop the test entirely if no workstream is open).
+    """
+    result = _run_checker("--include-open-workstreams")
+    output = result.stdout + result.stderr
+
+    open_anchors = (
+        # Workstream 2A — capsule format & validator.
+        "packages/core/src/simworkbench/serialization/manifest.py",
+        "packages/core/src/simworkbench/serialization/validator.py",
+        "packages/core/src/simworkbench/serialization/bulk_data.py",
+        # Workstream 2B — provenance system.
+        "packages/core/src/simworkbench/provenance/lock.py",
+        "packages/core/src/simworkbench/provenance/environment.py",
+        "packages/core/src/simworkbench/provenance/agent_trace.py",
+        # Workstream 2C — export system.
+        "packages/core/src/simworkbench/serialization/export.py",
+        "packages/core/src/simworkbench/serialization/exporters/archive.py",
+        "packages/core/src/simworkbench/serialization/fork.py",
+        # Workstream 2D — capsule UI.
+        "apps/workbench-ui/src/components/capsule/ManifestView.tsx",
+        "apps/workbench-ui/src/components/capsule/ProvenanceView.tsx",
+    )
+
+    found = [a for a in open_anchors if a in output]
+    assert len(found) >= 3, (
+        f"Only {len(found)}/{len(open_anchors)} open anchors found in opt-in "
+        "output; either Phase 2 is nearly closed (update this test) or the "
+        f"opt-in section regressed.\n\nFound: {found}\nMissing: "
+        f"{[a for a in open_anchors if a not in found]}"
+    )
 
 
 def test_opt_in_mode_check_count_at_least_default() -> None:
     """Opt-in mode runs at least as many checks as default mode.
 
-    Today (Phase 1 complete) opt-in adds zero failing assertions but still
-    runs all the closed-workstream entity assertions. This test guards
-    against accidentally removing the opt-in section entirely — if a future
-    refactor drops it, the count delta would go negative.
+    Phase 2 is open: opt-in adds ~50 failing assertions (Phase 2 backlog)
+    but still runs every default check. This guards against accidentally
+    removing the opt-in section entirely.
     """
     default = _run_checker("--quiet")
     opt_in = _run_checker("--include-open-workstreams", "--quiet")
-    # Last lines look like "Convention check PASSED — N check(s) ok." or
-    # "Convention check FAILED — F failure(s), N check(s) ok.". Extract N.
     import re
 
     def _ok_count(out: str) -> int:
