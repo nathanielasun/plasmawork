@@ -47,18 +47,27 @@ def test_default_convention_checker_excludes_open_workstream_todos() -> None:
     assert "Convention check PASSED" in result.stdout
 
 
-def test_opt_in_mode_passes_with_no_open_workstream() -> None:
-    """Phase 4 closed 2026-05-02; no workstream is currently open."""
+def test_opt_in_mode_exits_nonzero_with_phase_5_backlog() -> None:
+    """Phase 5 is open; opt-in mode exposes its TODO list and exits non-zero."""
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
-    assert result.returncode == 0, output
-    assert "Convention check PASSED" in output
+    assert result.returncode == 1
+    assert "Convention check FAILED" in output
 
 
-def test_opt_in_mode_carries_no_open_anchors() -> None:
+def test_opt_in_mode_lists_known_open_anchors() -> None:
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
-    assert "no open workstreams" in output
+    open_anchors = (
+        "packages/core/src/simworkbench/modeling/generator.py",
+        "packages/core/src/simworkbench/modeling/module_match.py",
+        "packages/core/src/simworkbench/modeling/gap_analysis.py",
+        "packages/core/src/simworkbench/modeling/experiment_proposal.py",
+        "apps/workbench-ui/src/components/proposal/ExperimentProposal.tsx",
+        "tests/integration/test_phase_5_gate_walk.py",
+    )
+    found = [a for a in open_anchors if a in output]
+    assert len(found) >= 3
 
 
 def test_opt_in_mode_check_count_at_least_default() -> None:

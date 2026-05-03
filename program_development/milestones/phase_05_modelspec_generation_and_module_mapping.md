@@ -1,6 +1,6 @@
 # Phase 5 — ModelSpec Generation and Module Mapping
 
-**Status: Not started**
+**Status: In progress (opened 2026-05-03). All four workstreams 5A, 5B, 5C, 5D open.**
 
 ## Objective
 Convert interpreted papers into validated ModelSpecs and map them to available modules. (Plan §Phase 5.)
