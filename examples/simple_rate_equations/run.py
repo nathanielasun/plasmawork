@@ -1,13 +1,14 @@
 """Run the simple-rate-equations example end-to-end.
 
 Loads ``examples/simple_rate_equations/model.yaml``, builds an ``Experiment``,
-drives the ``Runner`` against the built-in ``python_cpu`` backend, and writes
-a checkpoint plus a diagnostics summary under ``temp_runs/<run_id>/``.
+drives the ``Runner`` against the built-in ``python_cpu`` backend, writes
+a diagnostics summary under ``temp_runs/<run_id>/``, and saves a portable
+capsule under ``simulation_capsules/`` (per Phase 1 Gate items 4 and 5).
 
 Usage::
 
     python examples/simple_rate_equations/run.py
-    python examples/simple_rate_equations/run.py --max-steps 200 --seed 7
+    python examples/simple_rate_equations/run.py --max-steps 200 --seed 7 --no-capsule
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import load_yaml
 from simworkbench.paths import temp_runs_root
 from simworkbench.runtime import Runner
+from simworkbench.serialization import save_capsule
 
 
 def main() -> int:
@@ -28,6 +30,11 @@ def main() -> int:
     parser.add_argument("--end-time", type=str, default="100 ns")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--checkpoint-every", type=int, default=25)
+    parser.add_argument(
+        "--no-capsule",
+        action="store_true",
+        help="Skip the simulation_capsules/ save (the temp_runs/ summary still lands).",
+    )
     args = parser.parse_args()
 
     spec_path = Path(__file__).resolve().parent / "model.yaml"
@@ -75,6 +82,10 @@ def main() -> int:
         encoding="utf-8",
     )
 
+    capsule_path = None
+    if not args.no_capsule:
+        capsule_path = save_capsule(experiment=experiment, result=result)
+
     A_final = result.diagnostics["A"][-1]
     B_final = result.diagnostics["B"][-1]
     print()
@@ -82,7 +93,14 @@ def main() -> int:
     print(f"[done] t_final = {result.final_simulation_time:.3e} s")
     print(f"[done] A(t_final) = {A_final:.6e} 1/m^3")
     print(f"[done] B(t_final) = {B_final:.6e} 1/m^3")
+    if result.placeholder_used:
+        print(
+            f"[exploratory] placeholder rate constants in use for "
+            f"{len(result.placeholders)} interaction(s): {result.placeholders}"
+        )
     print(f"[done] summary = {summary_path}")
+    if capsule_path is not None:
+        print(f"[done] capsule = {capsule_path}")
     return 0
 
 

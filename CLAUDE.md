@@ -48,7 +48,7 @@ If `AGENTS.md` and this file ever drift, `AGENTS.md` is the source of truth for 
 
 ## How to Run the Program Locally
 
-> Phase 0 is **complete** as of 2026-05-02. Phase 1 has not started. The commands below are the planned interfaces. Every documented script path exists on disk — scripts whose subsystem is not yet implemented are stubs that print "Phase N — not implemented yet" and exit cleanly. Do not invent command names; if a script is missing, add a stub for it in the same commit as the doc reference.
+> Phase 0 complete (2026-05-02). Phase 1 (Manual Scientific Workbench) complete (2026-05-02 with review-fix corrections; see `bugs_and_fixes/bugfixes.md` *Phase 1 false close*). All six workstreams 1A–1F shipped: ModelSpec IR, units subsystem, simulation runtime with checkpointing, seven `candidate` physics modules with three runnable examples, diagnostics + plotters, FastAPI backend, Vite + React UI workbench, and minimal `.lxp/` capsule save/reload (Phase 2 finalizes the bulk-data format per ADR-0002). Every documented script path exists on disk; scripts whose subsystem is not yet implemented are stubs that print "Phase N — not implemented yet" and exit cleanly. Do not invent command names; if a script is missing, add a stub for it in the same commit as the doc reference.
 
 ```bash
 # One-time install (Python core + UI)
@@ -218,18 +218,21 @@ When in doubt, ask before editing. Prefer reversible additions over destructive 
 
 ## Phase-Specific Operational Notes
 
-**Phase 0** (Repository Bootstrap) — complete 2026-05-02. **Phase 1** (Manual Scientific Workbench) — in progress; Workstreams 1A (core experiment model) and 1B (units subsystem) landed 2026-05-02; Workstreams 1C–1F pending.
+**Phase 0** (Repository Bootstrap) — complete 2026-05-02.
+**Phase 1** (Manual Scientific Workbench) — complete 2026-05-02. All six workstreams 1A–1F shipped, including the post-review-fix capsule save/reload that satisfies Phase Gate items 4 and 5.
 
 Current state:
-- Convention checker at 142 checks, all green.
-- Phase status synchronized across `README.md`, `program_development/milestones/phase_00_repository_bootstrap.md`, `program_development/milestones/phase_01_manual_workbench.md`, and `program_development/timeline.md`.
-- Three bugs logged in `bugs_and_fixes/bugfixes.md` with regression checks:
+- Default convention checker covers every Phase 1 entity (no opt-in branch needed); the opt-in `--include-open-workstreams` mode is empty awaiting Phase 2.
+- Phase status synchronized across `README.md`, `program_development/milestones/{phase_00,phase_01}_*.md`, `program_development/timeline.md`, all `docs_site/src/content/*.tsx` pages that name the phase, and this file.
+- Bugs logged in `bugs_and_fixes/bugfixes.md` with regression checks:
   - 2026-05-02 *Bare `build/` ignore rule swallowed `scripts/build/`*
   - 2026-05-02 *Phase 0 gate false positive for missing skeleton files*
   - 2026-05-02 *Phase 1A/1B gate overstated implementation completeness*
-- `bugs_and_fixes/agent_error_patterns.md` now carries 17 named patterns. Read them before changing: convention-checker logic, `.gitignore`, milestone-naming, ModelSpec validators (especially flexible-dict fields), test wrappers, or any cached singleton.
+  - 2026-05-02 *Per-app and per-package `build/` outputs were not gitignored*
+  - 2026-05-02 *Phase 1 false close — seven legitimate review findings*
+- `bugs_and_fixes/agent_error_patterns.md` now carries 18 named patterns. Read them before changing: convention-checker logic, `.gitignore`, milestone-naming, ModelSpec validators (flexible-dict fields), test wrappers, cached singletons, API factories, checkpoint guards, status-flip commits, and the lint policy.
 
-Phase 1 remaining workstreams (1C runtime, 1D physics modules, 1E viz, 1F UI) start only after **Phase Gate Procedure → Starting a workstream** below — enumerate from the plan, not from the milestone hints.
+Phase 2 (Simulation Capsule System per plan §Phase 2 and ADR-0002) is the next phase — the format finalization (HDF5 vs Zarr), full provenance writer, and the fork/export flows. Open it via **Phase Gate Procedure → Starting a workstream** below.
 
 ---
 

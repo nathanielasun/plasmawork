@@ -254,132 +254,139 @@ check_dir_exists packages/solver_backends
 check_dir_exists packages/visualization
 check_dir_exists packages/internal_tools
 
+# ---------------------------------------------------------------------------
+# Phase 1 closed deliverables — promoted from the opt-in branch on 2026-05-02
+# per `agent_error_patterns.md` "Closing a workstream without promoting its
+# assertions from opt-in to default". Every entity below is part of the hard
+# default gate: a regression that removes any of these breaks the build.
+# ---------------------------------------------------------------------------
+section "Phase 1C — Simulation runtime"
+check_file_exists packages/core/src/simworkbench/runtime/__init__.py
+check_file_exists packages/core/src/simworkbench/runtime/runner.py
+check_file_exists packages/core/src/simworkbench/runtime/checkpoint.py
+check_file_exists packages/core/src/simworkbench/runtime/seeds.py
+check_file_exists packages/core/src/simworkbench/runtime/events.py
+check_file_exists packages/core/src/simworkbench/runtime/progress.py
+check_file_exists packages/core/src/simworkbench/paths/__init__.py
+check_file_exists tests/unit/test_runtime_runner.py
+check_file_exists tests/unit/test_runtime_checkpoint.py
+check_file_exists tests/unit/test_runtime_seeds.py
+check_file_exists tests/unit/test_runtime_events.py
+check_file_exists tests/unit/test_runtime_progress.py
+check_file_exists tests/unit/test_paths.py
+check_file_exists tests/integration/test_runtime_pause_resume.py
+check_file_exists tests/regression/test_runtime_writes_only_to_temp_runs.py
+check_grep_absent_in_file 'Backend runtime is scheduled for Phase 1A-1C' scripts/dev/run_backend.sh "scripts/dev/run_backend.sh is no longer the Phase-0 stub"
+check_file_exists examples/simple_rate_equations/run.py
+
+# ---------------------------------------------------------------------------
+section "Phase 1D — Basic physics modules"
+check_file_exists packages/physics_modules/templates/module_template/module.yaml
+check_file_exists packages/physics_modules/templates/module_template/src/__init__.py
+check_file_exists packages/physics_modules/templates/module_template/tests/test_template.py
+check_file_exists packages/physics_modules/templates/module_template/README.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/module.yaml
+check_file_exists packages/physics_modules/laser/gaussian_pulse/README.md
+check_file_exists tests/unit/test_gaussian_pulse.py
+check_file_exists packages/physics_modules/species/basic/module.yaml
+check_file_exists packages/physics_modules/species/basic/README.md
+check_file_exists tests/unit/test_basic_species.py
+check_file_exists packages/physics_modules/species/rate_equation_0d/module.yaml
+check_file_exists packages/physics_modules/species/rate_equation_0d/README.md
+check_file_exists tests/unit/test_rate_equation_0d.py
+check_file_exists packages/physics_modules/laser/simple_absorption/module.yaml
+check_file_exists packages/physics_modules/laser/simple_absorption/README.md
+check_file_exists tests/unit/test_simple_absorption.py
+check_file_exists packages/physics_modules/laser/simple_emission/module.yaml
+check_file_exists packages/physics_modules/laser/simple_emission/README.md
+check_file_exists tests/unit/test_simple_emission.py
+check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/module.yaml
+check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/README.md
+check_file_exists tests/unit/test_lennard_jones.py
+check_file_exists packages/physics_modules/phase_transition/ising_2d/module.yaml
+check_file_exists packages/physics_modules/phase_transition/ising_2d/README.md
+check_file_exists tests/unit/test_ising_2d.py
+check_file_exists examples/molecular_dynamics/run.py
+check_file_exists examples/ising_phase_transition/run.py
+check_file_exists tests/validation/test_rate_equation_conservation.py
+check_file_exists tests/validation/test_lennard_jones_energy_drift.py
+check_file_exists tests/validation/test_ising_2d_critical_temperature.py
+
+# ---------------------------------------------------------------------------
+section "Phase 1E — Diagnostics + plotters"
+check_file_exists packages/core/src/simworkbench/diagnostics/__init__.py
+check_file_exists packages/core/src/simworkbench/diagnostics/api.py
+check_file_exists packages/core/src/simworkbench/diagnostics/statistics.py
+check_file_exists packages/core/src/simworkbench/diagnostics/streams.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/__init__.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/line.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/heatmap.py
+check_file_exists packages/core/src/simworkbench/diagnostics/plotters/particle_scatter.py
+check_file_exists tests/unit/test_diagnostics_api.py
+check_file_exists tests/unit/test_diagnostics_statistics.py
+check_file_exists tests/unit/test_plotters.py
+check_file_exists tests/integration/test_diagnostics_streaming.py
+check_grep_in_file '"matplotlib' packages/core/pyproject.toml "packages/core/pyproject.toml depends on matplotlib (Phase 1E)"
+
+# ---------------------------------------------------------------------------
+section "Phase 1F — UI workbench + backend API"
+check_file_exists program_development/architectural_decisions/ADR-0005-ui-framework.md
+check_file_exists packages/core/src/simworkbench/api/__init__.py
+check_file_exists packages/core/src/simworkbench/api/server.py
+check_file_exists tests/integration/test_api_server.py
+check_file_exists apps/workbench-ui/index.html
+check_file_exists apps/workbench-ui/vite.config.ts
+check_file_exists apps/workbench-ui/src/main.tsx
+check_file_exists apps/workbench-ui/src/App.tsx
+check_file_exists apps/workbench-ui/src/components/SimulationList.tsx
+check_file_exists apps/workbench-ui/src/components/RunControls.tsx
+check_file_exists apps/workbench-ui/src/components/CodeViewer.tsx
+check_file_exists apps/workbench-ui/src/components/DocsViewer.tsx
+check_file_exists apps/workbench-ui/src/components/DiagnosticsPanel.tsx
+check_file_exists apps/workbench-ui/src/components/PlotPanel.tsx
+check_file_exists apps/workbench-ui/src/components/CapsuleExplorer.tsx
+check_file_exists apps/workbench-ui/src/api/client.ts
+check_file_exists apps/workbench-ui/src/__tests__/App.test.tsx
+check_file_exists apps/workbench-ui/src/__tests__/SimulationList.test.tsx
+check_file_exists apps/workbench-ui/src/__tests__/RunControls.test.tsx
+check_file_exists apps/workbench-ui/src/__tests__/DocsViewer.test.tsx
+check_grep_absent_in_file 'placeholder package for the Scientific Simulation Workbench UI' apps/workbench-ui/package.json "apps/workbench-ui/package.json no longer Phase-0 placeholder"
+check_grep_absent_in_file 'Workbench UI shell is scheduled for Phase 1F' scripts/dev/run_ui.sh "scripts/dev/run_ui.sh is no longer the Phase-0 stub"
+check_grep_absent_in_file 'UI build is scheduled for Phase 1F' scripts/build/ui.sh "scripts/build/ui.sh is no longer the Phase-0 stub"
+check_grep_in_file 'docs_site' apps/workbench-ui/src/components/DocsViewer.tsx "DocsViewer.tsx loads from docs_site/ canonical source"
+
+# ---------------------------------------------------------------------------
+# Phase 1 Gate items 4-5 — capsule save/reload (plan §Phase 1 Gate, §7).
+# Phase 1 ships a minimal real format; Phase 2 finalizes HDF5/Zarr per ADR-0002.
+section "Phase 1 — Capsule save/reload"
+check_file_exists packages/core/src/simworkbench/serialization/capsule.py
+check_file_exists tests/integration/test_capsule_save_load.py
+check_grep_in_file 'CAPSULE_FORMAT_VERSION' packages/core/src/simworkbench/serialization/__init__.py "serialization re-exports capsule API"
+
+# ---------------------------------------------------------------------------
+# Phase 1 status sync — every status-bearing file mentions "Phase 1" and
+# agrees with the milestone status. Honors `agent_error_patterns.md` "Status-
+# sync that misses CLAUDE.md and per-workstream subsections".
+section "Phase 1 status sync"
+check_grep_absent_in_file 'Phase 1 has not started' CLAUDE.md "CLAUDE.md does not say Phase 1 has not started"
+
+# ---------------------------------------------------------------------------
+# Lint enforcement — AGENTS.md "Code Style and Module Boundaries" requires
+# ruff clean. The lint script lives at scripts/test/lint.sh and is wired
+# into scripts/test/all.sh.
+section "Lint enforcement"
+check_file_executable scripts/test/lint.sh "scripts/test/lint.sh"
+check_grep_in_file 'lint\.sh' scripts/test/all.sh "scripts/test/all.sh runs lint"
+check_file_exists ruff.toml
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch — used by future phases. Currently empty
+# because all Phase 1 entities have been promoted out of opt-in.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
-  # Phase 1C (Workstream 1C) — Simulation runtime.
-  # Opened 2026-05-02. Each assertion below is one TODO until that
-  # workstream closes. See program_development/milestones/
-  # phase_01_manual_workbench.md for the full enumeration and bug-check
-  # carry-over.
-  section "Open Workstream TODOs — Phase 1C runtime"
-  check_file_exists packages/core/src/simworkbench/runtime/__init__.py
-  check_file_exists packages/core/src/simworkbench/runtime/runner.py
-  check_file_exists packages/core/src/simworkbench/runtime/checkpoint.py
-  check_file_exists packages/core/src/simworkbench/runtime/seeds.py
-  check_file_exists packages/core/src/simworkbench/runtime/events.py
-  check_file_exists packages/core/src/simworkbench/runtime/progress.py
-  check_file_exists packages/core/src/simworkbench/paths/__init__.py
-  check_file_exists tests/unit/test_runtime_runner.py
-  check_file_exists tests/unit/test_runtime_checkpoint.py
-  check_file_exists tests/unit/test_runtime_seeds.py
-  check_file_exists tests/unit/test_runtime_events.py
-  check_file_exists tests/unit/test_runtime_progress.py
-  check_file_exists tests/unit/test_paths.py
-  check_file_exists tests/integration/test_runtime_pause_resume.py
-  check_file_exists tests/regression/test_runtime_writes_only_to_temp_runs.py
-  check_grep_absent_in_file 'Backend runtime is scheduled for Phase 1A-1C' scripts/dev/run_backend.sh "scripts/dev/run_backend.sh is no longer the Phase-0 stub"
-
-  # Shared Phase 1C/1D example. It is asserted once to avoid duplicate
-  # failures for the same missing file.
-  section "Open Workstream TODOs — Phase 1C/1D shared example"
-  check_file_exists examples/simple_rate_equations/run.py
-
-  # Phase 1D (Workstream 1D) — Basic physics modules.
-  # Opened 2026-05-02. Each module carries its own validators (assumptions,
-  # validity_domain, equations) — the convention checker asserts the full
-  # starter template plus module.yaml + README.md + primary unit test per
-  # module.
-  section "Open Workstream TODOs — Phase 1D basic physics modules"
-  check_file_exists packages/physics_modules/templates/module_template/module.yaml
-  check_file_exists packages/physics_modules/templates/module_template/src/__init__.py
-  check_file_exists packages/physics_modules/templates/module_template/tests/test_template.py
-  check_file_exists packages/physics_modules/templates/module_template/README.md
-  check_file_exists packages/physics_modules/laser/gaussian_pulse/module.yaml
-  check_file_exists packages/physics_modules/laser/gaussian_pulse/README.md
-  check_file_exists tests/unit/test_gaussian_pulse.py
-  check_file_exists packages/physics_modules/species/basic/module.yaml
-  check_file_exists packages/physics_modules/species/basic/README.md
-  check_file_exists tests/unit/test_basic_species.py
-  check_file_exists packages/physics_modules/species/rate_equation_0d/module.yaml
-  check_file_exists packages/physics_modules/species/rate_equation_0d/README.md
-  check_file_exists tests/unit/test_rate_equation_0d.py
-  check_file_exists packages/physics_modules/laser/simple_absorption/module.yaml
-  check_file_exists packages/physics_modules/laser/simple_absorption/README.md
-  check_file_exists tests/unit/test_simple_absorption.py
-  check_file_exists packages/physics_modules/laser/simple_emission/module.yaml
-  check_file_exists packages/physics_modules/laser/simple_emission/README.md
-  check_file_exists tests/unit/test_simple_emission.py
-  check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/module.yaml
-  check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/README.md
-  check_file_exists tests/unit/test_lennard_jones.py
-  check_file_exists packages/physics_modules/phase_transition/ising_2d/module.yaml
-  check_file_exists packages/physics_modules/phase_transition/ising_2d/README.md
-  check_file_exists tests/unit/test_ising_2d.py
-  check_file_exists examples/molecular_dynamics/run.py
-  check_file_exists examples/ising_phase_transition/run.py
-  check_file_exists tests/validation/test_rate_equation_conservation.py
-  check_file_exists tests/validation/test_lennard_jones_energy_drift.py
-  check_file_exists tests/validation/test_ising_2d_critical_temperature.py
-
-  # Phase 1E (Workstream 1E) — Visualization and diagnostics.
-  # Opened 2026-05-02. Diagnostics API + plotters live under
-  # simworkbench.diagnostics during Phase 1; promotion to a separate
-  # packages/visualization/ Python package is deferred to a future ADR if it
-  # becomes necessary.
-  section "Open Workstream TODOs — Phase 1E diagnostics"
-  check_file_exists packages/core/src/simworkbench/diagnostics/__init__.py
-  check_file_exists packages/core/src/simworkbench/diagnostics/api.py
-  check_file_exists packages/core/src/simworkbench/diagnostics/statistics.py
-  check_file_exists packages/core/src/simworkbench/diagnostics/streams.py
-  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/__init__.py
-  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/line.py
-  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/heatmap.py
-  check_file_exists packages/core/src/simworkbench/diagnostics/plotters/particle_scatter.py
-  check_file_exists tests/unit/test_diagnostics_api.py
-  check_file_exists tests/unit/test_diagnostics_statistics.py
-  check_file_exists tests/unit/test_plotters.py
-  check_file_exists tests/integration/test_diagnostics_streaming.py
-  check_grep_in_file '"matplotlib' packages/core/pyproject.toml "packages/core/pyproject.toml depends on matplotlib (Phase 1E)"
-
-  # Phase 1F (Workstream 1F) — UI Workbench.
-  # Opened 2026-05-02. The UI consumes the 1A core types over an HTTP API and
-  # the 1C runtime + 1D modules + 1E diagnostics for actual data. Each plan-
-  # named entity below has one assertion. Implementation order: pick a
-  # framework (ADR-0005) → backend API → app shell → per-panel components.
-  section "Open Workstream TODOs — Phase 1F UI workbench"
-  # ADR — UI framework choice (Vite + React vs. Next.js vs. ...).
-  check_file_exists program_development/architectural_decisions/ADR-0005-ui-framework.md
-  # Backend HTTP API (consumed by the UI; lives under packages/core).
-  check_file_exists packages/core/src/simworkbench/api/__init__.py
-  check_file_exists packages/core/src/simworkbench/api/server.py
-  check_file_exists tests/integration/test_api_server.py
-  # UI app shell + entry.
-  check_file_exists apps/workbench-ui/index.html
-  check_file_exists apps/workbench-ui/vite.config.ts
-  check_file_exists apps/workbench-ui/src/main.tsx
-  check_file_exists apps/workbench-ui/src/App.tsx
-  # Plan-named UI panels (one component file per task line in §Phase 1 / 1F).
-  check_file_exists apps/workbench-ui/src/components/SimulationList.tsx
-  check_file_exists apps/workbench-ui/src/components/RunControls.tsx
-  check_file_exists apps/workbench-ui/src/components/CodeViewer.tsx
-  check_file_exists apps/workbench-ui/src/components/DocsViewer.tsx
-  check_file_exists apps/workbench-ui/src/components/DiagnosticsPanel.tsx
-  check_file_exists apps/workbench-ui/src/components/PlotPanel.tsx
-  check_file_exists apps/workbench-ui/src/components/CapsuleExplorer.tsx
-  # Typed API client.
-  check_file_exists apps/workbench-ui/src/api/client.ts
-  # UI tests (Vitest or equivalent).
-  check_file_exists apps/workbench-ui/src/__tests__/App.test.tsx
-  check_file_exists apps/workbench-ui/src/__tests__/SimulationList.test.tsx
-  check_file_exists apps/workbench-ui/src/__tests__/RunControls.test.tsx
-  check_file_exists apps/workbench-ui/src/__tests__/DocsViewer.test.tsx
-  # Real package manifest (no longer the Phase-0 placeholder).
-  check_grep_absent_in_file 'placeholder package for the Scientific Simulation Workbench UI' apps/workbench-ui/package.json "apps/workbench-ui/package.json no longer Phase-0 placeholder"
-  # Real wrapper scripts (no longer Phase-0 stubs).
-  check_grep_absent_in_file 'Workbench UI shell is scheduled for Phase 1F' scripts/dev/run_ui.sh "scripts/dev/run_ui.sh is no longer the Phase-0 stub"
-  check_grep_absent_in_file 'UI build is scheduled for Phase 1F' scripts/build/ui.sh "scripts/build/ui.sh is no longer the Phase-0 stub"
-  # Docs viewer integration: the in-app DocsViewer must load from the
-  # canonical docs_site source (per AGENTS.md — no duplicated doc strings).
-  check_grep_in_file 'docs_site' apps/workbench-ui/src/components/DocsViewer.tsx "DocsViewer.tsx loads from docs_site/ canonical source"
+  section "Open Workstream TODOs"
+  if [[ $QUIET -eq 0 ]]; then
+    echo "  no open workstreams; Phase 1 entities have all been promoted to default."
+  fi
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

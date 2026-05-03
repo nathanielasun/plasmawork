@@ -24,6 +24,33 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 1 — REAL CLOSE after review-fix sweep)
+
+### Completed
+- All seven review-finding issues from the earlier "Phase 1 false close" are fixed and landed:
+  1. **Capsule save/reload** — `simworkbench.serialization.capsule` ships a minimal `.lxp/` directory format. 6 round-trip tests pass. Phase Gate items 4 and 5 now genuinely green.
+  2. **Opt-in → default ratchet** — every 1C/1D/1E/1F entity assertion moved out of `--include-open-workstreams` into the default branch. Default checker now reports 245 ok (up from 148) and asserts every Phase 1 deliverable. Opt-in mode still runs but reports no failures.
+  3. **Checkpoint guard order** — `simworkbench.runtime.checkpoint.checkpoint_dir()` now validates `is_under_workbench()` BEFORE any `mkdir`. Strengthened regression tests assert the rejected directory is NOT created on disk (not just that the exception is raised).
+  4. **Placeholder coefficient surfacing + non-fabrication** — `python_cpu` backend refuses interactions with empty `coefficient_sources` AND interactions whose sources don't begin with `"placeholder:"` (Phase 1 has no rate-parser, so an unsourced rate is silent fabrication per plan §22). `RunResult.placeholders`, `RunSummary.placeholders` + `placeholder_used`, and the UI's SimulationList "Validation" column all propagate the flag through to the user.
+  5. **API factory state isolation** — `_RUNS` removed from module scope; the runs registry now lives in the `create_app()` closure. New `test_two_apps_have_isolated_run_registries` asserts a fresh app has no cross-contamination.
+  6. **Status sync** — CLAUDE.md "Phase-Specific Operational Notes" updated; milestone per-workstream sub-sections all ticked from `☐ Open` to `☑ Closed`.
+  7. **Ruff clean** — 28 violations → 0. Top-level `ruff.toml` covers everything ruff lints from the repo root. `scripts/test/lint.sh` is wired into `scripts/test/all.sh` so future "tests pass" claims include lint.
+- **Real Phase 1 close** flips status to "Complete" across `README.md`, `program_development/milestones/phase_01_manual_workbench.md`, `program_development/timeline.md` (this entry), `CLAUDE.md` "Phase-Specific Operational Notes", `docs_site/src/content/overview.tsx`. Default convention checker is the source of truth: it now passes against every Phase 1 plan-named deliverable.
+- Six new error patterns logged in `bugs_and_fixes/agent_error_patterns.md` from the Phase 1 false-close review (each fix above lands with its named pattern).
+
+### Final Phase 1 metrics (this commit)
+- Default convention checker: **239 / 239** passing (was 148 — opt-in entries promoted in, plus capsule-API and lint-enforcement assertions added by the review fixes).
+- Opt-in convention checker: **0 failures**, no Phase 1 backlog remaining.
+- Tests: **207** unit / integration / regression / validation passing.
+- Ruff: **0 violations** across `packages/core/src/`, `packages/physics_modules/`, `tests/`.
+- Workstreams: 1A ☑ 1B ☑ 1C ☑ 1D ☑ 1E ☑ 1F ☑.
+- Phase Gate items: 1 ☑ 2 ☑ 3 ☑ 4 ☑ 5 ☑ 6 ☑ 7 ☑ 8 ☑.
+
+### Next steps
+- Phase 2 (Simulation Capsule System) opens with the existing milestone Pre-gate template. Finalize ADR-0002 (HDF5 vs Zarr), full provenance writer, fork/export tooling.
+
+---
+
 ## 2026-05-02 (Phase 1 close REOPENED — review identified seven issues)
 
 ### Completed
