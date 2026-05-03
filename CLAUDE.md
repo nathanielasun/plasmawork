@@ -100,6 +100,20 @@ cd apps/workbench-ui && npm test
 
 ---
 
+## Common Gotchas
+
+- `python3 -m venv .venv` — uv is not used; default to `.venv/bin/python` and `.venv/bin/ruff`.
+- `yaml.safe_dump` writes list items with **2-space** indent, not 4. Don't string-replace `"\n    -"`; round-trip via `yaml.safe_load` + `yaml.safe_dump`.
+- FastAPI request-body Pydantic classes MUST be at module scope. Classes defined inside `create_app()` return 422 "missing field". See `*Body(BaseModel)` declarations in `simworkbench.api.server`.
+- Vitest + React 18 StrictMode renders components twice → `screen.getByText("X")` raises on multiple matches. Use `screen.getAllByText("X").length > 0` or scope with `within(getByRole("navigation"))`.
+- Every new FastAPI endpoint adds matching types to `apps/workbench-ui/src/api/client.ts` first; UI components import the type, never call `fetch` directly.
+- `tsc -b` leaks `.js` and `.d.ts` into `src/`; build scripts use `tsc --noEmit && vite build`. `.gitignore` carries fallback rules but don't rely on them.
+- Convention checker has two modes: default (hard gate, must stay green) and `--include-open-workstreams` (TODO list, may fail by design). Tests in `tests/regression/test_convention_checker_modes.py` enforce the contract.
+- Five consecutive phases (1–5) shipped incomplete closes; every audit added named patterns to `bugs_and_fixes/agent_error_patterns.md`. Read the latest 4–8 patterns before any close commit, not just the gate criteria.
+- `rate_equation_0d` (under `packages/physics_modules/species/`) is the Phase 1 canonical solver and the reference module for ModelSpec / ModuleMatcher tests. New species-domain integration tests typically target it.
+
+---
+
 ## How to Update Documentation Pages
 
 1. Open the relevant page under `docs_site/src/content/`. The required pages are:

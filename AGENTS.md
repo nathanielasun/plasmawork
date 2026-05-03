@@ -82,6 +82,8 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 
 - Python: type hints on all public APIs; `ruff` clean; explicit error handling at boundaries; no bare `except`.
 - TypeScript: strict `tsconfig`; no `any` in exported types.
+- **Hard rules belong inside the function, not as a caller-controlled flag.** A library may keep a `_for_tests=True` kwarg, but API endpoints hard-code the rule's positive form and UI controls never expose toggles for security checks. See `agent_error_patterns.md` "Hard rule made optional via a client-controlled API parameter".
+- **TypeScript API client types mirror FastAPI body schemas one-to-one.** Every new endpoint adds the matching `*Body` / response interface in `apps/workbench-ui/src/api/client.ts` first; UI components import the type, never call `fetch` directly. Drift here corrupts boundary validation parity.
 - Units are first-class. No raw floats for physical quantities crossing module boundaries — use the units subsystem (`packages/core/src/simworkbench/units/`).
 - Flexible `dict[str, Any]` fields at scientific boundaries (`fields.initialization`, `interactions.valid_regime`, etc.) require recursive validation that rejects raw numbers and unitless numeric strings. See `bugs_and_fixes/agent_error_patterns.md` "Letting `dict[str, Any]` bypass scientific boundary validation".
 - Cached singletons use `@functools.lru_cache(maxsize=1)` on a factory function, not `global` declarations on module-level mutable state. See `bugs_and_fixes/agent_error_patterns.md` "Module-level mutable state for cached singletons".
@@ -103,6 +105,9 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 - Generated code never replaces a validated solver call with a naive timestep loop without an explicit ADR.
 - Generated coefficients must be sourced. Missing data is reported, never fabricated.
 - Generated code is placed inside a capsule sandbox (`<capsule>/src/generated/`). Promotion to a registry module requires validation evidence and human approval.
+- **Mixed-shape review rules cover every shape.** When a rule applies across structured rows + Markdown + binary, the check has a branch per shape. Markdown's review marker is the absence of the "AGENT DRAFT — needs human review" banner; rows have an `edited_by` field. See `agent_error_patterns.md` "Validating one input shape but not all input shapes".
+- **Producer / consumer defense-in-depth on cross-cutting predicates.** When component A computes a predicate (e.g. `ModuleMatch.is_compatible`) and component B consumes it (e.g. `GapAnalyzer.missing_modules`), B independently re-derives the predicate rather than trusting A's signaling. Both layers carry the rule. See `agent_error_patterns.md` "Compatibility checks that pattern-match instead of validating dimensionality".
+- **Cross-cutting "always-on" prose has a regression test.** Any rule of the form "X must hold whenever Y" gets a test that reads the relevant state and fails when the invariant drifts. Prose without a test ages into a lie. Example: `tests/regression/test_security_sandbox_enforcement.py`.
 
 ---
 
