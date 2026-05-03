@@ -16,6 +16,7 @@ import CapsuleExplorer from "./components/CapsuleExplorer";
 import ToolList from "./components/tools/ToolList";
 import PaperReview from "./components/papers/PaperReview";
 import ExperimentProposal from "./components/proposal/ExperimentProposal";
+import GeneratedCodeView from "./components/codegen/GeneratedCodeView";
 
 const NAV: { to: string; label: string }[] = [
   { to: "/simulations", label: "Simulations" },
@@ -27,6 +28,7 @@ const NAV: { to: string; label: string }[] = [
   { to: "/tools", label: "Tools" },
   { to: "/papers", label: "Papers" },
   { to: "/proposals", label: "Proposals" },
+  { to: "/codegen", label: "Generated Code" },
   { to: "/docs", label: "Documentation" },
 ];
 
@@ -63,6 +65,7 @@ export default function App() {
           <Route path="/tools" element={<ToolList />} />
           <Route path="/papers" element={<PaperReview />} />
           <Route path="/proposals" element={<ExperimentProposal />} />
+          <Route path="/codegen" element={<GeneratedCodeView />} />
           <Route path="/docs" element={<DocsViewer />} />
           <Route path="/docs/:slug" element={<DocsViewer />} />
           <Route path="*" element={<Navigate to="/simulations" replace />} />

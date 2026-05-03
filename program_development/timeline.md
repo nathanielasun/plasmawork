@@ -24,6 +24,44 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-03 (Phase 6 closes — Sandboxed Agentic Code Generation complete)
+
+### Completed
+- **Procedure-first.** Phase 6 opened with the gate-walk integration test as the first artifact (`tests/integration/test_phase_6_gate_walk.py`), per the ninth Phase Gate Procedure check. Ten gate-walk tests cover every gate verb (generate / run / review / edit / export) plus the API hard-rule guard against the bypass-flag pattern; implementation chased the test.
+- **Workstream 6A — Code Generation Backend — shipped.** `simworkbench.codegen.CodeGenerator.generate(capsule, spec)` deterministically renders six artifacts under `<capsule>/src/generated/`: `experiment.py` (Phase-1 `Experiment` + `Runner` driver), `config.yaml`, `diagnostics.py`, `run.py`, `README.md`, and the §6C generated-tests tree (delegated to `TestGenerator`). Every artifact carries a "regeneration overwrites this directory but never touches user_edits/" header so a reviewer reading the raw file knows the contract. The result object lists every file written and a per-file SHA-256 used by the diff endpoint. A `codegen_manifest.json` lands alongside the artifacts so subsequent regenerations have a stable previous-state reference.
+- **Workstream 6B — Code Sandbox — shipped.** `simworkbench.codegen.sandbox.sandboxed_write` is the single producer-side gate. It refuses every write under `src/user_edits/`, `paper_sources/`, and `provenance/` (the OFF_LIMITS_SUBDIRS list) and accepts writes only under `src/generated/` and `validation/`. There is no `allow_user_edits_overwrite=True` opt-out at any layer — library, API, or UI. Carries `agent_error_patterns.md` "Hard rule made optional via a client-controlled API parameter" forward into Phase 6.
+- **Workstream 6C — Test Generation — shipped.** `simworkbench.codegen.TestGenerator.render(spec)` emits four pytest files for every spec — `test_unit.py`, `test_dimensional.py`, `test_smoke.py`, `test_regression.py` — plus `test_convergence.py` only when `geometry.dimensionality > 0` (no cargo-culted convergence test on a 0D rate-equation spec). Each file imports pytest and contains at least one `def test_…` body. The smoke test invokes the project's vetted Phase-1 `Runner` (scipy-LSODA), never a hand-rolled timestep loop (plan §15.2).
+- **Workstream 6D — Generated Code Viewer + Editor — shipped.** New "Generated Code" UI tab (`apps/workbench-ui/src/components/codegen/GeneratedCodeView.tsx`) renders the generated tree and the user_edits tree as separate sections (never co-mingled). Three actions: Regenerate, View diff, Run validation. Three Vitest tests assert each branch actually renders (capsule selector, separated trees, validation summary path). Backend exposes four new endpoints (`GET /api/capsules/{name}/codegen`, `POST /api/capsules/{name}/codegen`, `GET /api/capsules/{name}/codegen/diff`, `POST /api/capsules/{name}/validate-run`); `apps/workbench-ui/src/api/client.ts` mirrors them one-to-one.
+- **Workstream 6E — Validation Run — shipped.** `simworkbench.codegen.ValidationRunner.run(capsule)` runs the generated experiment on the Phase-1 `Runner`, collects diagnostics, writes per-diagnostic CSV under `validation/plots/`, a machine-readable `validation/status.yaml` (status ∈ {`passed`, `failed`, `incomplete`}), and a Markdown `validation/validation_summary.md` covering every §6E bullet (Diagnostics / Plots / Validation status / Run / failure if any). `incomplete` is the canonical state when the spec carries placeholder coefficients — the reviewer must source real values before promotion to `passed`.
+- **Cross-cutting.** `configs/agents.yaml` flips `code_generation`, `numerical_methods`, `validation`, `visualization` roles to `enabled: true`. The `security_sandbox` always-on regression test stayed green (the role is already enabled since Phase 4). `App.tsx` adds a `/codegen` route and "Generated Code" nav label.
+- **Convention checker ratchet.** All Phase 6A–6E entity assertions promoted from `--include-open-workstreams` into the default hard gate. Default mode now 435/435 ok. Regression test (`test_convention_checker_modes.py`) flipped back to its closed-phase form.
+- **Behavioral verification (per the sixteen-check Phase Gate Procedure).** All sixteen green:
+  1. End-to-end gate walk: 10 tests in `test_phase_6_gate_walk.py`.
+  2. Documented scripts: no new doc references introduced.
+  3. Producer-writer wiring: `CodeGenerator` writes through `sandboxed_write`; the manifest hashes survive the round-trip through the diff endpoint.
+  4. Validator field parity: every generator output is a Pydantic round-trip target (the smoke test asserts `load_yaml` agrees with the in-memory spec).
+  5. Destructive-after-validate: `sandboxed_write` validates path containment before any `mkdir` / `write_text`.
+  6. UI panels actually render: `GeneratedCodeView.test.tsx` mounts the component, mocks the backend, and asserts each branch.
+  7. Status-sync grep clean across README, CLAUDE.md, milestone, timeline, agents.yaml.
+  8. Build scripts succeed; no leaked .js.
+  9. Gate-clause verb walk: every gate verb (generate/run/review/edit/export) has a dedicated test.
+  10. Workstream task-bullet walk: every plan-named bullet maps to a real artifact (experiment.py / config.yaml / diagnostics.py / generated tests / README; sandbox enforcement / file tracking / diffs; unit/dimensional/smoke/regression tests; UI tree separation; validation summary + status + plots).
+  11. Boundary validation parity: `POST /api/capsules/{name}/codegen` body uses Pydantic with `extra="ignore"` so smuggled fields are dropped silently; the user_edits/ guard fires regardless.
+  12. Success path runs: gate-walk test runs the smoke path on a real synthesized capsule fixture.
+  13. Hard rule via API flag: regression test (`test_phase_6_api_codegen_does_not_accept_overwrite_flag`) sends `{"allow_user_edits_overwrite": true}` and asserts the user_edits/ sentinel survives byte-for-byte.
+  14. Mixed-shape rules: the sandbox's OFF_LIMITS_SUBDIRS covers user_edits/, paper_sources/, AND provenance/ — three shapes, three branches in `test_user_edits_preserved_on_regeneration.py`.
+  15. Compatibility checks: validation summary's status field is one of three explicit values, not a free-form string; the consumer (UI) reads the structured value.
+  16. Cross-cutting "always-on" prose: `test_phase_6_codegen_role_present_in_agents_yaml` asserts the four §Phase 6 agent roles are enabled and security_sandbox stays on.
+
+### Open questions
+- An LLM-backed `CodeGenerator` is a future plug-in. The deterministic default is what the gate promises and what tests exercise.
+- PDF/notebook export of the generated tree is covered by the existing Phase 2C `export_capsule(kinds=["code", "data"])` path; Phase 6 only added the artifacts to that tree.
+
+### Next steps
+- Open Phase 7 (Validated physics module registry) per plan §Phase 7 with the same procedure: write the gate-walk test FIRST, enumerate plan deliverables, add per-entity opt-in convention-checker assertions, implement until everything is green.
+
+---
+
 ## 2026-05-03 (Phase 5 closes — ModelSpec Generation and Module Mapping complete)
 
 ### Completed

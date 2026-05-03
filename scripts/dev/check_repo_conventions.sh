@@ -611,10 +611,55 @@ check_grep_in_file 'role: model_spec' configs/agents.yaml "agents.yaml lists mod
 check_file_exists tests/integration/test_phase_5_gate_walk.py
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch. Currently empty — Phase 5 closed 2026-05-03.
+section "Phase 6A — Code Generation Backend"
+check_file_exists packages/core/src/simworkbench/codegen/__init__.py
+check_file_exists packages/core/src/simworkbench/codegen/generator.py
+check_grep_in_file 'class CodeGenerator' \
+  packages/core/src/simworkbench/codegen/generator.py "CodeGenerator class defined"
+check_grep_in_file 'src/generated' \
+  packages/core/src/simworkbench/codegen/generator.py "generator targets src/generated/"
+
+section "Phase 6B — Code Sandbox"
+check_file_exists packages/core/src/simworkbench/codegen/sandbox.py
+check_grep_in_file 'user_edits' \
+  packages/core/src/simworkbench/codegen/sandbox.py \
+  "sandbox enforces user_edits/ guard"
+
+section "Phase 6C — Test Generation"
+check_file_exists packages/core/src/simworkbench/codegen/test_generation.py
+check_grep_in_file 'class TestGenerator' \
+  packages/core/src/simworkbench/codegen/test_generation.py \
+  "TestGenerator class defined"
+
+section "Phase 6D — Generated Code Viewer + Editor"
+check_file_exists apps/workbench-ui/src/components/codegen/GeneratedCodeView.tsx
+check_file_exists apps/workbench-ui/src/__tests__/GeneratedCodeView.test.tsx
+check_grep_in_file 'codegen' \
+  packages/core/src/simworkbench/api/server.py "codegen endpoints in API server"
+check_grep_in_file 'codegen' \
+  apps/workbench-ui/src/api/client.ts "client.ts exposes codegen helpers"
+check_grep_in_file '/codegen' apps/workbench-ui/src/App.tsx "App.tsx routes /codegen"
+
+section "Phase 6E — Validation Run"
+check_file_exists packages/core/src/simworkbench/codegen/validation_run.py
+check_grep_in_file 'class ValidationRunner' \
+  packages/core/src/simworkbench/codegen/validation_run.py \
+  "ValidationRunner class defined"
+
+section "Phase 6 — Cross-cutting + gate walk"
+check_file_exists tests/integration/test_phase_6_gate_walk.py
+check_file_exists tests/integration/test_capsule_codegen.py
+check_file_exists tests/regression/test_user_edits_preserved_on_regeneration.py
+check_grep_in_file 'role: code_generation' configs/agents.yaml \
+  "agents.yaml lists code_generation role"
+check_grep_in_file 'role: numerical_methods' configs/agents.yaml \
+  "agents.yaml lists numerical_methods role"
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch. Currently empty — Phase 6 closed 2026-05-03.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 5 closed 2026-05-03; Phase 6 not yet opened."
+  echo "  no open workstreams — Phase 6 closed 2026-05-03; Phase 7 not yet opened."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

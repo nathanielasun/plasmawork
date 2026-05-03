@@ -1,6 +1,6 @@
 # Phase 6 — Agentic Code Generation in Sandboxed Capsules
 
-**Status: Not started**
+**Status: Complete (2026-05-03).** All five workstreams 6A–6E shipped. Default convention checker green at 435 checks; opt-in mode reports no open workstreams.
 
 ## Objective
 Allow agents to generate candidate experiment code inside simulation capsules, run tests, and produce reviewable results. (Plan §Phase 6.)

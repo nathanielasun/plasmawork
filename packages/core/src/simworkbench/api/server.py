@@ -157,6 +157,21 @@ class ProposalBody(BaseModel):
     capsule: str
 
 
+class CodegenBody(BaseModel):
+    """POST /api/capsules/{name}/codegen body — Phase 6.
+
+    Empty by design. The Phase 6 audit pre-emptively rejects a
+    ``allow_user_edits_overwrite`` knob: the user_edits/ guard is
+    library-enforced, not caller-controlled (carries
+    `agent_error_patterns.md` "Hard rule made optional via a
+    client-controlled API parameter"). The endpoint silently ignores
+    extra fields rather than 422 so the gate-walk regression test can
+    confirm the bypass attempt is harmless.
+    """
+
+    model_config = {"extra": "ignore"}
+
+
 # ---------------------------------------------------------------------------
 # App factory — per-app run registry lives in the closure, NOT module-global.
 # Honors agent_error_patterns.md "API factory advertises isolation while
@@ -819,6 +834,132 @@ def create_app() -> FastAPI:
             ),
             "matches": matches.to_dict(),
             "gaps": gaps.to_dict(),
+        }
+
+    # -----------------------------------------------------------------------
+    # Phase 6 — Sandboxed Agentic Code Generation. Three endpoints power the
+    # UI's GeneratedCodeView: list, regenerate, and diff.
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/capsules/{name}/codegen")
+    def list_codegen(name: str) -> dict[str, Any]:
+        """List the generated tree under ``<capsule>/src/generated/`` plus
+        the user_edits/ tree (separately, never co-mingled).
+        """
+        import json as _json
+
+        capsule_path = _resolve_capsule(name)
+        generated_root = capsule_path / "src" / "generated"
+        user_edits_root = capsule_path / "src" / "user_edits"
+
+        def _enumerate(root: Path) -> list[dict[str, Any]]:
+            if not root.is_dir():
+                return []
+            items: list[dict[str, Any]] = []
+            for path in sorted(root.rglob("*")):
+                if path.is_file() and path.name != ".gitkeep":
+                    items.append(
+                        {
+                            "path": path.relative_to(capsule_path).as_posix(),
+                            "size_bytes": path.stat().st_size,
+                        }
+                    )
+            return items
+
+        manifest_path = generated_root / "codegen_manifest.json"
+        manifest: dict[str, Any] | None = None
+        if manifest_path.is_file():
+            try:
+                manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                manifest = None
+        return {
+            "capsule": name,
+            "generated_files": _enumerate(generated_root),
+            "user_edits_files": _enumerate(user_edits_root),
+            "manifest": manifest,
+        }
+
+    @app.post("/api/capsules/{name}/codegen")
+    def run_codegen(name: str, body: CodegenBody | None = None) -> dict[str, Any]:
+        """Regenerate the generated tree from the capsule's ModelSpec.
+
+        Hard-rule enforcement (13th behavioral check): the body model
+        ignores any ``allow_user_edits_overwrite`` field; the sandbox
+        refuses writes under ``user_edits/`` regardless. ``body`` is
+        accepted but unused — its presence guards against future field
+        smuggling, not against this call's behavior.
+        """
+        from simworkbench.codegen import CodeGenerator
+        from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
+
+        _ = body  # silence linter; the field is intentionally unread
+        capsule_path = _resolve_capsule(name)
+        spec_path = capsule_path / "model" / "model_spec.yaml"
+        if not spec_path.is_file():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Capsule {name!r} has no model/model_spec.yaml — "
+                    "run /api/proposals first."
+                ),
+            )
+        spec = _load_modelspec_yaml(spec_path)
+        result = CodeGenerator().generate(capsule_path, spec)
+        return {
+            "capsule": name,
+            "files_written": list(result.files_written),
+            "manifest_path": (
+                str(result.manifest_path.relative_to(repo_root()))
+                if result.manifest_path
+                else None
+            ),
+        }
+
+    @app.get("/api/capsules/{name}/codegen/diff")
+    def codegen_diff(name: str) -> dict[str, Any]:
+        """Return the previous generation manifest + the current file
+        hashes so the UI can render a regeneration diff.
+        """
+        import hashlib as _hashlib
+        import json as _json
+
+        capsule_path = _resolve_capsule(name)
+        generated_root = capsule_path / "src" / "generated"
+        manifest_path = generated_root / "codegen_manifest.json"
+        previous: dict[str, Any] | None = None
+        if manifest_path.is_file():
+            try:
+                previous = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                previous = None
+        current_files: list[dict[str, Any]] = []
+        if generated_root.is_dir():
+            for path in sorted(generated_root.rglob("*")):
+                if not path.is_file() or path.name == "codegen_manifest.json":
+                    continue
+                rel = path.relative_to(capsule_path).as_posix()
+                sha = _hashlib.sha256(path.read_bytes()).hexdigest()
+                current_files.append({"path": rel, "sha256": sha})
+        return {
+            "capsule": name,
+            "previous": previous,
+            "current_files": current_files,
+        }
+
+    @app.post("/api/capsules/{name}/validate-run")
+    def run_validation(name: str) -> dict[str, Any]:
+        """Run the Phase 6E ValidationRunner and return the summary path."""
+        from simworkbench.codegen import ValidationRunner
+
+        capsule_path = _resolve_capsule(name)
+        try:
+            summary_path = ValidationRunner().run(capsule_path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "capsule": name,
+            "summary_path": str(summary_path.relative_to(repo_root())),
         }
 
     return app

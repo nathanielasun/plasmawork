@@ -207,6 +207,53 @@ export interface ApiClient {
   getPaperExtracted(capsule: string): Promise<PaperExtracted>;
   editPaperArtifact(capsule: string, body: PaperEditPayload): Promise<{ capsule: string; ok: boolean }>;
   createProposal(capsule: string): Promise<ProposalResult>;
+  /**
+   * Phase 6 — Sandboxed Agentic Code Generation. The codegen endpoints
+   * write only to ``<capsule>/src/generated/`` and never touch
+   * ``<capsule>/src/user_edits/``. The backend enforces this
+   * unconditionally; the UI carries no toggle.
+   */
+  listCodegen(capsule: string): Promise<CodegenListing>;
+  runCodegen(capsule: string): Promise<CodegenRun>;
+  diffCodegen(capsule: string): Promise<CodegenDiff>;
+  runValidation(capsule: string): Promise<{ capsule: string; summary_path: string }>;
+}
+
+export interface CodegenFile {
+  path: string;
+  size_bytes: number;
+}
+
+export interface CodegenManifestEntry {
+  path: string;
+  sha256: string;
+}
+
+export interface CodegenManifest {
+  generated_at: string;
+  workbench_version: string;
+  spec_name: string;
+  spec_domain: string;
+  files: CodegenManifestEntry[];
+}
+
+export interface CodegenListing {
+  capsule: string;
+  generated_files: CodegenFile[];
+  user_edits_files: CodegenFile[];
+  manifest: CodegenManifest | null;
+}
+
+export interface CodegenRun {
+  capsule: string;
+  files_written: string[];
+  manifest_path: string | null;
+}
+
+export interface CodegenDiff {
+  capsule: string;
+  previous: CodegenManifest | null;
+  current_files: CodegenManifestEntry[];
 }
 
 export interface ProposalMatchRow {
@@ -416,6 +463,40 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ capsule }),
+        },
+        baseUrl,
+      ),
+    listCodegen: (capsule) =>
+      fetchJson(
+        `/capsules/${encodeURIComponent(capsule)}/codegen`,
+        undefined,
+        baseUrl,
+      ),
+    runCodegen: (capsule) =>
+      // Backend enforces the user_edits/ guard unconditionally — the UI
+      // carries no overwrite toggle.
+      fetchJson(
+        `/capsules/${encodeURIComponent(capsule)}/codegen`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+        baseUrl,
+      ),
+    diffCodegen: (capsule) =>
+      fetchJson(
+        `/capsules/${encodeURIComponent(capsule)}/codegen/diff`,
+        undefined,
+        baseUrl,
+      ),
+    runValidation: (capsule) =>
+      fetchJson(
+        `/capsules/${encodeURIComponent(capsule)}/validate-run`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
         },
         baseUrl,
       ),

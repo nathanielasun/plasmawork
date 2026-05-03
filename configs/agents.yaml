@@ -56,7 +56,7 @@ agents:
 
   - role: code_generation
     description: Generates candidate implementation code into a capsule sandbox.
-    enabled: false
+    enabled: true
     phase: 6
     capabilities: [write_to_capsule_generated]
     refuse_on:
@@ -65,7 +65,7 @@ agents:
 
   - role: numerical_methods
     description: Reviews solver choices and numerical stability.
-    enabled: false
+    enabled: true
     phase: 6
 
   - role: backend_optimization
@@ -75,13 +75,13 @@ agents:
 
   - role: validation
     description: Creates and runs validation tests.
-    enabled: false
+    enabled: true
     phase: 6
     capabilities: [run_tests, write_validation_reports]
 
   - role: visualization
     description: Builds plots and UI panels.
-    enabled: false
+    enabled: true
     phase: 6
 
   - role: documentation
