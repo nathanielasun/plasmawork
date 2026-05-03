@@ -276,6 +276,88 @@ def test_get_capsule_diagnostics_returns_series(real_capsule):
         assert forbidden_key not in body["series"]
 
 
+# ---------------------------------------------------------------------------
+# Phase 3D — Tool registry endpoints.
+# ---------------------------------------------------------------------------
+
+
+def test_list_tools_returns_registry_index():
+    r = _client().get("/api/tools")
+    assert r.status_code == 200
+    body = r.json()
+    names = [row["name"] for row in body]
+    assert "absorption_spectrum_diagnostic" in names
+
+
+def test_get_tool_returns_metadata():
+    r = _client().get("/api/tools/absorption_spectrum_diagnostic")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "absorption_spectrum_diagnostic"
+    assert body["metadata"]["type"] == "diagnostic"
+    assert any(p["name"] == "frequency" for p in body["metadata"]["inputs"])
+
+
+def test_get_tool_404_for_unknown():
+    r = _client().get("/api/tools/no-such-tool")
+    assert r.status_code == 404
+
+
+def test_get_tool_docs_returns_readme_and_yaml():
+    r = _client().get("/api/tools/absorption_spectrum_diagnostic/docs")
+    assert r.status_code == 200
+    body = r.json()
+    assert "absorption" in body["readme"].lower()
+    assert "name: absorption_spectrum_diagnostic" in body["tool_yaml"]
+
+
+def test_set_tool_status_rejects_unauthorized_agent_promotion(tmp_path):
+    """Phase 9.5: agents may not set ``validated``. The API surfaces the
+    LifecycleError from the registry as 400 with the rule explanation."""
+    # Use the real example tool but reset to candidate after the test if we
+    # successfully promoted it, so we don't permanently flip its status.
+    import shutil
+    import uuid
+
+    from simworkbench.paths import local_cache_root
+    src = (
+        repo_root()
+        / "packages"
+        / "internal_tools"
+        / "registry"
+        / "absorption_spectrum_diagnostic"
+    )
+    cache = local_cache_root() / "imported_tools"
+    cache.mkdir(parents=True, exist_ok=True)
+    name = f"_pytest_api_{uuid.uuid4().hex[:6]}"
+    target = cache / name
+    shutil.copytree(src, target)
+    # Rename inside the copy so it doesn't clash with the canonical tool.
+    yaml_path = target / "tool.yaml"
+    yaml_path.write_text(
+        yaml_path.read_text().replace(
+            "name: absorption_spectrum_diagnostic", f"name: {name}"
+        )
+    )
+    try:
+        client = _client()
+        # Agent promotion to validated → 400.
+        r = client.post(
+            f"/api/tools/{name}/status",
+            json={"status": "validated", "actor": "agent"},
+        )
+        assert r.status_code == 400
+        # Human promotion → 200.
+        r = client.post(
+            f"/api/tools/{name}/status",
+            json={"status": "validated", "actor": "human"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "validated"
+    finally:
+        shutil.rmtree(target, ignore_errors=True)
+
+
 def test_get_capsule_diagnostics_json_fallback(real_capsule):
     """Force the JSON fallback path by removing diagnostics.h5; the response
     must still be the `{name, source, series: {<diagnostic>: [...]}}` shape,

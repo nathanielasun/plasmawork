@@ -1,0 +1,36 @@
+name: TEMPLATE
+version: 0.1.0
+type: solver
+description: Solver-adapter template — wraps a numerical solver behind the BaseTool surface.
+author: local
+status: draft
+entrypoint: src/tool.py:SolverAdapterTemplate
+
+inputs:
+  - name: rhs
+    type: scalar
+    description: The right-hand-side callable f(t, y) — implementer-provided.
+  - name: t_span
+    type: array
+    units: s
+    description: Two-element array (t0, t1).
+  - name: y0
+    type: array
+    units: dimensionless
+    description: Initial state vector.
+
+outputs:
+  - name: trajectory
+    type: table
+    description: Solver output — typically (t_array, y_array) pairs.
+
+compatible_domains: []
+
+requires:
+  python:
+    - scipy
+
+validation:
+  tests:
+    - tests/test_template.py
+  reference_cases: []

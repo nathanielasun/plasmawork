@@ -1,0 +1,39 @@
+name: absorption_spectrum_diagnostic
+version: 0.1.0
+type: diagnostic
+description: Computes the dominant peaks of an intensity-vs-frequency spectrum.
+author: local
+status: candidate
+entrypoint: src/tool.py:AbsorptionSpectrumDiagnostic
+
+inputs:
+  - name: frequency
+    type: array
+    units: Hz
+    description: Frequency axis (1-D, monotonically increasing).
+  - name: intensity
+    type: array
+    units: dimensionless
+    description: Intensity values aligned to the frequency axis.
+
+outputs:
+  - name: peaks
+    type: table
+    description: One row per detected peak with frequency + intensity columns.
+  - name: peak_count
+    type: scalar
+    description: Number of peaks the diagnostic returned.
+
+compatible_domains:
+  - laser_species
+  - spectroscopy
+  - plasma
+
+requires:
+  python:
+    - numpy
+
+validation:
+  tests:
+    - tests/test_absorption_spectrum.py
+  reference_cases: []

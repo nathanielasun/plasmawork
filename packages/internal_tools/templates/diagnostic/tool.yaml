@@ -1,0 +1,33 @@
+name: TEMPLATE
+version: 0.1.0
+type: diagnostic
+description: Diagnostic tool template. Reads diagnostic time-series and emits derived metrics.
+author: local
+status: draft
+entrypoint: src/tool.py:DiagnosticTemplate
+
+inputs:
+  - name: time
+    type: array
+    units: s
+    description: Time axis (1-D, monotonic).
+  - name: signal
+    type: array
+    units: dimensionless
+    description: Signal values aligned to the time axis.
+
+outputs:
+  - name: summary
+    type: table
+    description: One-row summary; replace with the metric your diagnostic returns.
+
+compatible_domains: []
+
+requires:
+  python:
+    - numpy
+
+validation:
+  tests:
+    - tests/test_template.py
+  reference_cases: []

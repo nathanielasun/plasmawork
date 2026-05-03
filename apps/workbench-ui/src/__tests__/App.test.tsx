@@ -26,7 +26,7 @@ describe("App shell", () => {
     expect(screen.getByText(/Scientific Simulation Workbench/i)).toBeInTheDocument();
   });
 
-  it("renders all seven plan-named navigation panels", () => {
+  it("renders all plan-named navigation panels (incl. Phase 3 Tools)", () => {
     render(
       <MemoryRouter initialEntries={["/simulations"]}>
         <App />
@@ -42,6 +42,7 @@ describe("App shell", () => {
       "Diagnostics",
       "Plots",
       "Capsules",
+      "Tools",
       "Documentation",
     ]) {
       expect(within(nav).getByText(label)).toBeInTheDocument();

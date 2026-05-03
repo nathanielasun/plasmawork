@@ -1,0 +1,33 @@
+name: TEMPLATE
+version: 0.1.0
+type: visualization
+description: Visualization tool template — renders run data into a figure / animation.
+author: local
+status: draft
+entrypoint: src/tool.py:VisualizationTemplate
+
+inputs:
+  - name: time
+    type: array
+    units: s
+  - name: field
+    type: array
+    units: dimensionless
+    description: 1-D or 2-D field aligned to the time axis.
+
+outputs:
+  - name: figure
+    type: figure
+    description: A matplotlib figure (or your preferred plot object).
+
+compatible_domains: []
+
+requires:
+  python:
+    - numpy
+    - matplotlib
+
+validation:
+  tests:
+    - tests/test_template.py
+  reference_cases: []

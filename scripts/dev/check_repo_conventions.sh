@@ -453,12 +453,72 @@ section "Phase 2 — Cross-cutting"
 check_grep_in_file 'v0\.1' docs_site/src/content/simulation_capsules.tsx "docs_site simulation_capsules page references the v0.1 schema"
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch. Currently empty — Phase 2 closed 2026-05-02
-# and Phase 3 has not yet opened. The next phase opens by adding a section
-# here; the closing commit ratchets it into the default flow above.
+# Phase 3 — Internal Tool SDK and Registry (Closed 2026-05-02). Every entity
+# below was ratcheted from the opt-in `--include-open-workstreams` block into
+# the default hard gate at the Phase 3 close commit.
+
+section "Phase 3A — Tool SDK"
+check_file_exists packages/core/src/simworkbench/tools/__init__.py
+check_file_exists packages/core/src/simworkbench/tools/base_tool.py
+check_file_exists packages/core/src/simworkbench/tools/io.py
+check_file_exists packages/core/src/simworkbench/tools/metadata.py
+check_file_exists packages/core/src/simworkbench/tools/lifecycle.py
+check_grep_in_file 'class BaseTool' packages/core/src/simworkbench/tools/base_tool.py "BaseTool ABC defined"
+check_grep_in_file 'class ToolInput' packages/core/src/simworkbench/tools/io.py "ToolInput defined"
+check_grep_in_file 'class ToolOutput' packages/core/src/simworkbench/tools/io.py "ToolOutput defined"
+check_grep_in_file 'class ToolMetadata' packages/core/src/simworkbench/tools/metadata.py "ToolMetadata defined"
+check_grep_in_file 'draft' packages/core/src/simworkbench/tools/lifecycle.py "lifecycle: draft state"
+check_grep_in_file 'candidate' packages/core/src/simworkbench/tools/lifecycle.py "lifecycle: candidate state"
+check_grep_in_file 'validated' packages/core/src/simworkbench/tools/lifecycle.py "lifecycle: validated state"
+check_grep_in_file 'trusted' packages/core/src/simworkbench/tools/lifecycle.py "lifecycle: trusted state"
+check_grep_in_file 'deprecated' packages/core/src/simworkbench/tools/lifecycle.py "lifecycle: deprecated state"
+check_grep_in_file 'BaseTool' packages/core/src/simworkbench/tools/__init__.py "simworkbench.tools re-exports BaseTool"
+check_file_exists tests/unit/test_base_tool.py
+check_file_exists tests/unit/test_tool_io.py
+check_file_exists tests/unit/test_tool_lifecycle.py
+
+section "Phase 3B — Tool Registry"
+check_file_exists packages/core/src/simworkbench/tools/registry.py
+check_grep_in_file 'class ToolRegistry' packages/core/src/simworkbench/tools/registry.py "ToolRegistry defined"
+check_file_exists packages/internal_tools/registry/index.yaml
+check_file_executable scripts/dev/refresh_registry.sh "scripts/dev/refresh_registry.sh executable"
+check_grep_absent_in_file 'scheduled for Phase' scripts/dev/refresh_registry.sh "refresh_registry.sh is no longer the Phase-0 stub"
+check_dir_exists packages/internal_tools/registry/absorption_spectrum_diagnostic
+check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/tool.yaml
+check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/src/tool.py
+check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/tests/test_absorption_spectrum.py
+check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/README.md
+check_file_exists tests/integration/test_tool_registry.py
+
+section "Phase 3C — Tool Templates"
+for cat in diagnostic visualization import_tool physics_module solver_adapter validation paper_extraction; do
+  check_dir_exists "packages/internal_tools/templates/$cat"
+  check_file_exists "packages/internal_tools/templates/$cat/tool.yaml"
+  check_file_exists "packages/internal_tools/templates/$cat/src/tool.py"
+  check_file_exists "packages/internal_tools/templates/$cat/README.md"
+done
+
+section "Phase 3D — Tool UI"
+check_file_exists apps/workbench-ui/src/components/tools/ToolList.tsx
+check_file_exists apps/workbench-ui/src/components/tools/ToolDetail.tsx
+check_file_exists apps/workbench-ui/src/components/tools/ToolDocs.tsx
+check_file_exists apps/workbench-ui/src/components/tools/ToolStatus.tsx
+check_file_exists apps/workbench-ui/src/__tests__/ToolList.test.tsx
+check_grep_in_file 'tools' apps/workbench-ui/src/App.tsx "App.tsx routes /tools"
+check_grep_in_file '/api/tools' packages/core/src/simworkbench/api/server.py "API exposes /api/tools (Phase 3D)"
+check_grep_in_file '/api/tools/\{name\}' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/{name}"
+
+section "Phase 3E — Tool Documentation"
+check_grep_absent_in_file 'Phase 0 skeleton' docs_site/src/content/internal_tools.tsx "internal_tools docs no longer the Phase-0 banner"
+check_grep_in_file 'Tutorial' docs_site/src/content/internal_tools.tsx "internal_tools docs include a tutorial heading"
+check_grep_in_file 'absorption_spectrum_diagnostic' docs_site/src/content/internal_tools.tsx "internal_tools docs walk through the example tool"
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch. Currently empty — Phase 3 closed 2026-05-02
+# and Phase 4 has not yet opened.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 2 closed 2026-05-02; Phase 3 not yet opened."
+  echo "  no open workstreams — Phase 3 closed 2026-05-02; Phase 4 not yet opened."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

@@ -2,7 +2,11 @@ export default function InternalTools() {
   return (
     <article>
       <h1>Internal Tools</h1>
-      <p className="page-status">Phase 0 skeleton. Expand in Phase 3.</p>
+      <p className="page-status">
+        Phase 3 finalized: Tool SDK, registry, seven category templates,
+        Tools tab in the workbench UI, lifecycle gating, and the
+        <code> absorption_spectrum_diagnostic</code> reference example.
+      </p>
 
       <h2>What they are</h2>
       <p>
@@ -48,31 +52,131 @@ export default function InternalTools() {
         <code>{`draft → candidate → validated → trusted → deprecated`}</code>
       </pre>
       <p>
-        Agents may create <code>draft</code> and <code>candidate</code>.
-        Promotion to <code>trusted</code> requires a human reviewer and the
-        criteria in the module-development page.
+        Agents may produce <code>draft</code> and <code>candidate</code>
+        tools. Promotion to <code>validated</code> requires the tool's
+        tests + reference cases to pass; promotion to <code>trusted</code>
+        requires explicit human approval (plan §9.5). The lifecycle is
+        enforced by the registry — illegal transitions raise{" "}
+        <code>LifecycleError</code> and the API surfaces them as 400s, so
+        the rule cannot be bypassed by agents calling the SDK directly.
       </p>
 
-      <h2>Authoring a tool</h2>
-      <ol>
-        <li>From the workbench UI: <strong>Internal Tools → New Tool from Template</strong>, OR copy <code>packages/internal_tools/templates/&lt;category&gt;/</code> into the registry.</li>
-        <li>Edit <code>tool.yaml</code>: name, version, type, entrypoint, declared inputs/outputs with units, compatible domains, requires, validation tests.</li>
-        <li>Implement <code>src/tool.py</code> extending <code>simworkbench.tools.BaseTool</code> with <code>validate_inputs</code> and <code>run</code>.</li>
-        <li>Add tests in <code>tests/</code>.</li>
-        <li>Register: <code>./scripts/dev/refresh_registry.sh</code> (or restart the UI).</li>
-      </ol>
+      <h2>Tutorial — author the absorption-spectrum diagnostic</h2>
+      <p>
+        The reference tool at{" "}
+        <code>packages/internal_tools/registry/absorption_spectrum_diagnostic/</code>
+        {" "}walks through every step. Reproduce it from scratch:
+      </p>
+
+      <h3>1. Copy a template</h3>
+      <pre>
+        <code>{`cp -r packages/internal_tools/templates/diagnostic \\
+      packages/internal_tools/registry/my_diagnostic`}</code>
+      </pre>
+      <p>
+        The diagnostic template ships with a <code>tool.yaml</code>,
+        <code> src/tool.py</code>, and <code>README.md</code>. Open them
+        and replace the <code>TEMPLATE</code> placeholder with your tool's
+        real name. Or use the UI's <strong>Internal Tools → New Tool from
+        Template</strong> button (Phase 3D).
+      </p>
+
+      <h3>2. Declare inputs and outputs in tool.yaml</h3>
+      <p>
+        Every numeric port that crosses the tool boundary{" "}
+        <strong>must declare units</strong>. Schema validation rejects
+        an array port without a <code>units</code> field — this is the
+        same boundary rule the ModelSpec validators enforce (plan §22).
+        Example from the reference tool:
+      </p>
+      <pre>
+        <code>{`inputs:
+  - name: frequency
+    type: array
+    units: Hz
+  - name: intensity
+    type: array
+    units: dimensionless
+
+outputs:
+  - name: peaks
+    type: table
+  - name: peak_count
+    type: scalar`}</code>
+      </pre>
+
+      <h3>3. Implement validate_inputs and run</h3>
+      <pre>
+        <code>{`from simworkbench.tools import BaseTool, ToolInput, ToolOutput
+
+class AbsorptionSpectrumDiagnostic(BaseTool):
+    name = "absorption_spectrum_diagnostic"
+    version = "0.1.0"
+
+    def validate_inputs(self, inputs: ToolInput) -> None:
+        inputs.require_array("frequency", units="Hz")
+        inputs.require_array("intensity")
+
+    def run(self, inputs: ToolInput) -> ToolOutput:
+        # ... your logic here ...
+        return ToolOutput({"peaks": peaks, "peak_count": len(peaks)})`}</code>
+      </pre>
+      <p>
+        <code>require_array</code> rejects bare floats / numpy arrays —
+        only <code>simworkbench.units.Q(values, "&lt;unit&gt;")</code>{" "}
+        passes. <code>execute</code> wraps validate-then-run for callers,
+        and the registry uses the same wrapper, so behavior is identical
+        between the UI, agents, and direct Python invocations.
+      </p>
+
+      <h3>4. Add tests</h3>
+      <p>
+        Tests live under your tool's <code>tests/</code> subdirectory and
+        run as part of the workbench test suite (the registry's tool
+        directories are wired into pytest's <code>testpaths</code>).
+      </p>
+
+      <h3>5. Register and inspect</h3>
+      <pre>
+        <code>{`./scripts/dev/refresh_registry.sh`}</code>
+      </pre>
+      <p>
+        The script rewalks <code>packages/internal_tools/registry/</code>
+        and <code>local_cache/imported_tools/</code>, validates every
+        <code> tool.yaml</code>, and rewrites the canonical{" "}
+        <code>index.yaml</code>. Then open the workbench UI's{" "}
+        <strong>Tools</strong> tab — your tool appears in the list,
+        grouped by type, with a clickable detail panel showing inputs,
+        outputs, validation tests, and the lifecycle bar.
+      </p>
+
+      <h3>6. Promote</h3>
+      <p>
+        Click <strong>Promote to candidate</strong> in the detail panel
+        to advance the lifecycle. <code>candidate → validated</code> and
+        <code> validated → trusted</code> require an explicit human flag;
+        the API rejects agent-driven promotion to those states with a 400
+        and the rule explanation.
+      </p>
 
       <h2>Imported tools</h2>
       <p>
-        External tool packages are copied into <code>local_cache/imported_tools/</code> on import. Imports never scatter files across the user's home directory.
+        External tool packages are copied into{" "}
+        <code>local_cache/imported_tools/</code> on import (plan §9.7).
+        Imports never scatter files across the user's home directory.
+        The registry walks both that directory and{" "}
+        <code>packages/internal_tools/registry/</code> on every refresh,
+        so imported tools appear in the UI alongside built-in ones.
       </p>
 
-      <h2>What this page should cover when expanded</h2>
-      <ul>
-        <li>Worked example: building the absorption-spectrum diagnostic from plan §9.4.</li>
-        <li>The tool runtime contract — lifecycle hooks, error handling, units validation.</li>
-        <li>Versioning and deprecation.</li>
-      </ul>
+      <h2>Validation requirements</h2>
+      <p>
+        Every internal tool MUST include: purpose, inputs, outputs,
+        units, example usage, valid domains, known limitations, tests,
+        validation status, changelog. The registry's promotion logic
+        rejects a move to <code>validated</code> when{" "}
+        <code>validation.tests</code> is empty in <code>tool.yaml</code>.
+      </p>
     </article>
   );
 }

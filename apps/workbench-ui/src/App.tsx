@@ -13,6 +13,7 @@ import DocsViewer from "./components/DocsViewer";
 import DiagnosticsPanel from "./components/DiagnosticsPanel";
 import PlotPanel from "./components/PlotPanel";
 import CapsuleExplorer from "./components/CapsuleExplorer";
+import ToolList from "./components/tools/ToolList";
 
 const NAV: { to: string; label: string }[] = [
   { to: "/simulations", label: "Simulations" },
@@ -21,6 +22,7 @@ const NAV: { to: string; label: string }[] = [
   { to: "/diagnostics", label: "Diagnostics" },
   { to: "/plots", label: "Plots" },
   { to: "/capsules", label: "Capsules" },
+  { to: "/tools", label: "Tools" },
   { to: "/docs", label: "Documentation" },
 ];
 
@@ -54,6 +56,7 @@ export default function App() {
           <Route path="/diagnostics" element={<DiagnosticsPanel />} />
           <Route path="/plots" element={<PlotPanel />} />
           <Route path="/capsules" element={<CapsuleExplorer />} />
+          <Route path="/tools" element={<ToolList />} />
           <Route path="/docs" element={<DocsViewer />} />
           <Route path="/docs/:slug" element={<DocsViewer />} />
           <Route path="*" element={<Navigate to="/simulations" replace />} />

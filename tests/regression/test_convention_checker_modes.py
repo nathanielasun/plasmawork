@@ -6,9 +6,9 @@ Asserts the convention checker's two-mode contract:
 1. **Default mode** is the hard gate. It must always exit 0. ``scripts/test/all.sh``
    calls this mode.
 2. **Opt-in mode** (``--include-open-workstreams``) exposes any open
-   implementation backlog. Phase 2 closed 2026-05-02 with every entity
+   implementation backlog. Phase 3 closed 2026-05-02 with every entity
    ratcheted into the default branch; no workstream is currently open, so
-   opt-in mode also passes. When Phase 3 opens, the "no open workstreams"
+   opt-in mode also passes. When Phase 4 opens, the "no open workstreams"
    message will be replaced by failing assertions and these tests flip back
    to the "exits non-zero" form.
 
@@ -50,10 +50,9 @@ def test_default_convention_checker_excludes_open_workstream_todos() -> None:
 def test_opt_in_mode_passes_with_no_open_workstream() -> None:
     """No workstream is currently open — opt-in mode also passes.
 
-    When Phase 3 opens (a new section under
+    When Phase 4 opens (a new section under
     ``if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]``), flip this back to the
-    "exits non-zero" form so the regression catches half-implemented
-    workstreams.
+    "exits non-zero" form.
     """
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
@@ -63,15 +62,13 @@ def test_opt_in_mode_passes_with_no_open_workstream() -> None:
 
 def test_opt_in_mode_carries_no_open_anchors() -> None:
     """The "Open Workstream TODOs" section currently advertises that no
-    workstream is open. When a new phase opens, replace this assertion with
-    one anchor per active workstream entity (mirroring the form used during
-    Phase 2)."""
+    workstream is open."""
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
     assert "no open workstreams" in output
 
 
-def test_opt_in_mode_check_count_matches_default() -> None:
+def test_opt_in_mode_check_count_at_least_default() -> None:
     """With no open workstream, both modes run the same number of checks."""
     default = _run_checker("--quiet")
     opt_in = _run_checker("--include-open-workstreams", "--quiet")

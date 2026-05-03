@@ -1,0 +1,13 @@
+# Internal Tool Registry — generated index.
+#
+# Regenerate via `scripts/dev/refresh_registry.sh`. Do not hand-edit;
+# changes here are overwritten on the next refresh. The source of truth
+# is each tool's `tool.yaml`.
+
+format_version: '0.1'
+tools:
+- name: absorption_spectrum_diagnostic
+  type: diagnostic
+  version: 0.1.0
+  status: candidate
+  directory: packages/internal_tools/registry/absorption_spectrum_diagnostic

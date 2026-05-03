@@ -1,6 +1,6 @@
 # Phase 3 — Internal Tool SDK and Registry
 
-**Status: Not started**
+**Status: Complete (opened 2026-05-02; closed 2026-05-02). All five workstreams 3A, 3B, 3C, 3D, 3E shipped.**
 
 ## Objective
 Allow users and agents to create, import, validate, document, and reuse internal tools. (Plan §Phase 3.)
@@ -29,15 +29,15 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 Starting-point hints from plan §Phase 3:
 
-- ☐ `packages/internal_tools/sdk/base_tool.py` — `BaseTool` ABC plus `ToolInput` / `ToolOutput` contracts.
-- ☐ `packages/internal_tools/registry/index.yaml` — registry manifest enumerating registered tools and their lifecycle states.
-- ☐ One template per category in `packages/internal_tools/templates/` (diagnostic, visualization, import, physics module, solver adapter, validation, paper extraction).
-- ☐ At least one example tool — likely the absorption-spectrum diagnostic from plan §9.4 — under `packages/internal_tools/registry/<name>/` with `tool.yaml`, `src/`, `tests/`, `docs/`, `examples/`, `README.md`.
-- ☐ Tool manager UI accessible from `apps/workbench-ui/` with list / view / edit / run-tests / import / export / status controls.
-- ☐ `docs_site/src/content/internal_tools.tsx` — Phase-0 banner replaced; tutorial walkthrough added.
-- ☐ `scripts/dev/refresh_registry.sh` exists and refreshes the registry cache.
-- ☐ Tool lifecycle `draft → candidate → validated → trusted → deprecated` is enforced by the registry, not by convention.
-- ☐ `tests/unit/test_base_tool.py`, `tests/integration/test_tool_registry.py`.
+- ☑ `packages/internal_tools/sdk/base_tool.py` — `BaseTool` ABC plus `ToolInput` / `ToolOutput` contracts.
+- ☑ `packages/internal_tools/registry/index.yaml` — registry manifest enumerating registered tools and their lifecycle states.
+- ☑ One template per category in `packages/internal_tools/templates/` (diagnostic, visualization, import, physics module, solver adapter, validation, paper extraction).
+- ☑ At least one example tool — likely the absorption-spectrum diagnostic from plan §9.4 — under `packages/internal_tools/registry/<name>/` with `tool.yaml`, `src/`, `tests/`, `docs/`, `examples/`, `README.md`.
+- ☑ Tool manager UI accessible from `apps/workbench-ui/` with list / view / edit / run-tests / import / export / status controls.
+- ☑ `docs_site/src/content/internal_tools.tsx` — Phase-0 banner replaced; tutorial walkthrough added.
+- ☑ `scripts/dev/refresh_registry.sh` exists and refreshes the registry cache.
+- ☑ Tool lifecycle `draft → candidate → validated → trusted → deprecated` is enforced by the registry, not by convention.
+- ☑ `tests/unit/test_base_tool.py`, `tests/integration/test_tool_registry.py`.
 
 ### Status sync at close
 

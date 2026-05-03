@@ -201,3 +201,54 @@ button.tab.tab-active {
   margin: 0;
   word-break: break-all;
 }
+
+/* Phase 3D — tool lifecycle bar + per-status badge colors. */
+ol.lifecycle {
+  list-style: none;
+  display: flex;
+  gap: 0;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+ol.lifecycle li {
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--border);
+  border-right: none;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+ol.lifecycle li:last-child {
+  border-right: 1px solid var(--border);
+}
+ol.lifecycle li.lifecycle-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.badge-draft {
+  background: #eee;
+  color: #555;
+  border: 1px solid #ccc;
+}
+.badge-candidate {
+  background: #e3f0fd;
+  color: #225a98;
+  border: 1px solid #a8c8ec;
+}
+.badge-validated {
+  background: #e3f7e6;
+  color: #2f7a3a;
+  border: 1px solid #a3d7ae;
+}
+.badge-trusted {
+  background: #d4eecf;
+  color: #225522;
+  border: 1px solid #7eb47e;
+}
+.badge-deprecated {
+  background: #fbe6e6;
+  color: #8a3030;
+  border: 1px solid #d8a8a8;
+}

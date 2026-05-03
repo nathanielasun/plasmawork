@@ -1,0 +1,61 @@
+"""Phase 3 — Internal Tool SDK + Registry public API.
+
+Imports::
+
+    from simworkbench.tools import (
+        BaseTool, ToolInput, ToolOutput,
+        ToolMetadata, ToolStatus,
+        ToolRegistry, RegisteredTool,
+    )
+
+This module is the canonical surface; ``simworkbench.tools`` (under
+``packages/core/``) re-exports the same symbols so user-facing imports
+match plan §9.4's ``from simworkbench.tools import BaseTool, ...``
+example verbatim.
+"""
+
+from __future__ import annotations
+
+from .base_tool import BaseTool
+from .io import ToolInput, ToolIOError, ToolOutput
+from .lifecycle import (
+    AGENT_ALLOWED,
+    ALLOWED_TRANSITIONS,
+    ORDER,
+    LifecycleError,
+    ToolStatus,
+    can_transition,
+    require_transition,
+)
+from .metadata import (
+    ToolMetadata,
+    ToolPort,
+    ToolRequires,
+    ToolValidation,
+    load_tool_yaml,
+    write_tool_yaml,
+)
+from .registry import RegisteredTool, ToolRegistry, ToolRegistryError
+
+__all__ = [
+    "AGENT_ALLOWED",
+    "ALLOWED_TRANSITIONS",
+    "BaseTool",
+    "LifecycleError",
+    "ORDER",
+    "RegisteredTool",
+    "ToolIOError",
+    "ToolInput",
+    "ToolMetadata",
+    "ToolOutput",
+    "ToolPort",
+    "ToolRegistry",
+    "ToolRegistryError",
+    "ToolRequires",
+    "ToolStatus",
+    "ToolValidation",
+    "can_transition",
+    "load_tool_yaml",
+    "require_transition",
+    "write_tool_yaml",
+]

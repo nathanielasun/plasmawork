@@ -2,7 +2,7 @@
 
 A modular workbench for laser physics, laser fusion, laser–species interaction, and adjacent computational-physics domains. Designed to turn a scientific paper into a structured, inspectable, testable, visualizable computational experiment — and to keep the resulting code, data, and provenance bundled in a portable simulation capsule.
 
-> **Status: Phase 2 — Simulation Capsule System complete (2026-05-02).** All four workstreams 2A–2D shipped: canonical `manifest.toml` schema (`v0.1`) + structural validator + migration registry, HDF5 bulk-data writer (ADR-0002 Accepted), provenance triad (`provenance.lock` + `environment.yaml` + append-only `agent_trace.md`) with source-aggregate hashing, full export system (code/data/plots/notebook/report/archive) plus `fork_capsule()`, and the six-tab Capsule Explorer UI (Manifest / ModelSpec / Code / Results / Validation / Provenance) wired to four new backend endpoints. The default convention checker now covers 290 entities (Phases 0 + 1 + 2). Phase 1 (Manual Scientific Workbench, 2026-05-02) and Phase 0 (Project Bootstrap, 2026-05-02) remain complete.
+> **Status: Phase 3 — Internal Tool SDK and Registry complete (2026-05-02).** All five workstreams 3A–3E shipped: `BaseTool` ABC + `ToolInput`/`ToolOutput` contracts at `simworkbench.tools`, `ToolMetadata` (Pydantic) backing `tool.yaml`, lifecycle state machine (`draft → candidate → validated → trusted → deprecated`) with agent/human gating per plan §9.5; `ToolRegistry` discovers `packages/internal_tools/registry/` + `local_cache/imported_tools/`, the `absorption_spectrum_diagnostic` reference tool from plan §9.4, and `scripts/dev/refresh_registry.sh`; seven category templates under `packages/internal_tools/templates/`; the Tools tab in the workbench UI (ToolList / ToolDetail / ToolDocs / ToolStatus) wired to four new backend endpoints (`GET /api/tools`, `GET /api/tools/{name}`, `GET /api/tools/{name}/docs`, `POST /api/tools/{name}/status`); and a tutorial walkthrough in `docs_site/src/content/internal_tools.tsx`. Phase 2 (Simulation Capsule System), Phase 1 (Manual Scientific Workbench), and Phase 0 (Project Bootstrap) remain complete.
 
 The full architectural plan is in [`scientific_simulation_workbench_agent_plan.md`](./scientific_simulation_workbench_agent_plan.md).
 
@@ -31,7 +31,7 @@ Initial focus is laser–species interaction (KrF excimer, photoionization, rate
 | 0 | Repository bootstrap, governance, docs skeleton, bug-memory and dev-history systems | **Complete** |
 | 1 | Manual workbench: ModelSpec, units, runtime, basic modules, UI shell | **Complete** |
 | 2 | Simulation capsule format & provenance | **Complete** |
-| 3 | Internal tool SDK and registry | Pending |
+| 3 | Internal tool SDK and registry | **Complete** |
 | 4 | Agent-assisted paper ingestion | Pending |
 | 5 | ModelSpec generation and module mapping | Pending |
 | 6 | Sandboxed agentic code generation | Pending |

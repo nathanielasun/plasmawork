@@ -1,0 +1,27 @@
+name: TEMPLATE
+version: 0.1.0
+type: import
+description: Import tool template — reads an external file and produces a structured payload.
+author: local
+status: draft
+entrypoint: src/tool.py:ImportTemplate
+
+inputs:
+  - name: source_path
+    type: string
+    description: Path to the file to import.
+
+outputs:
+  - name: payload
+    type: table
+    description: Parsed, validated rows / records from the source.
+
+compatible_domains: []
+
+requires:
+  python: []
+
+validation:
+  tests:
+    - tests/test_template.py
+  reference_cases: []

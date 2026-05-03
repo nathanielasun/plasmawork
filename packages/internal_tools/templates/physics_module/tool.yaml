@@ -1,0 +1,29 @@
+name: TEMPLATE
+version: 0.1.0
+type: physics
+description: Physics module template — wraps a physical model as a registry-discoverable tool.
+author: local
+status: draft
+entrypoint: src/tool.py:PhysicsModuleTemplate
+
+inputs:
+  - name: parameters
+    type: scalar
+    description: Model parameters (replace with the per-input ports your model needs).
+
+outputs:
+  - name: result
+    type: scalar
+    description: Replace with the model's structured output.
+
+compatible_domains:
+  - laser_species
+  - plasma
+
+requires:
+  python: []
+
+validation:
+  tests:
+    - tests/test_template.py
+  reference_cases: []

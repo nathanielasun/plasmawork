@@ -1,0 +1,32 @@
+name: TEMPLATE
+version: 0.1.0
+type: agent
+description: Paper-extraction tool template — extracts equations / parameters from a paper file.
+author: local
+status: draft
+entrypoint: src/tool.py:PaperExtractionTemplate
+
+inputs:
+  - name: source_path
+    type: string
+    description: Path to the paper file (PDF / .md / .tex).
+
+outputs:
+  - name: extracted_text
+    type: string
+  - name: extracted_equations
+    type: table
+    description: One row per detected equation, with the equation text and a position.
+  - name: extracted_parameters
+    type: table
+    description: One row per detected parameter, with name + unit + value.
+
+compatible_domains: []
+
+requires:
+  python: []
+
+validation:
+  tests:
+    - tests/test_template.py
+  reference_cases: []

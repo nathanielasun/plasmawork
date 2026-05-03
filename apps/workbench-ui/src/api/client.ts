@@ -114,6 +114,58 @@ export interface CapsuleTree {
   files: CapsuleTreeFile[];
 }
 
+/**
+ * Phase 3D — Tool registry types. Mirrors the FastAPI server one-to-one.
+ */
+export type ToolStatus =
+  | "draft"
+  | "candidate"
+  | "validated"
+  | "trusted"
+  | "deprecated";
+
+export interface ToolIndexRow {
+  name: string;
+  type: string;
+  version: string;
+  status: ToolStatus;
+  directory: string;
+}
+
+export interface ToolPort {
+  name: string;
+  type: string;
+  units?: string | null;
+  description?: string;
+}
+
+export interface ToolMetadata {
+  name: string;
+  version: string;
+  type: string;
+  description: string;
+  author: string;
+  status: ToolStatus;
+  entrypoint: string;
+  inputs: ToolPort[];
+  outputs: ToolPort[];
+  compatible_domains: string[];
+  requires: { python: string[]; system: string[] };
+  validation: { tests: string[]; reference_cases: string[] };
+}
+
+export interface ToolDetail {
+  name: string;
+  directory: string;
+  metadata: ToolMetadata;
+}
+
+export interface ToolDocs {
+  name: string;
+  readme: string;
+  tool_yaml: string;
+}
+
 const DEFAULT_BASE = "/api";
 
 async function fetchJson<T>(
@@ -143,6 +195,10 @@ export interface ApiClient {
   getCapsuleTree(name: string, subtree?: string): Promise<CapsuleTree>;
   validateCapsule(name: string): Promise<CapsuleValidation>;
   getCapsuleDiagnostics(name: string): Promise<CapsuleDiagnostics>;
+  listTools(): Promise<ToolIndexRow[]>;
+  getTool(name: string): Promise<ToolDetail>;
+  getToolDocs(name: string): Promise<ToolDocs>;
+  setToolStatus(name: string, status: ToolStatus, actor?: string): Promise<{ name: string; status: ToolStatus }>;
 }
 
 export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
@@ -190,6 +246,20 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
       fetchJson(
         `/capsules/${encodeURIComponent(name)}/diagnostics`,
         undefined,
+        baseUrl,
+      ),
+    listTools: () => fetchJson("/tools", undefined, baseUrl),
+    getTool: (name) => fetchJson(`/tools/${encodeURIComponent(name)}`, undefined, baseUrl),
+    getToolDocs: (name) =>
+      fetchJson(`/tools/${encodeURIComponent(name)}/docs`, undefined, baseUrl),
+    setToolStatus: (name, status, actor = "human") =>
+      fetchJson(
+        `/tools/${encodeURIComponent(name)}/status`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status, actor }),
+        },
         baseUrl,
       ),
   };

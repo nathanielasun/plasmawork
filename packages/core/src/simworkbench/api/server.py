@@ -22,6 +22,10 @@ Endpoints:
 - ``GET  /api/capsules/{name}/validate``       — run CapsuleValidator (Phase 2D).
 - ``GET  /api/capsules/{name}/diagnostics``    — diagnostics series for the
   capsule's ``results/`` directory (Phase 2D).
+- ``GET  /api/tools``                          — registry index (Phase 3D).
+- ``GET  /api/tools/{name}``                   — full tool metadata (Phase 3D).
+- ``GET  /api/tools/{name}/docs``              — README + tool.yaml text (Phase 3D).
+- ``POST /api/tools/{name}/status``            — lifecycle promotion (Phase 3D).
 
 Phase 1F runs are synchronous: the server starts the run on the request
 thread and returns the final state. Async / pause-resume across HTTP is a
@@ -53,6 +57,7 @@ from simworkbench.paths import (
 )
 from simworkbench.runtime import Runner
 from simworkbench.serialization import CapsuleValidator, load_manifest
+from simworkbench.tools import LifecycleError, ToolRegistry, ToolStatus
 
 # ---------------------------------------------------------------------------
 # Request / response schemas
@@ -86,6 +91,13 @@ class RunSummary(BaseModel):
 class HealthResponse(BaseModel):
     ok: bool = True
     version: str
+
+
+class ToolStatusBody(BaseModel):
+    """POST /api/tools/{name}/status body."""
+
+    status: str
+    actor: str = "agent"
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +437,68 @@ def create_app() -> FastAPI:
             status_code=404,
             detail=f"No diagnostics found in capsule {name!r} (results/diagnostics.{{h5,json}})",
         )
+
+    # -----------------------------------------------------------------------
+    # Phase 3D — Tool registry endpoints. The UI's Tools tab consumes these.
+    # -----------------------------------------------------------------------
+
+    def _registry() -> ToolRegistry:
+        # Build a fresh ToolRegistry per request so tool.yaml edits show up
+        # without restarting the server. Cheap (just YAML parsing).
+        registry = ToolRegistry()
+        registry.refresh()
+        return registry
+
+    @app.get("/api/tools")
+    def list_tools() -> list[dict[str, Any]]:
+        return _registry().index()
+
+    @app.get("/api/tools/{name}")
+    def get_tool(name: str) -> dict[str, Any]:
+        try:
+            entry = _registry().get(name)
+        except Exception as exc:  # noqa: BLE001 — surfaced verbatim.
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "name": entry.name,
+            "directory": str(entry.directory.relative_to(repo_root())),
+            "metadata": entry.metadata.model_dump(mode="json"),
+        }
+
+    @app.get("/api/tools/{name}/docs")
+    def get_tool_docs(name: str) -> dict[str, Any]:
+        """Return the tool's README + tool.yaml text so the UI can render
+        documentation without a second fetch round-trip.
+        """
+        try:
+            entry = _registry().get(name)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        readme = entry.directory / "README.md"
+        yaml_path = entry.directory / "tool.yaml"
+        return {
+            "name": entry.name,
+            "readme": readme.read_text(encoding="utf-8") if readme.is_file() else "",
+            "tool_yaml": yaml_path.read_text(encoding="utf-8") if yaml_path.is_file() else "",
+        }
+
+    @app.post("/api/tools/{name}/status")
+    def set_tool_status(name: str, body: ToolStatusBody) -> dict[str, Any]:
+        try:
+            new_status = ToolStatus(body.status)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Unknown status: {body.status!r}") from exc
+        registry = _registry()
+        try:
+            entry = registry.set_status(name, new_status, actor=body.actor)
+        except LifecycleError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "name": entry.name,
+            "status": entry.status.value,
+        }
 
     return app
 

@@ -1,0 +1,33 @@
+name: TEMPLATE
+version: 0.1.0
+type: validation
+description: Validation tool template — runs a check (conservation, convergence, benchmark) and reports pass/fail.
+author: local
+status: draft
+entrypoint: src/tool.py:ValidationTemplate
+
+inputs:
+  - name: observations
+    type: array
+    units: dimensionless
+  - name: tolerance
+    type: scalar
+    description: Acceptable relative deviation from the reference / invariant.
+
+outputs:
+  - name: passed
+    type: bool
+    description: True if every observation is within tolerance.
+  - name: violations
+    type: table
+    description: One row per failing observation; empty when passed=True.
+
+compatible_domains: []
+
+requires:
+  python: []
+
+validation:
+  tests:
+    - tests/test_template.py
+  reference_cases: []
