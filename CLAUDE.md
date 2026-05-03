@@ -350,9 +350,9 @@ git commit -m "..."   # Use the HEREDOC pattern below.
 git push
 ```
 
-### Closing a phase — eleven behavioral checks (Phase 2 + 3 + 4 lessons)
+### Closing a phase — twelve behavioral checks (Phase 2 + 3 + 4 lessons)
 
-Phases 1, 2, 3, and 4 each shipped an incomplete close. Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these eleven before the close commit:
+Phases 1, 2, 3, and 4 each shipped an incomplete close (Phase 4 twice). Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these twelve before the close commit:
 
 1. **End-to-end gate walk.** Every plan §Phase-N gate criterion exercised on a real artifact. For Phase 2 that meant: run the example, save it as a capsule, reload it via `scripts/dev/run_capsule.sh`, validate it, export it, fork it, reload the fork. Each step on its own integration test, not just a manual demo.
 2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README, CLAUDE.md, or any docs page advertises as a current entrypoint runs successfully on a typical input. (Phase 2 close shipped `scripts/dev/run_capsule.sh` still as the Phase-0 stub even though README documented it as the reload path.)
@@ -373,7 +373,9 @@ Phases 1, 2, 3, and 4 each shipped an incomplete close. Steps 1–6 above (conve
 
 11. **Boundary validation parity** *(Phase 4 audit lesson)*. For every API endpoint that accepts user input, send `""`, `" "`, `"\t"`, malformed types, missing fields. Each must return 400; provenance/state must remain unchanged. UI validation is a UX nicety; the API's validation is the actual gate. The Phase 4 close shipped a UI that required reviewer-name and a backend that accepted `reviewer=""` — `agent=reviewer:` rows accumulated in `provenance/agent_trace.md` from any caller bypassing the UI. Library functions get the same rule: `PaperImporter.apply_edit(reviewer="")` raises at the public method, not at some downstream consumer.
 
-The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 32 patterns; the three new ones from the Phase 4 audit are at the bottom).
+12. **Success path runs, not just the structured failure** *(Phase 4 audit round 2)*. For every "supports X" claim, the close commit verifies three things: (a) the dep is installed (`pyproject.toml` + `scripts/dev/install.sh` + a probe like `.venv/bin/python -c "import pypdf"`), (b) the structured exception propagates to the user (every `raise <Error>` has a matching `try / except` in `simworkbench.api.server` AND a test asserting the documented status code), (c) a happy-path test exercises the success path with a real fixture (for binary formats: hand-roll the smallest valid file). The Phase 4 close had a clean `TextExtractionError` for "PDF without pypdf" — but pypdf wasn't installed, the API didn't catch the error (HTTP 500 instead of 400), and no test ever imported a PDF successfully. The structured failure path was complete; the success path was unreachable.
+
+The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 33 patterns; the three new ones from the first Phase 4 audit + one from the second audit are at the bottom).
 
 ### Reality-test plan-derived patterns
 

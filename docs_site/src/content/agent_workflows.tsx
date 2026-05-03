@@ -9,17 +9,28 @@ export default function AgentWorkflows() {
 
       <h2>Phase 4 — paper ingestion</h2>
       <p>
-        Imports a paper file (Markdown today; PDF support is a Phase 4+
-        extension) into a capsule's <code>paper_sources/</code> and runs
-        three deterministic extractors plus a template interpretation
-        agent. Every artifact is explicitly marked <em>needs human
-        review</em>; edits go through{" "}
-        <code>POST /api/papers/&lt;capsule&gt;/edit</code> and append to{" "}
-        <code>provenance/agent_trace.md</code>.
+        Imports a paper file (Markdown <em>and PDF</em>; PDF text
+        extraction uses <code>pypdf</code>, a hard dependency of
+        <code>simworkbench</code>) into a capsule's{" "}
+        <code>paper_sources/</code> and runs five deterministic
+        extractors plus a template interpretation agent. Every artifact
+        is explicitly marked <em>needs human review</em>; edits go
+        through <code>POST /api/papers/&lt;capsule&gt;/edit</code> and
+        append to <code>provenance/agent_trace.md</code>.
       </p>
 
       <h3>Outputs (under <code>paper_sources/</code>)</h3>
       <ul>
+        <li><code>&lt;source&gt;.md</code> or <code>&lt;source&gt;.pdf</code>
+        {" "}— the paper file copied verbatim (plan §4A "Preserve source
+        files").</li>
+        <li><code>extracted_text.md</code> — plain-text body of the
+        paper. Identity for Markdown sources; <code>pypdf</code>-extracted
+        text for PDFs (page count recorded in the ingestion artifacts).</li>
+        <li><code>extracted_tables.json</code> — Markdown pipe-tables
+        with headers + rows + source line numbers.</li>
+        <li><code>extracted_figures.json</code> — figure metadata
+        (alt text + path + nearby caption).</li>
         <li><code>extracted_equations.json</code> — equations with
         confidence + source line numbers.</li>
         <li><code>extracted_parameters.yaml</code> — parameters with

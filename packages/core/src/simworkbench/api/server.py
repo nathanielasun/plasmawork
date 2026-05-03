@@ -675,12 +675,23 @@ def create_app() -> FastAPI:
 
     @app.post("/api/papers/import")
     def import_paper(body: PaperImportBody) -> dict[str, Any]:
-        from simworkbench.ingestion import PaperImporter, PaperIngestionError
+        # Catch BOTH PaperIngestionError (caller-input failures) AND
+        # TextExtractionError (extractor / dependency failures) — the
+        # post-Phase-4 audit found PDF imports returning HTTP 500 because
+        # only the first was caught. Carries `agent_error_patterns.md`
+        # "Shipping the structured error without shipping the success path":
+        # both the structured error AND its propagation to the boundary
+        # have to land for the feature to work.
+        from simworkbench.ingestion import (
+            PaperImporter,
+            PaperIngestionError,
+            TextExtractionError,
+        )
 
         capsule_path = _resolve_capsule(body.capsule)
         try:
             artifacts = PaperImporter().ingest(body.source_path, capsule_path)
-        except PaperIngestionError as exc:
+        except (PaperIngestionError, TextExtractionError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             "capsule": body.capsule,

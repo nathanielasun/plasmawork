@@ -295,6 +295,37 @@ def test_phase_4_gate_walk_api_edit_refuses_empty_reviewer(empty_capsule):
     assert after == before, "Rejected edits must not append to agent_trace.md."
 
 
+def test_phase_4_gate_walk_pdf_import_success_path(empty_capsule):
+    """Plan §Phase 4 / 4A task bullet 1: 'Import PDFs.' Regression for
+    the post-Phase-4 audit finding "extract_text() supports .pdf only if
+    pypdf is installed, but pypdf is not in pyproject.toml ... a direct
+    /api/papers/import PDF probe returned HTTP 500".
+
+    The earlier fix added the structured ``TextExtractionError`` but
+    didn't install pypdf and didn't catch the error at the API. This
+    test asserts the SUCCESS path: PDF imports end-to-end via the API
+    AND `extracted_text.md` contains the PDF's text. Carries
+    `agent_error_patterns.md` "Shipping the structured error without
+    shipping the success path".
+    """
+    fixture = (
+        repo_root() / "tests" / "fixtures" / "phase_4_paper" / "sample.pdf"
+    )
+    assert fixture.is_file(), "PDF fixture missing"
+    r = _client().post(
+        "/api/papers/import",
+        json={
+            "capsule": empty_capsule.name,
+            "source_path": str(fixture),
+        },
+    )
+    assert r.status_code == 200, r.text
+    extracted_text = (
+        empty_capsule / "paper_sources" / "extracted_text.md"
+    ).read_text(encoding="utf-8")
+    assert "Phase 4 PDF fixture" in extracted_text
+
+
 def test_phase_4_gate_walk_api_edit_interpretation_artifact(empty_capsule):
     """Edit verb covers EVERY editable artifact, including interpretation
     Markdown bodies. Regression for the post-Phase-4-close finding

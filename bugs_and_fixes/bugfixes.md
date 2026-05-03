@@ -32,6 +32,42 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-03: Phase 4 post-close audit (round 2) — PDF success path + scope drift
+
+### Affected subsystem
+Phase 4 paper ingestion. The first audit (commit `48263d5`) added `extract_text(pdf_path)` and a structured `TextExtractionError` with a clean message. A second audit found the failure path was correct but the success path was unimplemented.
+
+### Symptoms
+1. **PDF import returned HTTP 500.** `pypdf` was missing from `packages/core/pyproject.toml` and from the venv. The API endpoint caught only `PaperIngestionError`, not `TextExtractionError`. A direct `POST /api/papers/import` with a `.pdf` returned an uncaught traceback.
+2. **Docs/status drift on PDF scope.** Milestone said PDFs were in 4A scope; `agent_workflows.tsx` said "Markdown today; PDF support is a Phase 4+ extension"; README's Phase 4 banner didn't mention `extracted_text.md` / `extracted_tables.json` / `extracted_figures.json` at all.
+
+### Root cause
+- *Shipping the structured error without shipping the success path* — issue 1. The agent built the error path and treated that as feature support. Three things make a feature work: dep installed, error propagated, success-path test. Only the error message landed.
+- The status drift is the existing *Duplicated phase status across nearby paragraphs* pattern applied to scope claims (PDF supported here, not supported there) instead of completion status.
+
+### Fix
+- Added `pypdf>=4.0,<6.0` as a hard dep in `packages/core/pyproject.toml`. Reinstalled in venv (`pypdf-5.9.0`).
+- API's `import_paper` endpoint now catches `(PaperIngestionError, TextExtractionError)` together, surfacing both as 400 with the error message in the body.
+- New 600-byte hand-rolled PDF fixture at `tests/fixtures/phase_4_paper/sample.pdf` containing the text "Phase 4 PDF fixture". New gate-walk test `test_phase_4_gate_walk_pdf_import_success_path` posts the PDF to the API, asserts 200, and asserts `extracted_text.md` contains the embedded text.
+- README banner updated to list `extracted_text.md`, `extracted_tables.json`, `extracted_figures.json`, and PDF support; `agent_workflows.tsx` updated to say "Markdown and PDF" with a complete Outputs list.
+
+### Regression protection
+- `tests/integration/test_phase_4_gate_walk.py::test_phase_4_gate_walk_pdf_import_success_path` — happy-path PDF import end-to-end through the API.
+- `tests/unit/test_text_extraction.py::test_extract_text_from_pdf_raises_when_pypdf_missing` (existing) — failure-path complement.
+- Together: every "supports PDF" claim has both a success-path test and a failure-path test.
+
+### Agent warning — twelfth behavioral check
+The Phase Gate Procedure expands from 11 → **12 behavioral checks**. New:
+
+**#12. Success path runs, not just the structured failure.** For every "supports X" claim:
+1. The dep is in `pyproject.toml` and installed by `scripts/dev/install.sh`.
+2. Every `raise <StructuredError>` has a matching `try / except` at the API boundary AND a test asserting the documented status code (NOT a 500).
+3. A happy-path test exercises the success path with a real fixture. For binary formats, hand-roll the smallest valid file.
+
+A clean error path is necessary but never sufficient — the success path must actually run, and a test must prove it.
+
+---
+
 ## 2026-05-03: Phase 4 post-close audit — three legitimate review findings
 
 ### Affected subsystem

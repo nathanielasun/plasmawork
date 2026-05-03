@@ -30,6 +30,14 @@ dependencies = [
   "httpx>=0.27,<1.0",
   # Phase 2A — bulk numerical data in capsules. ADR-0002 (HDF5).
   "h5py>=3.10,<4.0",
+  # Phase 4A — paper ingestion. PDF text extraction is plan §Phase 4 / 4A
+  # task bullet 1; pypdf is the dependency, NOT optional. The earlier post-
+  # Phase-4 audit found the importer raised TextExtractionError when pypdf
+  # was missing — clean failure path, but the SUCCESS path was unimplemented
+  # because the dep wasn't installed. (See bugs_and_fixes/agent_error_
+  # patterns.md "Shipping the structured error without shipping the success
+  # path".)
+  "pypdf>=4.0,<6.0",
 ]
 
 [project.optional-dependencies]
