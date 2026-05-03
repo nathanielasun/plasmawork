@@ -31,3 +31,19 @@ pulse duration).
 
 The two-level approximation is valid for intensities below 10 MW/cm^2;
 above that, vibrational manifolds must be resolved.
+
+## Cross-section table
+
+Selected absorption cross-sections used in the simulation:
+
+| Wavelength | Cross-section | Source |
+|------------|---------------|--------|
+| 248 nm     | 1.2e-20       | Smith 2018 |
+| 308 nm     | 4.5e-21       | Jones 2020 |
+
+## Figures
+
+![KrF kinetics schematic](figures/kinetics.png "Two-level model")
+
+Figure 1: Two-level rate-equation schematic showing the pumping rate
+kp and spontaneous-emission rate γ.

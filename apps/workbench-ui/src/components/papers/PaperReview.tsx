@@ -127,7 +127,11 @@ export default function PaperReview() {
             parameters={extracted.parameters}
             onEdited={refreshExtracted}
           />
-          <InterpretationView interpretation={extracted.interpretation} />
+          <InterpretationView
+            capsule={selectedCapsule}
+            interpretation={extracted.interpretation}
+            onEdited={refreshExtracted}
+          />
         </>
       )}
     </article>

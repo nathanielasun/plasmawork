@@ -32,6 +32,49 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-03: Phase 4 post-close audit — three legitimate review findings
+
+### Affected subsystem
+Phase 4 paper ingestion at commit `6b5fd77`. The Phase 4 close passed all nine behavioral checks (gate-walk test written first, default checker 394/394, etc.) but a user audit found three gaps the nine checks didn't cover.
+
+### Symptoms
+1. **Workstream 4A's task list was 2/6 implemented.** Plan §Phase 4 / 4A enumerates: (1) Import PDFs, (2) Store papers locally, (3) Extract text, (4) Extract tables, (5) Extract figures metadata, (6) Preserve source files. Only (2) and (6) shipped — `PaperImporter` did `shutil.copy2` + `read_text(encoding="utf-8")` and called the result good. No `extracted_text.md`, no `extracted_tables.json`, no `extracted_figures.json`, no PDF entry point. The gate-walk test asserted "paper imported" via the file-copied check, which made the verb feel complete.
+2. **`InterpretationView` was read-only.** The "Allow edits" verb covers equations + parameters + interpretation. The backend's `apply_edit` accepted `artifact="interpretation"` (and a unit test exercised it), but the UI never wired up an Edit button for the four interpretation Markdown documents. A reviewer using only the UI couldn't edit `assumptions.md` or `paper_summary.md`.
+3. **API boundary trusted client-supplied `reviewer`.** UI required a reviewer name; backend accepted `reviewer=""` and recorded `agent=reviewer:` in `provenance/agent_trace.md`. curl / agents / scripts that bypass the UI corrupted the audit trail with no resistance.
+
+### Root cause
+Three new agent failure modes:
+
+- *Skipping workstream task bullets when the gate-verb walk seems satisfied* — issue 1. The ninth check covers gate verbs; it doesn't enforce task-bullet coverage. A verb with five sub-tasks was satisfied at the verb level after one sub-task shipped.
+- *Treating multi-target verbs as done when one target is implemented* — issue 2. The verb "edit" applied to three artifact kinds; two had UI surfaces; the third silently lacked one.
+- *Validating at the UI but not at the API boundary* — issue 3. The classic defense-in-depth gap: UI guards a field, backend trusts whatever the client sent.
+
+### Fix
+A single follow-up commit:
+
+- New module `simworkbench.ingestion.text_extraction` with `extract_text` (Markdown identity + optional `pypdf` for PDF), `extract_tables` (Markdown pipe-tables), `extract_figures` (Markdown image refs + nearby caption). `pypdf` is optional with a structured `TextExtractionError` when missing — never silently stub PDF text.
+- `PaperImporter.ingest` now writes `extracted_text.md`, `extracted_tables.json`, `extracted_figures.json` alongside the existing equations/parameters/interpretation outputs. `IngestionArtifacts` exposes the new paths. `read_extracted` surfaces them to the API. Provenance notes record the new counts.
+- `tests/unit/test_text_extraction.py` covers all three extractors plus the PDF-without-pypdf failure path. The gate-walk test now asserts each new artifact exists with expected content from the fixture (which now includes a real Markdown table and image+caption).
+- `InterpretationView` rewritten with an inline Edit button per Markdown section; reviewer name required (UI side), and the backend validates strictly at the boundary. `PaperReview` passes `capsule` + `onEdited` through.
+- `PaperImporter.apply_edit` rejects empty/whitespace `reviewer` at the library boundary with `PaperIngestionError`. The API endpoint surfaces this as 400. New regression `test_phase_4_gate_walk_api_edit_refuses_empty_reviewer`. New positive test `test_phase_4_gate_walk_api_edit_interpretation_artifact`.
+
+### Regression protection
+Each new pattern has a Detection section. Concrete tests added:
+- `tests/unit/test_text_extraction.py` — eight tests for text/tables/figures + the structured PDF error.
+- `test_phase_4_gate_walk.py::test_phase_4_gate_walk_end_to_end_library` extended to assert every task-bullet artifact lands on disk.
+- `test_phase_4_gate_walk.py::test_phase_4_gate_walk_api_edit_refuses_empty_reviewer` asserts boundary validation.
+- `test_phase_4_gate_walk.py::test_phase_4_gate_walk_api_edit_interpretation_artifact` exercises the third edit target.
+
+### Agent warning
+The Phase Gate Procedure expands to **eleven** behavioral checks with these two additions:
+
+- **#10. Workstream task-bullet walk.** For each workstream NX, copy the `Tasks:` bullet list from plan §Phase N / NX into a checklist; tick each bullet only when an artifact + test ships. The ninth check (gate-verb walk) covers verbs; the tenth covers each verb's sub-tasks.
+- **#11. Boundary validation parity.** For every API endpoint accepting user input, send empty/whitespace/malformed values and assert 400. UI validation is necessary but never sufficient — every layer that accepts an input validates it.
+
+Phases 1, 2, 3, and 4 each shipped a false / incomplete close. The pattern across all four: the agent treated some narrower-than-the-plan completeness criterion as evidence of meeting the plan.
+
+---
+
 ## 2026-05-02: Phase 3 false close — five legitimate review findings
 
 ### Affected subsystem

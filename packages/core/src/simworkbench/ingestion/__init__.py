@@ -29,12 +29,24 @@ from .paper import (
 )
 from .parameters import ParameterExtractor, RegexParameterExtractor
 from .pipeline import PaperImporter, PaperIngestionError
+from .text_extraction import (
+    ExtractedFigure,
+    ExtractedTable,
+    ExtractedText,
+    TextExtractionError,
+    extract_figures,
+    extract_tables,
+    extract_text,
+)
 
 __all__ = [
     "EditableArtifact",
     "EquationExtractor",
     "ExtractedEquation",
+    "ExtractedFigure",
     "ExtractedParameter",
+    "ExtractedTable",
+    "ExtractedText",
     "IngestionArtifacts",
     "InterpretationAgent",
     "InterpretationOutput",
@@ -45,4 +57,8 @@ __all__ = [
     "RegexParameterExtractor",
     "SourceRef",
     "TemplateInterpretationAgent",
+    "TextExtractionError",
+    "extract_figures",
+    "extract_tables",
+    "extract_text",
 ]

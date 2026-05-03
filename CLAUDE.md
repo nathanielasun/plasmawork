@@ -350,9 +350,9 @@ git commit -m "..."   # Use the HEREDOC pattern below.
 git push
 ```
 
-### Closing a phase — nine behavioral checks (Phase 2 + 3 false-close lessons)
+### Closing a phase — eleven behavioral checks (Phase 2 + 3 + 4 lessons)
 
-Phases 1, 2, and 3 each shipped a false close. Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these nine before the close commit:
+Phases 1, 2, 3, and 4 each shipped an incomplete close. Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these eleven before the close commit:
 
 1. **End-to-end gate walk.** Every plan §Phase-N gate criterion exercised on a real artifact. For Phase 2 that meant: run the example, save it as a capsule, reload it via `scripts/dev/run_capsule.sh`, validate it, export it, fork it, reload the fork. Each step on its own integration test, not just a manual demo.
 2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README, CLAUDE.md, or any docs page advertises as a current entrypoint runs successfully on a typical input. (Phase 2 close shipped `scripts/dev/run_capsule.sh` still as the Phase-0 stub even though README documented it as the reload path.)
@@ -369,7 +369,11 @@ Phases 1, 2, and 3 each shipped a false close. Steps 1–6 above (convention che
 
    The Phase 3 gate said "create, **test**, document, register, **use it in an experiment**, and **export** a tool." The close shipped list / view-docs / status only — five gate verbs went unimplemented while the convention checker, ruff, all tests, and both build scripts were green. Existence checks 1–8 don't catch missing verbs because the verbs aren't entities; they're operations. The gate-walk file makes the verbs first-class.
 
-The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 29 patterns; the five new ones from the Phase 3 audit are at the bottom).
+10. **Workstream task-bullet walk** *(Phase 4 audit lesson)*. The gate verb is one level of granularity; the plan's `### Workstream NX → Tasks:` bullet list is a finer one. Open `scientific_simulation_workbench_agent_plan.md` to the workstream's section, copy the entire `Tasks:` bullet list into a checklist. Tick each bullet only when an artifact + test ships. The Phase 4 close satisfied the verb "import" but only 2 of the 6 task bullets under Workstream 4A had implementations — the other four (`Extract text`, `Extract tables`, `Extract figures metadata`, `Import PDFs`) had no code. The gate-walk test asserted the verb worked, not each bullet. The fix: the gate-walk test asserts each task bullet's artifact lands on disk. A close-commit pre-flight: `git diff` + the plan's bullet list, side-by-side.
+
+11. **Boundary validation parity** *(Phase 4 audit lesson)*. For every API endpoint that accepts user input, send `""`, `" "`, `"\t"`, malformed types, missing fields. Each must return 400; provenance/state must remain unchanged. UI validation is a UX nicety; the API's validation is the actual gate. The Phase 4 close shipped a UI that required reviewer-name and a backend that accepted `reviewer=""` — `agent=reviewer:` rows accumulated in `provenance/agent_trace.md` from any caller bypassing the UI. Library functions get the same rule: `PaperImporter.apply_edit(reviewer="")` raises at the public method, not at some downstream consumer.
+
+The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 32 patterns; the three new ones from the Phase 4 audit are at the bottom).
 
 ### Reality-test plan-derived patterns
 

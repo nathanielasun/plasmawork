@@ -40,6 +40,11 @@ from .paper import (
     IngestionArtifacts,
 )
 from .parameters import ParameterExtractor, RegexParameterExtractor
+from .text_extraction import (
+    extract_figures,
+    extract_tables,
+    extract_text,
+)
 
 
 class PaperIngestionError(RuntimeError):
@@ -81,10 +86,45 @@ class PaperImporter:
         paper_sources = capsule / "paper_sources"
         paper_sources.mkdir(parents=True, exist_ok=True)
 
-        # 4A — copy the paper verbatim.
+        # 4A — copy the paper verbatim, then extract text / tables /
+        # figures. Plan §Phase 4 / 4A enumerates six task bullets:
+        #   1. Import PDFs (handled by extract_text via pypdf).
+        #   2. Store papers locally inside capsule (the copy below).
+        #   3. Extract text → paper_sources/extracted_text.md.
+        #   4. Extract tables → paper_sources/extracted_tables.json.
+        #   5. Extract figures metadata → paper_sources/extracted_figures.json.
+        #   6. Preserve source files (the copy below).
         target_paper = paper_sources / source.name
         shutil.copy2(source, target_paper)
-        text = target_paper.read_text(encoding="utf-8", errors="replace")
+
+        extracted = extract_text(target_paper)
+        text = extracted.text
+        # Preserve the extracted plain text alongside the source so a
+        # downstream consumer (or human reviewer) can read it without
+        # re-running the extractor. Markdown extension because the file
+        # may carry markdown markup; PDFs become plain text.
+        extracted_text_path = paper_sources / "extracted_text.md"
+        extracted_text_path.write_text(text, encoding="utf-8")
+
+        tables = extract_tables(text, source_file=f"paper_sources/{source.name}")
+        tables_path = paper_sources / "extracted_tables.json"
+        tables_path.write_text(
+            json.dumps(
+                [t.to_dict() for t in tables], indent=2, sort_keys=False
+            ),
+            encoding="utf-8",
+        )
+
+        figures = extract_figures(
+            text, source_file=f"paper_sources/{source.name}"
+        )
+        figures_path = paper_sources / "extracted_figures.json"
+        figures_path.write_text(
+            json.dumps(
+                [f.to_dict() for f in figures], indent=2, sort_keys=False
+            ),
+            encoding="utf-8",
+        )
 
         # 4B — equations.
         equations = self.equation_extractor.extract(
@@ -137,6 +177,9 @@ class PaperImporter:
             action="ingested paper",
             files_touched=(
                 f"paper_sources/{source.name}",
+                "paper_sources/extracted_text.md",
+                "paper_sources/extracted_tables.json",
+                "paper_sources/extracted_figures.json",
                 "paper_sources/extracted_equations.json",
                 "paper_sources/extracted_parameters.yaml",
                 "paper_sources/paper_summary.md",
@@ -146,6 +189,7 @@ class PaperImporter:
             ),
             notes=(
                 f"equations={len(equations)} parameters={len(parameters)} "
+                f"tables={len(tables)} figures={len(figures)} "
                 f"missing_units="
                 f"{sum(1 for p in parameters if p.missing_units)}"
             ),
@@ -154,6 +198,9 @@ class PaperImporter:
         return IngestionArtifacts(
             capsule_dir=capsule,
             paper_path=target_paper,
+            extracted_text_path=extracted_text_path,
+            tables_path=tables_path,
+            figures_path=figures_path,
             equations_path=equations_path,
             parameters_path=parameters_path,
             interpretation_paths=interpretation_paths,
@@ -166,31 +213,48 @@ class PaperImporter:
     def read_extracted(
         self, capsule_dir: str | Path
     ) -> dict[str, object]:
-        """Return the structured extraction for the review UI."""
+        """Return the structured extraction for the review UI.
+
+        Surfaces every Phase 4A/B/C/D artifact: extracted text, tables,
+        figures, equations, parameters, and the four interpretation
+        Markdown documents. The UI consumes this and renders one panel
+        per artifact kind.
+        """
         capsule = Path(capsule_dir)
         paper_sources = capsule / "paper_sources"
-        equations: list[dict] = []
-        eqs_path = paper_sources / "extracted_equations.json"
-        if eqs_path.is_file():
-            equations = json.loads(eqs_path.read_text(encoding="utf-8"))
+
+        def _read_text_artifact(filename: str) -> str:
+            path = paper_sources / filename
+            return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+        def _read_json_artifact(filename: str) -> list[dict]:
+            path = paper_sources / filename
+            if not path.is_file():
+                return []
+            return json.loads(path.read_text(encoding="utf-8"))
+
+        equations = _read_json_artifact("extracted_equations.json")
+        tables = _read_json_artifact("extracted_tables.json")
+        figures = _read_json_artifact("extracted_figures.json")
+
         parameters: list[dict] = []
         params_path = paper_sources / "extracted_parameters.yaml"
         if params_path.is_file():
             parameters = (
                 yaml.safe_load(params_path.read_text(encoding="utf-8")) or []
             )
-        interpretation = {}
-        for slug, filename in (
-            ("paper_summary", "paper_summary.md"),
-            ("assumptions", "assumptions.md"),
-            ("validity_domain", "validity_domain.md"),
-            ("implementation_plan", "implementation_plan.md"),
-        ):
-            path = paper_sources / filename
-            interpretation[slug] = (
-                path.read_text(encoding="utf-8") if path.is_file() else ""
-            )
+
+        interpretation = {
+            "paper_summary": _read_text_artifact("paper_summary.md"),
+            "assumptions": _read_text_artifact("assumptions.md"),
+            "validity_domain": _read_text_artifact("validity_domain.md"),
+            "implementation_plan": _read_text_artifact("implementation_plan.md"),
+        }
+
         return {
+            "extracted_text": _read_text_artifact("extracted_text.md"),
+            "tables": tables,
+            "figures": figures,
             "equations": equations,
             "parameters": parameters,
             "interpretation": interpretation,
@@ -212,12 +276,29 @@ class PaperImporter:
         (carries the milestone's "Track edits in provenance" rule). The
         write goes through Pydantic round-trip so an invalid field name
         / value type fails before the file changes.
+
+        ``reviewer`` MUST be non-empty. The UI's validation is necessary
+        but not sufficient — every caller (curl, agent, CLI) goes through
+        this method, and an empty reviewer would produce a meaningless
+        provenance row like `agent=reviewer:`. Carries
+        ``agent_error_patterns.md`` "Validating at the UI but not at the
+        API boundary".
         """
+        # Boundary validation — every caller (API, CLI, agent) goes through
+        # this method, so an empty reviewer here corrupts provenance no
+        # matter which client is responsible.
+        if not isinstance(reviewer, str) or not reviewer.strip():
+            raise PaperIngestionError(
+                "reviewer must be a non-empty string. Edits are tracked in "
+                "provenance/agent_trace.md keyed by reviewer name; an empty "
+                "reviewer produces a meaningless audit trail."
+            )
         if artifact not in {"equations", "parameters", "interpretation"}:
             raise PaperIngestionError(
                 f"Unknown artifact {artifact!r}. Allowed: "
                 "equations | parameters | interpretation."
             )
+        reviewer = reviewer.strip()
         capsule = Path(capsule_dir)
         paper_sources = capsule / "paper_sources"
 

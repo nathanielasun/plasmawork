@@ -735,3 +735,95 @@ Direct `BaseTool().execute()` callers can opt into the output check by going thr
 
 ### Bug log
 - 2026-05-02 *Phase 3 false close*: a tool returning `{"wrong": 1}` while declaring `outputs: [peaks, peak_count]` was accepted.
+
+---
+
+## Error Pattern: Skipping workstream task bullets when the gate-verb walk seems satisfied
+
+### Why it is bad
+The post-Phase-3 ninth check ("gate-clause verb walk") covers the verbs in the plan's `## Phase Gate` paragraph. But each gate verb often expands into multiple **task bullets** under its workstream section. Phase 4's gate paragraph reads "a paper can be imported and converted into human-reviewable scientific interpretation artifacts." The agent satisfied the verbs (`import`, `extract`, `review`, `edit`). But Workstream 4A's task list expanded `import` into six bullets:
+
+  1. Import PDFs.
+  2. Store papers locally inside capsule.
+  3. Extract text.
+  4. Extract tables where possible.
+  5. Extract figures metadata where possible.
+  6. Preserve source files.
+
+Only (2) and (6) shipped. Tasks (3)–(5) had no implementation; task (1) had no PDF entry point. The gate-walk integration test asserted the gate verb worked (`paper_imported.endswith("sample.md")` was true) — but it didn't assert each task bullet produced its own artifact. Since the verb seemed satisfied, the missing task bullets stayed invisible.
+
+This is a stronger form of *Implementing the gate's verbs you can see, not the verbs the plan listed*. Ninth-check discipline gets you to the verb level; this pattern gets you to the task-bullet level.
+
+### Required behavior
+For every workstream NX, enumerate **every task bullet** in plan §Phase N / NX, not just the verbs in the gate paragraph. Each task bullet maps to:
+
+- A separately-testable artifact (a file, a function, a flag, an HTTP response field).
+- An assertion in `tests/integration/test_phase_N_gate_walk.py` (or a unit test in `tests/unit/test_workstream_<id>.py`).
+- A line in the milestone Pre-gate verification list, ticked only when the artifact ships.
+
+Concretely for Phase 4A: the gate walk asserts `extracted_text.md`, `extracted_tables.json`, `extracted_figures.json` each exist with non-trivial content from a fixture that exercises every bullet. The gate-walk test fails when ANY task bullet's artifact goes missing — not just when the verb fails.
+
+### Detection
+- Pre-close walk: open `scientific_simulation_workbench_agent_plan.md`, read the `### Workstream NX` section, copy the `Tasks:` bullet list to a checklist. Tick each bullet only when an artifact + test exists. Don't tick a bullet because "the gate verb works."
+- Code review: a workstream PR that touches one entrypoint but the plan lists six task bullets is a flag. Diff the PR against the plan's bullet list explicitly.
+- Test review: a `test_phase_N_gate_walk.py` whose assertions all pass against a stub-fixture that exercises only one task per verb is suspicious. The fixture should exercise every task bullet.
+
+### Bug log
+- 2026-05-03 *Phase 4 post-close audit*: PaperImporter copied + read-utf8 only; tasks 3–5 of Workstream 4A had no implementation (no `extracted_text.md`, no `extracted_tables.json`, no `extracted_figures.json`); PDF support task had no entry point.
+
+---
+
+## Error Pattern: Treating multi-target verbs as done when one target is implemented
+
+### Why it is bad
+A gate verb often applies to multiple targets — "Allow edits" applies to equations AND parameters AND interpretation; "Validate inputs" applies to every input port; "Promote tools" applies to every lifecycle transition. When the agent implements the verb for one target (or two), the verb feels complete; the test passes for the targets that exist; the missing targets stay silent.
+
+Phase 4's `Allow edits` verb shipped for equations + parameters but not interpretation. The backend's `apply_edit` accepted `artifact="interpretation"`, but the UI's `InterpretationView` was read-only. A reviewer with no API access couldn't edit the assumptions document — so the gate verb's user-facing surface covered 2/3 of the targets while the gate-walk test stayed green.
+
+This is the runtime sibling of the post-Phase-3 *Validating inputs but not outputs at scientific boundaries* pattern: partial coverage on one side of a symmetric contract.
+
+### Required behavior
+For every multi-target verb:
+
+- Enumerate every target the verb applies to. For "Allow edits": every editable artifact kind. For "Promote tools": every lifecycle transition.
+- The gate-walk test exercises the verb against **every** target, with one assertion per target. A negative case for at least one target.
+- The UI surface includes a control for each target. A backend endpoint that accepts a target field but no UI surface for it is a flag.
+
+Concretely for Phase 4: `test_phase_4_gate_walk_api_edit_interpretation_artifact` asserts the third target works end-to-end through the API; `InterpretationView` exposes an Edit button per Markdown section.
+
+### Detection
+- Code review: any verb whose backend takes a `kind` / `artifact` / `target` enum-like field deserves one UI control per enum value AND one test per enum value.
+- Grep: a frontend component that renders content for N items but has fewer than N edit controls is a flag if the gate verb is "edit".
+- Reviewer mental model: "if the user is offline-curling the API, can they exercise every target the verb claims to cover?"
+
+### Bug log
+- 2026-05-03 *Phase 4 post-close audit*: `InterpretationView` was read-only despite the backend supporting `artifact="interpretation"`; the verb felt complete because equations + parameters had edit controls.
+
+---
+
+## Error Pattern: Validating at the UI but not at the API boundary
+
+### Why it is bad
+The UI's `<input required>` / "reviewer name required" guard catches empty inputs in the workbench's React panel. But the backend's `POST /api/papers/{capsule}/edit` endpoint accepted `reviewer=""` cleanly and recorded `agent=reviewer:` in `provenance/agent_trace.md`. Other clients (curl, agents, scripts, future CLIs) bypass the UI entirely; the boundary they hit is the HTTP endpoint, and the HTTP endpoint trusted whatever the JSON body contained.
+
+The audit trail this corrupts is the workbench's whole reason for existing. A capsule with provenance rows like `agent=reviewer:` is indistinguishable from a capsule with rows like `agent=reviewer:alice` until you read the entries — at which point you've already been misled.
+
+This is *defense-in-depth missing at the system boundary*. The UI's validation is a UX nicety; the API's validation is the actual gate.
+
+### Required behavior
+Every API endpoint that accepts user-controlled input validates that input at the boundary, even when the UI also validates it. Concretely:
+
+- Empty / whitespace-only required fields are rejected with 400.
+- Path-shaped fields go through resolved-path checks (already covered by *Path traversal via unvalidated user-controlled component*).
+- Enum-shaped fields are checked against the allowed set.
+- Numeric fields are bounds-checked.
+
+The library/SDK layer does the same — every public function called by the API also validates its inputs, so an agent calling `PaperImporter.apply_edit(reviewer="")` directly gets the same refusal.
+
+### Detection
+- For every `*Body(BaseModel)` in `simworkbench.api.server`, read the field types. If a string field can't be empty in a meaningful sense, the endpoint MUST reject empty/whitespace at the boundary. Pydantic `Field(min_length=1)` is the minimum; semantic checks (`reviewer.strip() != ""`) are stronger.
+- Test: for every required-string field, send `""`, `" "`, `"\t"` and assert 400.
+- Provenance review: greps like `grep -r "agent=reviewer:$" simulation_capsules/` should return zero rows. A trailing-colon entry is a corrupt audit trail.
+
+### Bug log
+- 2026-05-03 *Phase 4 post-close audit*: `POST /api/papers/{capsule}/edit` accepted `reviewer=""` and produced `agent=reviewer:` in `provenance/agent_trace.md`. UI blocked empty reviewer; API trusted the client.

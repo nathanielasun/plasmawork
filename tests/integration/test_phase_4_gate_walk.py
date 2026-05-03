@@ -79,15 +79,48 @@ def _client():
 def test_phase_4_gate_walk_end_to_end_library(empty_capsule):
     """Library-side gate walk: PaperImporter.ingest() produces every
     deliverable plan §Phase 4 names.
+
+    Plan §Phase 4 / 4A enumerates SIX task bullets:
+      1. Import PDFs.       2. Store papers locally.
+      3. Extract text.      4. Extract tables.
+      5. Extract figures.   6. Preserve source files.
+    Each task bullet must produce a separately-testable artifact.
     """
+
     from simworkbench.ingestion import PaperImporter
 
     importer = PaperImporter()
     artifacts = importer.ingest(FIXTURE_PAPER, empty_capsule)
 
-    # 4A — paper imported under paper_sources/ verbatim.
+    # 4A.2 + 4A.6 — paper imported under paper_sources/ verbatim.
     assert (empty_capsule / "paper_sources" / "sample.md").is_file()
     assert artifacts.paper_path == empty_capsule / "paper_sources" / "sample.md"
+
+    # 4A.3 — extracted_text.md present and non-empty.
+    extracted_text_path = empty_capsule / "paper_sources" / "extracted_text.md"
+    assert extracted_text_path.is_file()
+    assert extracted_text_path.read_text(encoding="utf-8").strip() != ""
+    assert artifacts.extracted_text_path == extracted_text_path
+
+    # 4A.4 — extracted_tables.json captures the cross-section table.
+    tables_path = empty_capsule / "paper_sources" / "extracted_tables.json"
+    assert tables_path.is_file()
+    tables = json.loads(tables_path.read_text(encoding="utf-8"))
+    assert len(tables) >= 1, tables
+    first = tables[0]
+    assert "Wavelength" in first["headers"]
+    assert first["n_rows"] >= 2
+
+    # 4A.5 — extracted_figures.json captures the figure metadata.
+    figures_path = empty_capsule / "paper_sources" / "extracted_figures.json"
+    assert figures_path.is_file()
+    figures = json.loads(figures_path.read_text(encoding="utf-8"))
+    assert len(figures) >= 1
+    fig = figures[0]
+    assert fig["alt"] == "KrF kinetics schematic"
+    assert fig["path"].endswith("kinetics.png")
+    # The "Figure 1: ..." caption beneath the image got attached.
+    assert "Two-level" in fig["caption"]
 
     # 4B — extracted_equations.json present, has at least one equation,
     # each carries `confidence` + `source_line` fields.
@@ -227,6 +260,74 @@ def test_phase_4_gate_walk_api_edit_refuses_unknown_artifact(empty_capsule):
         },
     )
     assert r.status_code == 400
+
+
+def test_phase_4_gate_walk_api_edit_refuses_empty_reviewer(empty_capsule):
+    """Regression for the post-Phase-4-close finding "edit API accepts an
+    empty reviewer and records agent=reviewer: in provenance".
+
+    The API boundary must reject empty / whitespace-only reviewers; the
+    UI's required-field validation is necessary but not sufficient (other
+    clients — curl, scripts, agents — bypass the UI entirely).
+    """
+    from simworkbench.ingestion import PaperImporter
+
+    PaperImporter().ingest(FIXTURE_PAPER, empty_capsule)
+    trace_path = empty_capsule / "provenance" / "agent_trace.md"
+    before = trace_path.read_text(encoding="utf-8") if trace_path.is_file() else ""
+    for bad_reviewer in ("", " ", "\t"):
+        r = _client().post(
+            f"/api/papers/{empty_capsule.name}/edit",
+            json={
+                "artifact": "parameters",
+                "index": 0,
+                "field": "unit",
+                "value": "1/s",
+                "reviewer": bad_reviewer,
+            },
+        )
+        assert r.status_code == 400, (
+            f"Empty reviewer {bad_reviewer!r} was accepted; provenance "
+            "entries with no reviewer name corrupt the audit trail."
+        )
+    # Nothing leaked into provenance during the rejected attempts.
+    after = trace_path.read_text(encoding="utf-8") if trace_path.is_file() else ""
+    assert after == before, "Rejected edits must not append to agent_trace.md."
+
+
+def test_phase_4_gate_walk_api_edit_interpretation_artifact(empty_capsule):
+    """Edit verb covers EVERY editable artifact, including interpretation
+    Markdown bodies. Regression for the post-Phase-4-close finding
+    "InterpretationView is read-only and has no UI path to edit
+    paper_summary, assumptions, validity_domain, or implementation_plan".
+
+    This test exercises the API path that the UI now wires up.
+    """
+    from simworkbench.ingestion import PaperImporter
+
+    PaperImporter().ingest(FIXTURE_PAPER, empty_capsule)
+    new_body = "# Edited assumptions\nReviewed 2026-05-03.\n"
+    r = _client().post(
+        f"/api/papers/{empty_capsule.name}/edit",
+        json={
+            "artifact": "interpretation",
+            "index": 1,  # 0=summary, 1=assumptions, 2=validity, 3=plan
+            "field": "body",
+            "value": new_body,
+            "reviewer": "pytest-human",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assumptions = (
+        empty_capsule / "paper_sources" / "assumptions.md"
+    ).read_text(encoding="utf-8")
+    assert assumptions == new_body
+    # And the trace recorded the edit.
+    trace = (empty_capsule / "provenance" / "agent_trace.md").read_text(
+        encoding="utf-8"
+    )
+    assert "interpretation[1].body" in trace
+    assert "pytest-human" in trace
 
 
 # ---------------------------------------------------------------------------

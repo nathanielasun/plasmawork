@@ -71,6 +71,9 @@ class IngestionArtifacts(BaseModel):
 
     capsule_dir: Any  # Path
     paper_path: Any  # Path
+    extracted_text_path: Any = None  # Path — Phase 4A task 3
+    tables_path: Any = None  # Path — Phase 4A task 4
+    figures_path: Any = None  # Path — Phase 4A task 5
     equations_path: Any  # Path
     parameters_path: Any  # Path
     interpretation_paths: dict[str, Any] = Field(default_factory=dict)

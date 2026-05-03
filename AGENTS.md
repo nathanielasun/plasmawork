@@ -191,9 +191,9 @@ Before flipping any phase status to "Complete":
 5. Commit the status flip in one commit that touches all status-bearing files at once.
 6. Push (this is a major change per **Autonomous Git Operations**).
 
-### Behavioral verification — the lesson of the Phase 2 + 3 false closes
+### Behavioral verification — the lesson of the Phase 2 + 3 + 4 closes
 
-Existence checks (steps 1–6 above) are necessary but not sufficient. The convention checker proves files exist. It does not prove that the phase gate's *behaviors* work. Phases 1, 2, and 3 each shipped a false close because the agent confused "all entities exist" with "the gate criteria are satisfied". Add these nine behavioral checks before any close commit:
+Existence checks (steps 1–6 above) are necessary but not sufficient. The convention checker proves files exist. It does not prove that the phase gate's *behaviors* work. Phases 1, 2, 3, and 4 each shipped an incomplete close because the agent confused "all entities exist" or "the gate verb is satisfied" with "the plan's deliverable list is met". Add these eleven behavioral checks before any close commit:
 
 1. **End-to-end gate walk.** Each plan §Phase-N gate criterion exercised on a real artifact. For "portable, inspectable, reloadable, exportable": save → load → run → export → fork → reload, each step a separate integration test.
 2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README/CLAUDE.md/docs page advertises as a current entrypoint runs successfully on a typical input.
@@ -204,8 +204,10 @@ Existence checks (steps 1–6 above) are necessary but not sufficient. The conve
 7. **Status-sync grep reads every match.** When `grep -nE "Phase NN"` returns multiple lines in the same file (banner + table), read all of them.
 8. **Build scripts succeed and emit no source-tree artifacts.** `scripts/build/*.sh` exit 0; `find apps/*/src docs_site/src -name '*.js' -o -name '*.d.ts'` is empty afterwards.
 9. **Gate-clause verb walk** *(Phase 3 false-close lesson)*. Read the plan's `## Phase Gate` paragraph for the phase. Extract every **verb**. For each verb, confirm three things: (a) a real implementation, (b) a user-facing surface (UI button / API endpoint / library function), (c) an end-to-end test in `tests/integration/test_phase_N_gate_walk.py` that exercises the verb on a real artifact, with at least one negative case. Existence checks 1–8 don't catch missing verbs because the verbs aren't entities; they're operations. The gate-walk file makes them first-class.
+10. **Workstream task-bullet walk** *(Phase 4 audit lesson)*. The verb is one level of granularity; each `### Workstream NX → Tasks:` bullet is finer. Copy the entire bullet list from plan §Phase N / NX into a checklist; tick each bullet only when an artifact + test ships. Phase 4's "import" verb expanded into six task bullets (Import PDFs, Store, Extract text, Extract tables, Extract figures, Preserve source). Two shipped; the close still felt complete because the verb did. The gate-walk test asserts each bullet's artifact lands on disk — not just that the verb works.
+11. **Boundary validation parity** *(Phase 4 audit lesson)*. For every API endpoint that accepts user input, send `""`, `" "`, `"\t"`, malformed types, missing fields. Each must return 400; provenance/state must remain unchanged. UI validation is necessary but never sufficient — every layer that accepts an input must validate it. Library functions get the same rule: a public method called by the API rejects the same inputs the API would reject.
 
-The named patterns each of these defends against live in `bugs_and_fixes/agent_error_patterns.md` (29 patterns; the latest five are post-Phase-3-close: gate's-verbs-you-can-see, path-traversal-in-destination-paths, half-identity-cross-check, lifecycle-actor-only-not-state, validating-inputs-but-not-outputs).
+The named patterns each of these defends against live in `bugs_and_fixes/agent_error_patterns.md` (32 patterns; the latest three are post-Phase-4-audit: skipping-task-bullets, multi-target-verbs-partially-implemented, validating-at-ui-not-api).
 
 ### When a checker assertion is wrong
 
