@@ -251,12 +251,41 @@ export default function GeneratedCodeView() {
           {diff.previous ? (
             <p>
               Previous generation: <code>{diff.previous.generated_at}</code>{" "}
-              ({diff.previous.files.length} files). Current tree carries{" "}
-              {diff.current_files.length} file(s).
+              ({diff.previous.files.length} files). Preview:{" "}
+              {diff.current_preview.length} file(s) would land if you
+              regenerated now.
             </p>
           ) : (
             <p className="muted">No prior generation manifest.</p>
           )}
+          {diff.note && <p className="muted">{diff.note}</p>}
+          {(["added", "removed", "changed"] as const).map((bucket) => {
+            const rows = diff[bucket];
+            if (rows.length === 0) return null;
+            return (
+              <section key={bucket} aria-label={`Diff ${bucket}`}>
+                <h4>
+                  {bucket[0].toUpperCase() + bucket.slice(1)} ({rows.length})
+                </h4>
+                <ul>
+                  {rows.map((path) => (
+                    <li key={path}>
+                      <code>{path}</code>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+          {diff.added.length === 0
+            && diff.removed.length === 0
+            && diff.changed.length === 0
+            && diff.previous && (
+              <p className="muted">
+                No diff vs. the prior generation — regenerating would
+                produce the same tree.
+              </p>
+            )}
         </section>
       )}
 

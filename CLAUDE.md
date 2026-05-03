@@ -118,6 +118,7 @@ cd apps/workbench-ui && npm test
 - Exporters that walk a tree validate the destination is OUTSIDE the source BEFORE writing. Defense-in-depth: also exclude the in-flight archive from the rglob walk.
 - HDF5 metadata serialization can drop list-shaped fields. Cross-format parity test: write canonical-only, read back, assert every documented field round-trips. Lists become vlen-string arrays, not bools.
 - Regenerate-in-place writers track the prior manifest and DELETE orphans through the same sandbox that gates writes. Without that step, stale files survive into export.
+- `vitest run` is **not** a typechecker — esbuild/swc strips types. Run `bash scripts/test/ui.sh` (or `npm --prefix apps/workbench-ui run typecheck`) before considering UI work green; that script is wired into `scripts/test/all.sh`.
 
 ---
 

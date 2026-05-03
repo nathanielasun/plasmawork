@@ -688,6 +688,7 @@ for f in dev/install.sh \
          test/regression.sh \
          test/validation.sh \
          test/performance.sh \
+         test/ui.sh \
          export/capsule.sh; do
   check_file_executable "scripts/$f" "script scripts/$f"
 done

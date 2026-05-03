@@ -32,6 +32,38 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-03: Phase 6 post-close audit (round 2) — UI typecheck broken; test gate skipped tsc
+
+### Affected subsystem
+- `apps/workbench-ui/src/components/codegen/GeneratedCodeView.tsx`
+- `scripts/test/all.sh` (no UI typecheck step)
+
+### Symptoms
+The Phase 6 round-1 audit fix renamed the codegen-diff API field from `current_files` to `current_preview` (so the endpoint actually returned a diff). The TS type in `apps/workbench-ui/src/api/client.ts` was updated; the consumer at `GeneratedCodeView.tsx:255` still read `diff.current_files.length`. `npm --prefix apps/workbench-ui run typecheck` failed with TS2339; `vitest run` passed because esbuild/swc strips types instead of checking them; the round-1 close commit landed broken on `main`.
+
+### Root cause
+The repo's hard-gate test runner (`scripts/test/all.sh`) ran `lint.sh` + `unit.sh` + `integration.sh` + `regression.sh` + `validation.sh` + `performance.sh` — every Python check — but did not invoke `tsc --noEmit`. The TS package's `package.json build` script chained `tsc --noEmit && vite build`, so a build would have failed; `all.sh` never built. Convention checker covered the existence of every existing test script but didn't require a UI test step.
+
+### Fix
+- Updated `GeneratedCodeView.tsx` to render the diff lists (added/removed/changed) from the new shape — this also closed the "Diff endpoint that doesn't compute a diff" pattern leak that had reached the UI (the panel was reporting "Current tree carries N file(s)" instead of showing the actual diff entries).
+- Added `scripts/test/ui.sh` that `cd`s into `apps/workbench-ui/` and runs `npm run typecheck` then `npm test`. Wired into `scripts/test/all.sh`.
+- Convention checker asserts `scripts/test/ui.sh` exists + is executable (435 → 436).
+- New Vitest test `renders the diff lists (added/removed/changed) when the diff endpoint reports them` — mounts the panel with a mocked diff response and asserts each bucket's rows appear in the DOM.
+
+### Regression protection
+- `scripts/test/ui.sh` runs as part of `scripts/test/all.sh`. Type drift between FastAPI body schemas and the TS API client now fails the gate.
+- New Vitest test pins the expected DOM shape for the diff panel.
+- New error pattern at the bottom of `agent_error_patterns.md`: "Test gate runs unit tests but not the typechecker".
+
+### Agent error patterns added
+1 new pattern at the bottom of `bugs_and_fixes/agent_error_patterns.md`:
+- "Test gate runs unit tests but not the typechecker"
+
+### Warning to future agents
+`vitest run` is **not** a typechecker. esbuild/swc strips types instead of checking them. Always run the explicit `tsc --noEmit` step before considering UI work green. After this fix, `bash scripts/test/all.sh` runs both — but if you change the test wiring, preserve the typecheck step. Same applies to any future TS package: it gets its own `scripts/test/<pkg>.sh` that runs typecheck before vitest, wired into `all.sh`.
+
+---
+
 ## 2026-05-03: Phase 6 post-close audit — eight legitimate review findings
 
 ### Affected subsystem

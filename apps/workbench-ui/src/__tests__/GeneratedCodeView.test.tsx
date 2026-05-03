@@ -124,6 +124,62 @@ describe("GeneratedCodeView", () => {
     });
   });
 
+  it("renders the diff lists (added/removed/changed) when the diff endpoint reports them", async () => {
+    mockBackend({
+      "/api/capsules": {
+        body: [{ name: "demo.lxp", path: "simulation_capsules/demo.lxp" }],
+      },
+      "/api/capsules/demo.lxp/codegen": {
+        body: {
+          capsule: "demo.lxp",
+          generated_files: [],
+          user_edits_files: [],
+          manifest: null,
+        },
+      },
+      "/api/capsules/demo.lxp/codegen/diff": {
+        body: {
+          capsule: "demo.lxp",
+          previous: {
+            generated_at: "2026-05-03T00:00:00.000000+00:00",
+            workbench_version: "0.0.0",
+            spec_name: "demo",
+            spec_domain: "species",
+            files: [
+              { path: "src/generated/experiment.py", sha256: "a".repeat(64) },
+              { path: "src/generated/old.py", sha256: "c".repeat(64) },
+            ],
+          },
+          current_preview: [
+            { path: "src/generated/experiment.py", sha256: "b".repeat(64) },
+            { path: "src/generated/new.py", sha256: "d".repeat(64) },
+          ],
+          added: ["src/generated/new.py"],
+          removed: ["src/generated/old.py"],
+          changed: ["src/generated/experiment.py"],
+          unchanged: [],
+        },
+      },
+    });
+    render(<GeneratedCodeView />);
+    await screen.findByText("demo.lxp");
+    fireEvent.change(screen.getByLabelText(/Capsule:/i), {
+      target: { value: "demo.lxp" },
+    });
+    fireEvent.click(screen.getByText("View diff"));
+    await waitFor(() => {
+      // Each bucket renders with its file rows. This guards against
+      // the "diff endpoint that doesn't diff" pattern leaking into
+      // the UI: the panel must actually show added/removed/changed,
+      // not a generic count.
+      expect(screen.getByText("src/generated/new.py")).toBeInTheDocument();
+      expect(screen.getByText("src/generated/old.py")).toBeInTheDocument();
+      expect(
+        screen.getByText("src/generated/experiment.py"),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("reports the validation summary path after running validation", async () => {
     mockBackend({
       "/api/capsules": {

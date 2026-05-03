@@ -1125,3 +1125,28 @@ The pattern: the plan's verb list ("view", "edit", "diff", "export") is treated 
 
 ### Bug log
 - 2026-05-03 *Phase 6 post-close audit*: `GeneratedCodeView` had no editor. Plan §6D's "Allow user edits" bullet was unimplemented despite the convention checker passing.
+
+---
+
+## Error Pattern: Test gate runs unit tests but not the typechecker
+
+### Why it is bad
+Vitest transforms TypeScript via esbuild/swc, which strips types instead of checking them. A real type error — e.g. a UI component reading `diff.current_files` after the field was renamed to `diff.current_preview` — sails through `vitest run` without complaint. Convention checker is green, vitest is green, ruff is green; the build is broken.
+
+The pattern: the repo's "test runner" suite (`scripts/test/all.sh`) runs unit / integration / regression / lint suites but doesn't invoke `tsc --noEmit`. A reviewer who runs `./scripts/test/all.sh` and then `npm --prefix apps/workbench-ui run typecheck` separately catches it; everyone else ships the bug.
+
+### Required behavior
+The repo's hard-gate test runner runs the typechecker. Specifically:
+
+1. The TS package's `package.json` has a `typecheck` script: `tsc --noEmit`.
+2. A `scripts/test/<lang>.sh` invokes that script. For this repo: `scripts/test/ui.sh` runs typecheck AND vitest, in that order.
+3. `scripts/test/all.sh` calls the per-language script.
+4. The convention checker asserts `scripts/test/<lang>.sh` exists + is executable.
+5. When in CI: typecheck failures fail the gate, the same way ruff / pytest do.
+
+### Detection
+- Grep: `grep -rE "tsc --noEmit|typecheck" scripts/test/` — must hit a per-language test runner that's wired into `all.sh`.
+- Cross-check the package's `package.json` `scripts.build` entry. If it includes `tsc --noEmit && …`, the build catches type drift; if `all.sh` ignores the build, the gate has the same gap.
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit (round 2)*: `GeneratedCodeView.tsx` referenced `diff.current_files.length` after the API + TS type were renamed to `diff.current_preview`. `vitest run` passed; `npm --prefix apps/workbench-ui run typecheck` failed with TS2339. The repo's `scripts/test/all.sh` ran lint + unit + integration + regression + validation + performance but not the TS typechecker. Fix: new `scripts/test/ui.sh` that runs `tsc --noEmit` + vitest, wired into `all.sh`.
