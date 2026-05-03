@@ -68,21 +68,17 @@ def test_opt_in_mode_lists_known_open_anchors() -> None:
     output = result.stdout + result.stderr
 
     open_anchors = (
-        # Workstream 2A — capsule format & validator.
-        "packages/core/src/simworkbench/serialization/manifest.py",
-        "packages/core/src/simworkbench/serialization/validator.py",
-        "packages/core/src/simworkbench/serialization/bulk_data.py",
-        # Workstream 2B — provenance system.
-        "packages/core/src/simworkbench/provenance/lock.py",
-        "packages/core/src/simworkbench/provenance/environment.py",
-        "packages/core/src/simworkbench/provenance/agent_trace.py",
-        # Workstream 2C — export system.
-        "packages/core/src/simworkbench/serialization/export.py",
-        "packages/core/src/simworkbench/serialization/exporters/archive.py",
-        "packages/core/src/simworkbench/serialization/fork.py",
-        # Workstream 2D — capsule UI.
+        # Workstream 2D — capsule UI components (the only remaining open
+        # workstream now that 2A/2B/2C have shipped). When 2D closes, this
+        # test flips to "passes" for the Phase 2 close commit.
         "apps/workbench-ui/src/components/capsule/ManifestView.tsx",
+        "apps/workbench-ui/src/components/capsule/ModelSpecView.tsx",
+        "apps/workbench-ui/src/components/capsule/CapsuleCodeView.tsx",
+        "apps/workbench-ui/src/components/capsule/ResultsView.tsx",
+        "apps/workbench-ui/src/components/capsule/ValidationView.tsx",
         "apps/workbench-ui/src/components/capsule/ProvenanceView.tsx",
+        # 2D backend additions.
+        "/api/capsules/{name}/validate",
     )
 
     found = [a for a in open_anchors if a in output]

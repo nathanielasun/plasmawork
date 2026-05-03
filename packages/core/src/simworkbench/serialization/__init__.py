@@ -17,6 +17,8 @@ from .capsule import (
     save_capsule,
 )
 from .experiment import load_experiment, save_experiment
+from .export import EXPORT_KINDS, ExportResult, export_capsule
+from .fork import fork_capsule
 from .manifest import (
     CapsuleSection,
     Manifest,
@@ -37,6 +39,8 @@ __all__ = [
     "CAPSULE_FORMAT_VERSION",
     "CapsuleSection",
     "CapsuleValidator",
+    "EXPORT_KINDS",
+    "ExportResult",
     "LoadedCapsule",
     "Manifest",
     "ModelSection",
@@ -45,6 +49,8 @@ __all__ = [
     "RuntimeSection",
     "ValidationReport",
     "Violation",
+    "export_capsule",
+    "fork_capsule",
     "load_capsule",
     "load_experiment",
     "load_manifest",
