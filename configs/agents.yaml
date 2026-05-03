@@ -33,7 +33,7 @@ agents:
 
   - role: paper_ingestion
     description: Extracts paper content (PDF, arXiv, supplementary).
-    enabled: false
+    enabled: true
     phase: 4
     capabilities: [download_paper, extract_text, extract_tables]
     human_approval_required_for:
@@ -41,7 +41,7 @@ agents:
 
   - role: physics_interpretation
     description: Converts paper claims into model assumptions and validity domains.
-    enabled: false
+    enabled: true
     phase: 4
 
   - role: model_spec

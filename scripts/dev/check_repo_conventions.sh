@@ -528,11 +528,58 @@ check_grep_in_file '/api/tools/\{name\}/export' packages/core/src/simworkbench/a
 check_grep_in_file '/api/tools/import' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/import (Phase 3 gate verb)"
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch. Currently empty — Phase 3 closed 2026-05-02
-# and Phase 4 has not yet opened.
+# Phase 4 — Agent-Assisted Paper Ingestion (Closed 2026-05-02). Every entity
+# below was ratcheted from --include-open-workstreams into the default
+# hard gate at the Phase 4 close commit.
+
+section "Phase 4A — Paper Import"
+check_file_exists packages/core/src/simworkbench/ingestion/__init__.py
+check_file_exists packages/core/src/simworkbench/ingestion/pipeline.py
+check_file_exists packages/core/src/simworkbench/ingestion/paper.py
+check_grep_in_file 'class PaperImporter' packages/core/src/simworkbench/ingestion/pipeline.py "PaperImporter defined"
+check_grep_in_file 'paper_sources' packages/core/src/simworkbench/ingestion/pipeline.py "Paper imports land under paper_sources/"
+check_file_exists tests/unit/test_paper_import.py
+
+section "Phase 4B — Equation Extraction"
+check_file_exists packages/core/src/simworkbench/ingestion/equations.py
+check_grep_in_file 'class EquationExtractor' packages/core/src/simworkbench/ingestion/equations.py "EquationExtractor defined"
+check_grep_in_file 'confidence' packages/core/src/simworkbench/ingestion/equations.py "Equations carry confidence flags"
+check_file_exists tests/unit/test_equation_extraction.py
+
+section "Phase 4C — Parameter Extraction"
+check_file_exists packages/core/src/simworkbench/ingestion/parameters.py
+check_grep_in_file 'class ParameterExtractor' packages/core/src/simworkbench/ingestion/parameters.py "ParameterExtractor defined"
+check_grep_in_file 'missing_units' packages/core/src/simworkbench/ingestion/parameters.py "Parameters flag missing units"
+check_file_exists tests/unit/test_parameter_extraction.py
+
+section "Phase 4D — Interpretation Agent"
+check_file_exists packages/core/src/simworkbench/ingestion/interpretation.py
+check_grep_in_file 'class InterpretationAgent' packages/core/src/simworkbench/ingestion/interpretation.py "InterpretationAgent defined"
+check_file_exists tests/unit/test_interpretation_agent.py
+
+section "Phase 4E — Review UI"
+check_file_exists apps/workbench-ui/src/components/papers/PaperReview.tsx
+check_file_exists apps/workbench-ui/src/components/papers/EquationList.tsx
+check_file_exists apps/workbench-ui/src/components/papers/ParameterList.tsx
+check_file_exists apps/workbench-ui/src/components/papers/InterpretationView.tsx
+check_file_exists apps/workbench-ui/src/__tests__/PaperReview.test.tsx
+check_grep_in_file '/api/papers' packages/core/src/simworkbench/api/server.py "API exposes /api/papers (Phase 4 gate verb: import)"
+check_grep_in_file 'papers' apps/workbench-ui/src/App.tsx "App.tsx routes /papers"
+
+section "Phase 4 — Cross-cutting"
+check_grep_in_file 'role: paper_ingestion' configs/agents.yaml "agents.yaml lists paper_ingestion role"
+check_grep_absent_in_file 'Phase 0 skeleton' docs_site/src/content/agent_workflows.tsx "agent_workflows docs no longer the Phase-0 banner"
+check_grep_in_file 'paper ingestion' docs_site/src/content/agent_workflows.tsx "agent_workflows docs cover paper ingestion"
+
+section "Phase 4 — Gate verb walk"
+check_file_exists tests/integration/test_phase_4_gate_walk.py
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch. Currently empty — Phase 4 closed 2026-05-02
+# and Phase 5 has not yet opened.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 3 closed 2026-05-02; Phase 4 not yet opened."
+  echo "  no open workstreams — Phase 4 closed 2026-05-02; Phase 5 not yet opened."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

@@ -203,6 +203,61 @@ export interface ApiClient {
   executeTool(name: string, kwargs: Record<string, unknown>, units?: Record<string, string>): Promise<{ name: string; output: Record<string, unknown> }>;
   exportTool(name: string): Promise<{ name: string; archive: string; size_bytes: number }>;
   importTool(sourcePath: string, targetName: string): Promise<{ name: string; directory: string }>;
+  importPaper(capsule: string, sourcePath: string): Promise<PaperImportResult>;
+  getPaperExtracted(capsule: string): Promise<PaperExtracted>;
+  editPaperArtifact(capsule: string, body: PaperEditPayload): Promise<{ capsule: string; ok: boolean }>;
+}
+
+export interface PaperImportResult {
+  capsule: string;
+  paper_imported: string;
+  equations_path: string;
+  parameters_path: string;
+  interpretation_files: string[];
+}
+
+export interface PaperEquation {
+  id: string;
+  text: string;
+  latex: string;
+  source_line: number;
+  source_file: string;
+  confidence: number;
+  edited_by: string;
+  notes: string;
+}
+
+export interface PaperParameter {
+  name: string;
+  value: number | string;
+  unit: string;
+  missing_units: boolean;
+  source_line: number;
+  source_file: string;
+  confidence: number;
+  edited_by: string;
+  notes: string;
+}
+
+export interface PaperInterpretation {
+  paper_summary: string;
+  assumptions: string;
+  validity_domain: string;
+  implementation_plan: string;
+}
+
+export interface PaperExtracted {
+  equations: PaperEquation[];
+  parameters: PaperParameter[];
+  interpretation: PaperInterpretation;
+}
+
+export interface PaperEditPayload {
+  artifact: "equations" | "parameters" | "interpretation";
+  index: number;
+  field: string;
+  value: unknown;
+  reviewer: string;
 }
 
 export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
@@ -295,6 +350,32 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_path: sourcePath, target_name: targetName }),
+        },
+        baseUrl,
+      ),
+    importPaper: (capsule, sourcePath) =>
+      fetchJson(
+        "/papers/import",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ capsule, source_path: sourcePath }),
+        },
+        baseUrl,
+      ),
+    getPaperExtracted: (capsule) =>
+      fetchJson(
+        `/papers/${encodeURIComponent(capsule)}/extracted`,
+        undefined,
+        baseUrl,
+      ),
+    editPaperArtifact: (capsule, body) =>
+      fetchJson(
+        `/papers/${encodeURIComponent(capsule)}/edit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
         },
         baseUrl,
       ),

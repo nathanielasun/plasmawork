@@ -48,12 +48,7 @@ def test_default_convention_checker_excludes_open_workstream_todos() -> None:
 
 
 def test_opt_in_mode_passes_with_no_open_workstream() -> None:
-    """No workstream is currently open — opt-in mode also passes.
-
-    When Phase 4 opens (a new section under
-    ``if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]``), flip this back to the
-    "exits non-zero" form.
-    """
+    """Phase 4 closed 2026-05-02; no workstream is currently open."""
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
@@ -61,8 +56,6 @@ def test_opt_in_mode_passes_with_no_open_workstream() -> None:
 
 
 def test_opt_in_mode_carries_no_open_anchors() -> None:
-    """The "Open Workstream TODOs" section currently advertises that no
-    workstream is open."""
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
     assert "no open workstreams" in output

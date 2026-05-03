@@ -2,7 +2,47 @@ export default function AgentWorkflows() {
   return (
     <article>
       <h1>Agent Workflows</h1>
-      <p className="page-status">Phase 0 skeleton. Expand in Phase 4–6.</p>
+      <p className="page-status">
+        Phase 4 (paper ingestion) implemented. Phases 5–6 expand into
+        ModelSpec generation and sandboxed code generation.
+      </p>
+
+      <h2>Phase 4 — paper ingestion</h2>
+      <p>
+        Imports a paper file (Markdown today; PDF support is a Phase 4+
+        extension) into a capsule's <code>paper_sources/</code> and runs
+        three deterministic extractors plus a template interpretation
+        agent. Every artifact is explicitly marked <em>needs human
+        review</em>; edits go through{" "}
+        <code>POST /api/papers/&lt;capsule&gt;/edit</code> and append to{" "}
+        <code>provenance/agent_trace.md</code>.
+      </p>
+
+      <h3>Outputs (under <code>paper_sources/</code>)</h3>
+      <ul>
+        <li><code>extracted_equations.json</code> — equations with
+        confidence + source line numbers.</li>
+        <li><code>extracted_parameters.yaml</code> — parameters with
+        units, flagging <code>missing_units</code> rows that need a human
+        reviewer (plan §22 — never fabricate units).</li>
+        <li><code>paper_summary.md</code>, <code>assumptions.md</code>,{" "}
+        <code>validity_domain.md</code>, <code>implementation_plan.md</code>{" "}
+        — agent-generated interpretation drafts. Plan §Phase 4 forbids
+        treating these as trusted; Phase 5's ModelSpec generation only
+        consumes them after a human reviewer has approved.</li>
+      </ul>
+
+      <h3>Try it</h3>
+      <pre>
+        <code>{`# Library
+from simworkbench.ingestion import PaperImporter
+PaperImporter().ingest("paper.md", "simulation_capsules/foo.lxp")
+
+# UI
+# Open the workbench UI's "Papers" tab. Pick a capsule, paste a paper
+# path, click Import. Edit equations/parameters inline; every edit lands
+# in provenance/agent_trace.md.`}</code>
+      </pre>
 
       <h2>The pipeline</h2>
       <pre>

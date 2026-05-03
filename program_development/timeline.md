@@ -24,6 +24,29 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 4 closes — Agent-Assisted Paper Ingestion complete)
+
+### Completed
+- **Procedure-first.** This phase is the first that opened with the new ninth Phase Gate Procedure check active. The gate-walk integration test at `tests/integration/test_phase_4_gate_walk.py` was the **first** artifact written — six tests covering import / extract-equations / extract-parameters / generate-interpretation / review (GET extracted) / edit (with provenance). Implementation chased the test, not the other way around.
+- **Workstream 4A — Paper Import — shipped.** `simworkbench.ingestion.PaperImporter` orchestrates copy → equation extraction → parameter extraction → interpretation generation → provenance append, all in one `ingest()` call. The producer invokes `AgentTraceWriter` directly (no hand-rolled append) — carries the post-Phase-2 lesson "Building writers without wiring producers". Six unit tests in `tests/unit/test_paper_import.py` plus the gate-walk coverage.
+- **Workstream 4B — Equation Extraction — shipped.** `RegexEquationExtractor` finds LaTeX display (`$$...$$`), inline (`$...$`), and `\begin{equation}...\end{equation}` patterns. Each hit carries an id, source line, and confidence (0.9 / 0.8 / 0.6 / 0.3 depending on pattern + body length). Stable, deterministic, offline-safe. Pluggable behind `EquationExtractor` ABC for future LLM-backed implementations. Six unit tests.
+- **Workstream 4C — Parameter Extraction — shipped.** `RegexParameterExtractor` scans `name = value [unit]` lines, extracts the unit only when the first whitespace-delimited token of the tail looks unit-like (refuses prose stop-words like `the`, `and`, long alphabetic tokens). Rows with no unit get `missing_units=True` and a "needs human review" note — carries plan §22 / `agent_error_patterns.md` "Silently inventing missing physical coefficients" forward. Five unit tests including a positive missing-unit assertion against the fixture paper.
+- **Workstream 4D — Interpretation Agent — shipped.** `TemplateInterpretationAgent` is deterministic and offline-safe; emits four Markdown documents (`paper_summary.md`, `assumptions.md`, `validity_domain.md`, `implementation_plan.md`). EVERY artifact opens with the "Status: Draft — needs human review" banner so downstream consumers (Phase 5 ModelSpec generation) can detect unreviewed input. Pluggable behind `InterpretationAgent` ABC. Six unit tests including an assertion that every artifact contains "human review".
+- **Workstream 4E — Review UI + backend — shipped.** New "Papers" tab over three new endpoints. `PaperReview` orchestrates capsule selection + import; `EquationList` and `ParameterList` allow inline edit per row with required reviewer name; `InterpretationView` renders the four Markdown documents under collapsible sections. Each edit goes through `POST /api/papers/{capsule}/edit`, which round-trips through Pydantic validation (catches typos before disk writes) and appends one entry to `provenance/agent_trace.md` keyed off the reviewer name. Three Vitest tests assert the panels actually render extracted equations / parameters (carries the post-Phase-2 lesson "UI panels actually render"). One UI test plus the gate-walk integration tests cover the end-to-end edit-with-provenance flow.
+- **Hard-rule guard.** `tests/integration/test_phase_4_gate_walk.py::test_phase_4_no_trusted_simulation_artifacts_produced` asserts ingestion never writes `model/model_spec.yaml` or `results/diagnostics.{h5,json}` — Phase 4's hard rule that agents do not produce trusted simulations is enforced by the test, not by convention.
+- **Cross-cutting.** `configs/agents.yaml` flips `paper_ingestion` and `physics_interpretation` roles to `enabled: true`. `docs_site/src/content/agent_workflows.tsx` rewritten with a Phase 4 walkthrough.
+- **Convention checker ratchet.** All Phase 4A/4B/4C/4D/4E entity assertions promoted from `--include-open-workstreams` into the default hard gate. Default mode now ~390 ok (was 358; +30+); opt-in passes with the "no open workstreams" message. Regression test flipped to its closed-phase form.
+- **Behavioral verification (per the nine-check Phase Gate Procedure).** End-to-end gate walk: ingest a real fixture paper, assert all four interpretation artifacts mark "needs human review", assert missing-units flag is set, GET extracted via API, POST edit, verify provenance.lock grew. Documented scripts run. Producer-writer wiring: `PaperImporter` invokes `AgentTraceWriter`. Validator field parity: `ExtractedEquation` / `ExtractedParameter` Pydantic round-trip. Destructive-after-validate: `apply_edit` Pydantic-validates before disk write. UI panels render. Status sync grep clean across README, CLAUDE.md, milestone, timeline. Build scripts succeed; no leaked .js. Gate-clause verb walk: every plan-named verb has a test in `test_phase_4_gate_walk.py`. All nine green.
+
+### Open questions
+- PDF support is deferred to a Phase 4+ extension. The `Markdown` paper format covers the gate ("a paper can be imported and converted") and the architecture is ready for `pypdf`/`pdfminer` to land behind the same `PaperImporter` API. Logged as a follow-up but not blocking.
+- Real LLM-backed equation/parameter extraction lands in Phase 6 (Sandboxed agentic code generation) per plan §Phase 6. The deterministic regex defaults shipping now satisfy the gate and will continue to ship as a no-API-key fallback.
+
+### Next steps
+- Open Phase 5 (ModelSpec generation and module mapping) per plan §Phase 5. Following the same procedure: write the gate-walk test FIRST, enumerate plan deliverables, add per-entity opt-in convention-checker assertions, implement until everything is green.
+
+---
+
 ## 2026-05-02 (Phase 3 false-close audit — five review findings fixed)
 
 ### Completed

@@ -31,6 +31,10 @@ Endpoints:
 - ``POST /api/tools/{name}/export``            — zip the tool tree (Phase 3D).
 - ``POST /api/tools/import``                   — copy a tool tree into
   ``local_cache/imported_tools/`` (Phase 3D).
+- ``POST /api/papers/import``                       — ingest a paper into a capsule (Phase 4).
+- ``GET  /api/papers/{capsule}/extracted``          — read the structured extraction (Phase 4).
+- ``POST /api/papers/{capsule}/edit``               — edit an extracted artifact +
+  record provenance (Phase 4).
 
 Phase 1F runs are synchronous: the server starts the run on the request
 thread and returns the final state. Async / pause-resume across HTTP is a
@@ -117,6 +121,23 @@ class ToolImportBody(BaseModel):
 
     source_path: str
     target_name: str
+
+
+class PaperImportBody(BaseModel):
+    """POST /api/papers/import body."""
+
+    capsule: str  # capsule directory name (`<name>.lxp`) under simulation_capsules/
+    source_path: str  # absolute path to the paper file
+
+
+class PaperEditBody(BaseModel):
+    """POST /api/papers/{capsule}/edit body."""
+
+    artifact: str  # equations | parameters | interpretation
+    index: int
+    field: str
+    value: Any
+    reviewer: str
 
 
 # ---------------------------------------------------------------------------
@@ -646,6 +667,57 @@ def create_app() -> FastAPI:
             "archive": str(archive.relative_to(repo_root())),
             "size_bytes": archive.stat().st_size,
         }
+
+    # -----------------------------------------------------------------------
+    # Phase 4 — Paper ingestion endpoints. The PaperImporter does the work;
+    # the API surface is a thin wrapper that the UI calls.
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/papers/import")
+    def import_paper(body: PaperImportBody) -> dict[str, Any]:
+        from simworkbench.ingestion import PaperImporter, PaperIngestionError
+
+        capsule_path = _resolve_capsule(body.capsule)
+        try:
+            artifacts = PaperImporter().ingest(body.source_path, capsule_path)
+        except PaperIngestionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "capsule": body.capsule,
+            "paper_imported": str(artifacts.paper_path.relative_to(repo_root())),
+            "equations_path": str(
+                artifacts.equations_path.relative_to(repo_root())
+            ),
+            "parameters_path": str(
+                artifacts.parameters_path.relative_to(repo_root())
+            ),
+            "interpretation_files": sorted(artifacts.interpretation_paths),
+        }
+
+    @app.get("/api/papers/{capsule}/extracted")
+    def get_paper_extracted(capsule: str) -> dict[str, Any]:
+        from simworkbench.ingestion import PaperImporter
+
+        capsule_path = _resolve_capsule(capsule)
+        return PaperImporter().read_extracted(capsule_path)
+
+    @app.post("/api/papers/{capsule}/edit")
+    def edit_paper(capsule: str, body: PaperEditBody) -> dict[str, Any]:
+        from simworkbench.ingestion import PaperImporter, PaperIngestionError
+
+        capsule_path = _resolve_capsule(capsule)
+        try:
+            PaperImporter().apply_edit(
+                capsule_path,
+                artifact=body.artifact,
+                index=body.index,
+                field=body.field,
+                value=body.value,
+                reviewer=body.reviewer,
+            )
+        except PaperIngestionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"capsule": capsule, "ok": True}
 
     @app.post("/api/tools/import")
     def import_tool(body: ToolImportBody) -> dict[str, Any]:
