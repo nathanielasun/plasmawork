@@ -46,12 +46,12 @@ agents:
 
   - role: model_spec
     description: Creates and validates structured ModelSpecs from interpretation artifacts.
-    enabled: false
+    enabled: true
     phase: 5
 
   - role: module_retrieval
     description: Finds reusable modules in the registry that match a ModelSpec.
-    enabled: false
+    enabled: true
     phase: 5
 
   - role: code_generation

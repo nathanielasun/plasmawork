@@ -24,6 +24,38 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-03 (Phase 5 closes — ModelSpec Generation and Module Mapping complete)
+
+### Completed
+- **Procedure-first.** Phase 5 opened with the gate-walk integration test as the first artifact (`tests/integration/test_phase_5_gate_walk.py`), per the new ninth Phase Gate Procedure check. Six gate-walk tests cover transform / map / analyze / propose, end-to-end API, and the hard-rule guard for unreviewed input. Implementation chased the test, not the other way around.
+- **Workstream 5A — ModelSpec Generator — shipped.** `simworkbench.modeling.ModelSpecGenerator` reads Phase-4 interpretation artifacts under `<capsule>/paper_sources/` and emits a schema-valid `<capsule>/model/model_spec.yaml`. Default impl is deterministic (regex / keyword heuristics over the extracted parameters and Markdown summary) and offline-safe. `ModelSpecGenerator(require_reviewed=True)` (default) refuses to consume interpretation rows whose `edited_by` is empty — carries plan §Phase 4's hard rule into Phase 5 input gating; `agent_error_patterns.md` *Lifecycle promotion that checks the actor but not the artifact's scientific state* applied to the Phase-4→Phase-5 boundary. Companion `simworkbench.modeling.repair.repair()` deterministically fixes structural validation failures (missing required keys, schema-version drift) before raising `RepairError`. Five unit tests in `test_modelspec_generator.py` + an integration round-trip test in `test_modelspec_generation.py`.
+- **Workstream 5B — Module Retrieval — shipped.** `ModuleMatcher` walks `packages/physics_modules/<domain>/<name>/module.yaml` and produces a `ModuleMatchReport` with per-bullet sub-scores: `domain_match`, `io_match`, `unit_compat`, `solver_match`. Score is a 0..1 weighted average; the report's `unmatched_requirements` flags solvers the spec recommends but the registry doesn't carry, AND domains with no >0.5 match. Three integration tests cover the happy path, domain mismatch, and unmatched solver flag.
+- **Workstream 5C — Gap Analysis — shipped.** `GapAnalyzer.analyze(spec, matches)` returns a structured `GapReport` with all five plan §10.4 categories present (even when empty) so downstream consumers iterate deterministically. Catches: placeholder coefficient sources (plan §22 — runtime refuses unsourced rates), empty `valid_regime` blocks, recommended-solver-not-in-registry, missing `acceptance_criteria` / `conservation_checks`. Four integration tests cover each category.
+- **Workstream 5D — Experiment Proposal — shipped.** `ExperimentProposer.propose(capsule, spec, matches, gaps)` writes `<capsule>/experiment_proposal.md` with all five plan §Phase 5 / 5D bullets — minimal simulation, fidelity extensions, computational-cost estimate, validation path, backend recommendation. The proposal opens with the "Status: Draft — needs human review" banner so downstream consumers (the Phase 1A Experiment builder) can detect unreviewed input. New "Proposals" UI tab (`apps/workbench-ui/src/components/proposal/ExperimentProposal.tsx`) renders capsule selector → Generate button → matches table + 5-category gap report + proposal-path link. One Vitest test asserts the panel actually renders matches and gaps after a successful generate (carries the post-Phase-2 lesson "UI panels actually render"). Single backend endpoint `POST /api/proposals` runs the full transform → map → analyze → propose pipeline in one call.
+- **Cross-cutting.** `configs/agents.yaml` flips `model_spec` and `module_retrieval` roles to `enabled: true`. App.tsx adds a Proposals route; the App.test asserts the new nav label.
+- **Convention checker ratchet.** All Phase 5A–5D entity assertions promoted from `--include-open-workstreams` into the default hard gate. Default mode now 415/415 ok. Regression test flipped to its closed-phase form.
+- **Behavioral verification (per the twelve-check Phase Gate Procedure).** All twelve green:
+  1. End-to-end gate walk: 6 tests in `test_phase_5_gate_walk.py`.
+  2. Documented scripts: no new stubs.
+  3. Producer-writer wiring: `ModelSpecGenerator` writes through `simworkbench.model_spec.to_dict` and the YAML round-trips through `load_yaml`.
+  4. Validator field parity: every generator output goes through ModelSpec's Pydantic validation; the integration test asserts `load_yaml` agrees with the in-memory spec.
+  5. Destructive-after-validate: no destructive ops introduced.
+  6. UI panels actually render: ExperimentProposal Vitest test asserts matches + gap rows + proposal path appear.
+  7. Status-sync grep clean across README, CLAUDE.md, milestone, timeline, agents.yaml.
+  8. Build scripts succeed; no leaked .js.
+  9. Gate-clause verb walk: every plan-named gate verb has a test in `test_phase_5_gate_walk.py`.
+  10. Workstream task-bullet walk: `_resolve_species`, `_resolve_interactions`, `Geometry`, `_enforce_human_review` cover plan §5A's six bullets; `match` covers §5B's five; `GapReport` covers §5C's five categories; `_render` covers §5D's five sections.
+  11. Boundary validation parity: `POST /api/proposals` body validates via Pydantic; unreviewed input rejected with structured `ModelSpecGenerationError` → 400.
+  12. Success path runs: gate-walk test exercises the success path on a real synthesized capsule fixture.
+
+### Open questions
+- A real LLM-backed `ModelSpecGenerator` lands later (Phase 6 introduces sandboxed code generation, which subsumes the LLM substrate). The deterministic default is what the gate promises and what tests exercise.
+
+### Next steps
+- Open Phase 6 (Sandboxed agentic code generation) per plan §Phase 6 with the same procedure: write the gate-walk test FIRST, enumerate plan deliverables, add per-entity opt-in convention-checker assertions, implement until everything is green.
+
+---
+
 ## 2026-05-02 (Phase 4 closes — Agent-Assisted Paper Ingestion complete)
 
 ### Completed

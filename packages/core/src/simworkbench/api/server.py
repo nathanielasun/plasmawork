@@ -35,6 +35,8 @@ Endpoints:
 - ``GET  /api/papers/{capsule}/extracted``          — read the structured extraction (Phase 4).
 - ``POST /api/papers/{capsule}/edit``               — edit an extracted artifact +
   record provenance (Phase 4).
+- ``POST /api/proposals``                           — Phase 5 end-to-end
+  (transform → map → analyze → propose).
 
 Phase 1F runs are synchronous: the server starts the run on the request
 thread and returns the final state. Async / pause-resume across HTTP is a
@@ -138,6 +140,13 @@ class PaperEditBody(BaseModel):
     field: str
     value: Any
     reviewer: str
+
+
+class ProposalBody(BaseModel):
+    """POST /api/proposals body — Phase 5 end-to-end runner."""
+
+    capsule: str
+    require_reviewed: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +769,44 @@ def create_app() -> FastAPI:
         return {
             "name": entry.name,
             "directory": str(entry.directory.relative_to(repo_root())),
+        }
+
+    # -----------------------------------------------------------------------
+    # Phase 5 — ModelSpec generation + module match + gap analysis +
+    # experiment proposal. The whole pipeline runs in one call so the UI
+    # can render every output without orchestrating four endpoints.
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/proposals")
+    def create_proposal(body: ProposalBody) -> dict[str, Any]:
+        from simworkbench.modeling import (
+            ExperimentProposer,
+            GapAnalyzer,
+            ModelSpecGenerationError,
+            ModelSpecGenerator,
+            ModuleMatcher,
+        )
+
+        capsule_path = _resolve_capsule(body.capsule)
+        try:
+            spec = ModelSpecGenerator(
+                require_reviewed=body.require_reviewed
+            ).generate(capsule_path)
+        except ModelSpecGenerationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        matches = ModuleMatcher().match(spec)
+        gaps = GapAnalyzer().analyze(spec, matches)
+        proposal_path = ExperimentProposer().propose(
+            capsule_path, spec, matches, gaps
+        )
+        return {
+            "capsule": body.capsule,
+            "proposal_path": str(proposal_path.relative_to(repo_root())),
+            "modelspec_path": str(
+                (capsule_path / "model" / "model_spec.yaml").relative_to(repo_root())
+            ),
+            "matches": matches.to_dict(),
+            "gaps": gaps.to_dict(),
         }
 
     return app

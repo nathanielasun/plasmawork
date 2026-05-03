@@ -44,6 +44,7 @@ describe("App shell", () => {
       "Capsules",
       "Tools",
       "Papers",
+      "Proposals",
       "Documentation",
     ]) {
       expect(within(nav).getByText(label)).toBeInTheDocument();

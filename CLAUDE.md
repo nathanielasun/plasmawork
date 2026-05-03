@@ -222,11 +222,12 @@ When in doubt, ask before editing. Prefer reversible additions over destructive 
 **Phase 1** (Manual Scientific Workbench) — complete 2026-05-02. All six workstreams 1A–1F shipped, including the post-review-fix capsule save/reload that satisfies Phase Gate items 4 and 5.
 **Phase 2** (Simulation Capsule System) — complete 2026-05-02. All four workstreams 2A–2D shipped. ADR-0002 Accepted with HDF5 bulk-data lock-in; canonical `manifest.toml` schema (`v0.1`) + validator + migration registry; provenance triad with source-aggregate hashing; full export pipeline (code/data/plots/notebook/report/archive) + `fork_capsule()`; six-tab Capsule Explorer UI (Manifest / ModelSpec / Code / Results / Validation / Provenance) over four new backend endpoints (`GET /api/capsules/{name}`, `/files/{path}`, `/validate`, `/diagnostics`).
 **Phase 3** (Internal Tool SDK and Registry) — complete 2026-05-02. All five workstreams 3A–3E shipped (with post-close gate-walk fixes). `BaseTool` ABC + `ToolInput`/`ToolOutput` contracts; `ToolMetadata` Pydantic schema; lifecycle state machine with agent/human + scientific gating; `ToolRegistry` discovers `packages/internal_tools/registry/` and `local_cache/imported_tools/`; eight backend endpoints; experiment binding via `Experiment.tool_refs` + `apply_tools`.
-**Phase 4** (Agent-Assisted Paper Ingestion) — complete 2026-05-02. All five workstreams 4A–4E shipped. `simworkbench.ingestion.PaperImporter` orchestrates copy → equation extraction → parameter extraction → interpretation generation; `RegexEquationExtractor` (LaTeX display / inline / environment + confidence), `RegexParameterExtractor` (flags `missing_units`, never fabricates units per plan §22), `TemplateInterpretationAgent` (four Markdown artifacts, each marked "needs human review" per plan §Phase 4 hard rule); "Papers" UI tab over three new backend endpoints (`POST /api/papers/import`, `GET /api/papers/{capsule}/extracted`, `POST /api/papers/{capsule}/edit`) with every edit appended to `provenance/agent_trace.md`. The gate-walk integration test was written BEFORE implementation per the new ninth Phase Gate Procedure check.
+**Phase 4** (Agent-Assisted Paper Ingestion) — complete 2026-05-02 (with PDF + extracted-artifacts fixes 2026-05-03). All five workstreams 4A–4E shipped plus two post-close audits.
+**Phase 5** (ModelSpec Generation and Module Mapping) — complete 2026-05-03. All four workstreams 5A–5D shipped. `simworkbench.modeling.ModelSpecGenerator` transforms reviewed Phase-4 artifacts into a schema-valid ModelSpec (refuses unreviewed input per plan §Phase 4 hard rule); `ModuleMatcher` walks the physics-module registry with per-bullet sub-scores; `GapAnalyzer` covers all five §10.4 categories; `ExperimentProposer` writes `experiment_proposal.md` with all five §Phase 5 / 5D bullets; "Proposals" UI tab over `POST /api/proposals` runs the full pipeline. Gate-walk integration test was written BEFORE implementation per the ninth Phase Gate Procedure check.
 
 Current state:
-- Default convention checker covers every Phase 0/1/2/3/4 entity (~390 checks); the opt-in `--include-open-workstreams` mode is empty awaiting Phase 5.
-- Phase status synchronized across `README.md`, `program_development/milestones/{phase_00..phase_04}_*.md`, `program_development/timeline.md`, all `docs_site/src/content/*.tsx` pages that name the phase, and this file.
+- Default convention checker covers every Phase 0/1/2/3/4/5 entity (~415 checks); the opt-in `--include-open-workstreams` mode is empty awaiting Phase 6.
+- Phase status synchronized across `README.md`, `program_development/milestones/{phase_00..phase_05}_*.md`, `program_development/timeline.md`, all `docs_site/src/content/*.tsx` pages that name the phase, and this file.
 - Bugs logged in `bugs_and_fixes/bugfixes.md` with regression checks:
   - 2026-05-02 *Bare `build/` ignore rule swallowed `scripts/build/`*
   - 2026-05-02 *Phase 0 gate false positive for missing skeleton files*
@@ -235,9 +236,11 @@ Current state:
   - 2026-05-02 *Phase 1 false close — seven legitimate review findings*
   - 2026-05-02 *Phase 2 false close — six legitimate review findings*
   - 2026-05-02 *Phase 3 false close — five legitimate review findings*
-- `bugs_and_fixes/agent_error_patterns.md` now carries 29 named patterns. Read them before changing convention-checker logic, gate-criterion behaviors, registry mutations, lifecycle gates, or scientific I/O boundaries.
+  - 2026-05-03 *Phase 4 post-close audit — three legitimate review findings*
+  - 2026-05-03 *Phase 4 post-close audit (round 2) — PDF success path + scope drift*
+- `bugs_and_fixes/agent_error_patterns.md` now carries 33 named patterns. Read them before changing convention-checker logic, gate-criterion behaviors, registry mutations, lifecycle gates, or scientific I/O boundaries.
 
-Phase 5 is next per plan §Phase 5. Open it via **Phase Gate Procedure → Starting a workstream** below: write the gate-walk test FIRST, then enumerate plan deliverables, add per-entity opt-in convention-checker assertions, then implement until everything is green.
+Phase 6 is next per plan §Phase 6. Open it via **Phase Gate Procedure → Starting a workstream** below: write the gate-walk test FIRST, then enumerate plan deliverables, add per-entity opt-in convention-checker assertions, then implement until everything is green.
 
 ---
 

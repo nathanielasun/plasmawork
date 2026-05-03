@@ -206,6 +206,33 @@ export interface ApiClient {
   importPaper(capsule: string, sourcePath: string): Promise<PaperImportResult>;
   getPaperExtracted(capsule: string): Promise<PaperExtracted>;
   editPaperArtifact(capsule: string, body: PaperEditPayload): Promise<{ capsule: string; ok: boolean }>;
+  createProposal(capsule: string, requireReviewed?: boolean): Promise<ProposalResult>;
+}
+
+export interface ProposalMatchRow {
+  name: string;
+  domain: string;
+  version: string;
+  score: number;
+  sub_scores: Record<string, number>;
+  reasons: string[];
+  directory: string;
+}
+
+export interface ProposalGaps {
+  missing_modules: string[];
+  missing_data: string[];
+  unsupported_regimes: string[];
+  invalid_solver_choices: string[];
+  validation_gaps: string[];
+}
+
+export interface ProposalResult {
+  capsule: string;
+  proposal_path: string;
+  modelspec_path: string;
+  matches: { matches: ProposalMatchRow[]; unmatched_requirements: string[] };
+  gaps: ProposalGaps;
 }
 
 export interface PaperImportResult {
@@ -376,6 +403,16 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+        },
+        baseUrl,
+      ),
+    createProposal: (capsule, requireReviewed = true) =>
+      fetchJson(
+        "/proposals",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ capsule, require_reviewed: requireReviewed }),
         },
         baseUrl,
       ),

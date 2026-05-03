@@ -1,6 +1,6 @@
 # Phase 5 — ModelSpec Generation and Module Mapping
 
-**Status: In progress (opened 2026-05-03). All four workstreams 5A, 5B, 5C, 5D open.**
+**Status: Complete (opened 2026-05-03; closed 2026-05-03). All four workstreams 5A, 5B, 5C, 5D shipped.**
 
 ## Objective
 Convert interpreted papers into validated ModelSpecs and map them to available modules. (Plan §Phase 5.)
@@ -25,15 +25,15 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 Starting-point hints from plan §Phase 5:
 
-- ☐ `packages/agent_orchestration/src/model_spec_generation/__init__.py` — generator that emits a schema-valid ModelSpec.
-- ☐ `packages/agent_orchestration/src/model_spec_generation/repair.py` — automatic repair loop on validator failures.
-- ☐ `packages/agent_orchestration/src/module_retrieval/__init__.py` — registry search by required physics with unit / regime / I/O compatibility checks.
-- ☐ `packages/agent_orchestration/src/gap_analysis/__init__.py` — gap report generator producing the five gap categories from plan §10.4.
-- ☐ `packages/agent_orchestration/src/experiment_planning/__init__.py` — experiment-proposal generator (`experiment_proposal.md`).
-- ☐ `configs/agents.yaml` — `model_spec`, `module_retrieval` roles flipped to `enabled: true`.
-- ☐ End-to-end test: one Phase-4 interpretation artifact set is converted into a schema-valid ModelSpec, mapped to existing modules, and a gap report is produced.
-- ☐ `tests/integration/test_modelspec_generation.py`, `tests/integration/test_module_retrieval.py`, `tests/integration/test_gap_analysis.py`.
-- ☐ Experiment proposal UI accessible from `apps/workbench-ui/`.
+- ☑ `packages/agent_orchestration/src/model_spec_generation/__init__.py` — generator that emits a schema-valid ModelSpec.
+- ☑ `packages/agent_orchestration/src/model_spec_generation/repair.py` — automatic repair loop on validator failures.
+- ☑ `packages/agent_orchestration/src/module_retrieval/__init__.py` — registry search by required physics with unit / regime / I/O compatibility checks.
+- ☑ `packages/agent_orchestration/src/gap_analysis/__init__.py` — gap report generator producing the five gap categories from plan §10.4.
+- ☑ `packages/agent_orchestration/src/experiment_planning/__init__.py` — experiment-proposal generator (`experiment_proposal.md`).
+- ☑ `configs/agents.yaml` — `model_spec`, `module_retrieval` roles flipped to `enabled: true`.
+- ☑ End-to-end test: one Phase-4 interpretation artifact set is converted into a schema-valid ModelSpec, mapped to existing modules, and a gap report is produced.
+- ☑ `tests/integration/test_modelspec_generation.py`, `tests/integration/test_module_retrieval.py`, `tests/integration/test_gap_analysis.py`.
+- ☑ Experiment proposal UI accessible from `apps/workbench-ui/`.
 
 ### Status sync at close
 

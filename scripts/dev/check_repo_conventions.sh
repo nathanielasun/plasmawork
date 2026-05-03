@@ -575,44 +575,46 @@ section "Phase 4 — Gate verb walk"
 check_file_exists tests/integration/test_phase_4_gate_walk.py
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch.
-# Phase 5 (ModelSpec Generation and Module Mapping) opened 2026-05-03.
+# Phase 5 — ModelSpec Generation and Module Mapping (Closed 2026-05-03).
+# Every entity below was ratcheted from --include-open-workstreams into
+# the default hard gate at the Phase 5 close commit.
+
+section "Phase 5A — ModelSpec Generator"
+check_file_exists packages/core/src/simworkbench/modeling/__init__.py
+check_file_exists packages/core/src/simworkbench/modeling/generator.py
+check_file_exists packages/core/src/simworkbench/modeling/repair.py
+check_grep_in_file 'class ModelSpecGenerator' packages/core/src/simworkbench/modeling/generator.py "ModelSpecGenerator defined"
+check_grep_in_file 'def repair' packages/core/src/simworkbench/modeling/repair.py "repair loop defined"
+check_file_exists tests/unit/test_modelspec_generator.py
+check_file_exists tests/integration/test_modelspec_generation.py
+
+section "Phase 5B — Module Retrieval"
+check_file_exists packages/core/src/simworkbench/modeling/module_match.py
+check_grep_in_file 'class ModuleMatcher' packages/core/src/simworkbench/modeling/module_match.py "ModuleMatcher defined"
+check_file_exists tests/integration/test_module_retrieval.py
+
+section "Phase 5C — Gap Analysis"
+check_file_exists packages/core/src/simworkbench/modeling/gap_analysis.py
+check_grep_in_file 'class GapAnalyzer' packages/core/src/simworkbench/modeling/gap_analysis.py "GapAnalyzer defined"
+check_file_exists tests/integration/test_gap_analysis.py
+
+section "Phase 5D — Experiment Proposal"
+check_file_exists packages/core/src/simworkbench/modeling/experiment_proposal.py
+check_grep_in_file 'class ExperimentProposer' packages/core/src/simworkbench/modeling/experiment_proposal.py "ExperimentProposer defined"
+check_file_exists apps/workbench-ui/src/components/proposal/ExperimentProposal.tsx
+check_file_exists apps/workbench-ui/src/__tests__/ExperimentProposal.test.tsx
+check_grep_in_file '/api/proposals' packages/core/src/simworkbench/api/server.py "API exposes /api/proposals (Phase 5D)"
+check_grep_in_file 'proposals' apps/workbench-ui/src/App.tsx "App.tsx routes /proposals"
+
+section "Phase 5 — Cross-cutting + gate walk"
+check_grep_in_file 'role: model_spec' configs/agents.yaml "agents.yaml lists model_spec role"
+check_file_exists tests/integration/test_phase_5_gate_walk.py
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch. Currently empty — Phase 5 closed 2026-05-03.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
-  # Workstream 5A — ModelSpec Generator (plan §Phase 5 / 5A).
-  section "Open Workstream TODOs — Phase 5A ModelSpec Generator"
-  check_file_exists packages/core/src/simworkbench/modeling/__init__.py
-  check_file_exists packages/core/src/simworkbench/modeling/generator.py
-  check_file_exists packages/core/src/simworkbench/modeling/repair.py
-  check_grep_in_file 'class ModelSpecGenerator' packages/core/src/simworkbench/modeling/generator.py "ModelSpecGenerator defined"
-  check_grep_in_file 'def repair' packages/core/src/simworkbench/modeling/repair.py "repair loop defined"
-  check_file_exists tests/unit/test_modelspec_generator.py
-  check_file_exists tests/integration/test_modelspec_generation.py
-
-  # Workstream 5B — Module Retrieval (plan §Phase 5 / 5B).
-  section "Open Workstream TODOs — Phase 5B Module Retrieval"
-  check_file_exists packages/core/src/simworkbench/modeling/module_match.py
-  check_grep_in_file 'class ModuleMatcher' packages/core/src/simworkbench/modeling/module_match.py "ModuleMatcher defined"
-  check_file_exists tests/integration/test_module_retrieval.py
-
-  # Workstream 5C — Gap Analysis (plan §Phase 5 / 5C).
-  section "Open Workstream TODOs — Phase 5C Gap Analysis"
-  check_file_exists packages/core/src/simworkbench/modeling/gap_analysis.py
-  check_grep_in_file 'class GapAnalyzer' packages/core/src/simworkbench/modeling/gap_analysis.py "GapAnalyzer defined"
-  check_file_exists tests/integration/test_gap_analysis.py
-
-  # Workstream 5D — Experiment Proposal (plan §Phase 5 / 5D).
-  section "Open Workstream TODOs — Phase 5D Experiment Proposal"
-  check_file_exists packages/core/src/simworkbench/modeling/experiment_proposal.py
-  check_grep_in_file 'class ExperimentProposer' packages/core/src/simworkbench/modeling/experiment_proposal.py "ExperimentProposer defined"
-  check_file_exists apps/workbench-ui/src/components/proposal/ExperimentProposal.tsx
-  check_file_exists apps/workbench-ui/src/__tests__/ExperimentProposal.test.tsx
-  check_grep_in_file '/api/proposals' packages/core/src/simworkbench/api/server.py "API exposes /api/proposals (Phase 5D)"
-  check_grep_in_file 'proposals' apps/workbench-ui/src/App.tsx "App.tsx routes /proposals"
-
-  # Cross-cutting + gate verb walk.
-  section "Open Workstream TODOs — Phase 5 cross-cutting + gate walk"
-  check_grep_in_file 'role: model_spec' configs/agents.yaml "agents.yaml lists model_spec role"
-  check_file_exists tests/integration/test_phase_5_gate_walk.py
+  section "Open Workstream TODOs"
+  echo "  no open workstreams — Phase 5 closed 2026-05-03; Phase 6 not yet opened."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"
