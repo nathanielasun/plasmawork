@@ -18,7 +18,6 @@ import {
 export default function ExperimentProposal() {
   const [capsules, setCapsules] = useState<CapsuleEntry[]>([]);
   const [selectedCapsule, setSelectedCapsule] = useState<string>("");
-  const [requireReviewed, setRequireReviewed] = useState<boolean>(true);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ProposalResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +35,7 @@ export default function ExperimentProposal() {
     setError(null);
     setResult(null);
     try {
-      const r = await apiClient.createProposal(selectedCapsule, requireReviewed);
+      const r = await apiClient.createProposal(selectedCapsule);
       setResult(r);
     } catch (e) {
       setError(String(e));
@@ -83,15 +82,10 @@ export default function ExperimentProposal() {
             </select>
           </label>
         </p>
-        <p>
-          <label>
-            <input
-              type="checkbox"
-              checked={requireReviewed}
-              onChange={(e) => setRequireReviewed(e.target.checked)}
-            />{" "}
-            Require reviewer signatures on every interpretation row
-          </label>
+        <p className="muted">
+          The backend always enforces plan §Phase 4's hard rule that
+          interpretation must be human-reviewed before it can feed
+          ModelSpec generation. There is no UI bypass.
         </p>
         <p>
           <button type="button" onClick={generate} disabled={busy}>

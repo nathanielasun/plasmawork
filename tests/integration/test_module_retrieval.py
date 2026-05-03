@@ -67,3 +67,42 @@ def test_match_flags_unmatched_solver():
     )
     report = ModuleMatcher().match(spec)
     assert any("no_such_solver_xyz" in r for r in report.unmatched_requirements)
+
+
+def test_unit_compat_rejects_dimensionally_incompatible_outputs(tmp_path):
+    """Regression for the post-Phase-5-close finding "module matching can
+    report a perfect match without real I/O or unit compatibility".
+
+    A fake module that declares only ``second``-dimensioned outputs must
+    NOT score 1.0 against a species-density ModelSpec (whose canonical
+    output dimension is number density).
+    """
+    from pathlib import Path
+
+    fake_root = tmp_path / "fake_modules"
+    fake = fake_root / "species" / "fake_only_seconds"
+    fake.mkdir(parents=True)
+    (fake / "module.yaml").write_text(
+        "name: fake_only_seconds\n"
+        "version: 0.1.0\n"
+        "domain: species\n"
+        "status: candidate\n"
+        "outputs:\n"
+        "  - name: t\n"
+        "    units: second\n",
+        encoding="utf-8",
+    )
+    matcher = ModuleMatcher(modules_root=fake_root)
+    report = matcher.match(_bare_spec())
+    fake_match = next(m for m in report.matches if m.name == "fake_only_seconds")
+    # second is one of the expected dims (time axis), so io_match scores
+    # partial — but unit_compat should NOT be 1.0 because there's no
+    # number-density output.
+    assert fake_match.sub_scores["unit_compat"] < 1.0, (
+        f"fake_only_seconds scored {fake_match.sub_scores['unit_compat']} "
+        "for unit_compat — module-output 'second' is not a number density."
+    )
+    # And the overall score is below 1.0; nothing about this module
+    # genuinely matches a species-density spec.
+    assert fake_match.score < 1.0
+    _ = Path  # keep import used

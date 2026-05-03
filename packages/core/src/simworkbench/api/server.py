@@ -143,10 +143,18 @@ class PaperEditBody(BaseModel):
 
 
 class ProposalBody(BaseModel):
-    """POST /api/proposals body — Phase 5 end-to-end runner."""
+    """POST /api/proposals body — Phase 5 end-to-end runner.
+
+    Plan §Phase 4 hard rule: agent-only interpretation cannot feed Phase 5.
+    The body deliberately does NOT carry a ``require_reviewed`` knob —
+    earlier post-Phase-5-close audit found the API exposed exactly that
+    knob and any client could opt out by sending ``require_reviewed=false``.
+    Hard rules belong inside the function, not as a caller-controlled
+    flag (carries `agent_error_patterns.md` "Hard rule made optional via
+    a client-controlled API parameter").
+    """
 
     capsule: str
-    require_reviewed: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -789,9 +797,13 @@ def create_app() -> FastAPI:
 
         capsule_path = _resolve_capsule(body.capsule)
         try:
-            spec = ModelSpecGenerator(
-                require_reviewed=body.require_reviewed
-            ).generate(capsule_path)
+            # require_reviewed is hard-coded True at the API boundary.
+            # Plan §Phase 4 forbids consuming agent-only interpretation,
+            # and that rule is not caller-controlled. Tests use the
+            # library directly with the kwarg.
+            spec = ModelSpecGenerator(require_reviewed=True).generate(
+                capsule_path
+            )
         except ModelSpecGenerationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         matches = ModuleMatcher().match(spec)

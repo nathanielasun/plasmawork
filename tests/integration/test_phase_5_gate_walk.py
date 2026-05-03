@@ -250,6 +250,89 @@ def test_phase_5_gate_walk_api_propose(reviewed_capsule):
 # ---------------------------------------------------------------------------
 
 
+def test_phase_5_refuses_when_interpretation_markdown_still_has_review_banner(
+    reviewed_capsule,
+):
+    """Regression for the post-Phase-5-close finding "Phase 5 only checks
+    edited_by on equations/parameters, not interpretation Markdown".
+
+    Plan §Phase 4 hard rule covers every interpretation artifact, not
+    just the structured rows. A capsule with signed equations / signed
+    parameters BUT one of the four interpretation Markdown files still
+    carrying the agent draft banner must fail the gate.
+    """
+    from simworkbench.modeling import (
+        ModelSpecGenerationError,
+        ModelSpecGenerator,
+    )
+
+    # Plant the banner in assumptions.md (the other three Markdown files
+    # stay banner-free from the fixture).
+    target = reviewed_capsule / "paper_sources" / "assumptions.md"
+    target.write_text(
+        "# Assumptions\n\n"
+        "> **Status: Draft — needs human review.** This artifact was\n"
+        "> produced by an automated interpretation agent.\n\n"
+        "- placeholder\n",
+        encoding="utf-8",
+    )
+    spec_path = reviewed_capsule / "model" / "model_spec.yaml"
+    assert not spec_path.exists()
+    with pytest.raises(
+        ModelSpecGenerationError,
+        match="agent draft|needs human review|interpretation:",
+    ):
+        ModelSpecGenerator().generate(reviewed_capsule)
+    assert not spec_path.exists(), (
+        "Generator wrote a ModelSpec despite the unreviewed Markdown — "
+        "the §Phase 4 hard rule leaked through the Markdown side."
+    )
+
+
+def test_phase_5_api_rejects_require_reviewed_bypass(reviewed_capsule):
+    """Regression for the post-Phase-5-close finding "review gate is
+    publicly bypassable". A client that sends ``require_reviewed: false``
+    in the body MUST NOT be able to opt out of the §Phase 4 hard rule.
+
+    The fix removes the field from ``ProposalBody`` entirely and ignores
+    any extra-field attempt (Pydantic's default rejects unknown fields
+    when ``extra="forbid"``; even without that, the endpoint never
+    reads the field). After the rejection, no model_spec.yaml or
+    experiment_proposal.md should land on disk.
+    """
+    import json
+    from pathlib import Path
+
+    # Strip edited_by from the equations so the spec generator MUST refuse.
+    eqs_path = reviewed_capsule / "paper_sources" / "extracted_equations.json"
+    eqs = json.loads(eqs_path.read_text())
+    for eq in eqs:
+        eq["edited_by"] = ""
+    eqs_path.write_text(json.dumps(eqs, indent=2), encoding="utf-8")
+
+    spec_path = reviewed_capsule / "model" / "model_spec.yaml"
+    proposal_path = reviewed_capsule / "experiment_proposal.md"
+    assert not spec_path.exists()
+    assert not proposal_path.exists()
+
+    # Attempt the bypass — this used to write both files. Now the field
+    # is silently ignored and the unreviewed-input check fires.
+    r = _client().post(
+        "/api/proposals",
+        json={"capsule": reviewed_capsule.name, "require_reviewed": False},
+    )
+    assert r.status_code == 400, r.text
+    # And no artifacts leaked.
+    assert not spec_path.exists(), (
+        "ModelSpec was written despite the bypass attempt — the hard rule "
+        "leaked through the API."
+    )
+    assert not proposal_path.exists(), (
+        "experiment_proposal.md was written despite the bypass attempt."
+    )
+    _ = Path  # keep the import used
+
+
 def test_phase_5_gate_walk_refuses_unreviewed_interpretation(reviewed_capsule):
     """Plan §Phase 4 hard rule: agent-generated interpretation can't feed
     Phase 5 without a human reviewer's edit. We assert the generator

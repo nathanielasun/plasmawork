@@ -96,7 +96,13 @@ agents:
 
   - role: security_sandbox
     description: Prevents unsafe file or execution behavior. Always-on once any agent is enabled.
-    enabled: false
+    # Per the always-on rule above: as soon as ANY other role flips to
+    # enabled, this role MUST be enabled too. The Phase-5 audit found
+    # paper_ingestion + physics_interpretation + model_spec +
+    # module_retrieval enabled while security_sandbox stayed off — the
+    # rule was prose, not enforced. tests/regression/
+    # test_security_sandbox_enforcement.py asserts the invariant.
+    enabled: true
     phase: 4
     capabilities: [veto]
 

@@ -32,6 +32,49 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-03: Phase 5 post-close audit — four legitimate review findings
+
+### Affected subsystem
+Phase 5 ModelSpec generation + module mapping (commit `e886ede`). The Phase 5 close passed all twelve behavioral checks but a user audit found four gaps the checks didn't cover.
+
+### Symptoms
+1. **Critical: Phase 5 review gate publicly bypassable.** `POST /api/proposals` accepted `require_reviewed: false` in the body; the UI exposed a checkbox that flipped the same flag. A direct probe with the bypass wrote `model_spec.yaml` and `experiment_proposal.md` from agent-only interpretation, in violation of plan §Phase 4's hard rule.
+2. **High: Phase 5 only checked `edited_by` on structured rows.** The four interpretation Markdown files (`paper_summary.md`, `assumptions.md`, `validity_domain.md`, `implementation_plan.md`) carry the agent's "needs human review" / "AGENT DRAFT" banner. The generator's `_enforce_human_review` walked equations + parameters but never opened the Markdown. A capsule with signed rows + banner-bearing Markdown was accepted.
+3. **High: ModuleMatcher's `unit_compat` was a parse-check, not a dimensionality-check.** A fake module declaring a single `second`-dimensioned output scored `unit_compat=1.0` for a species-density ModelSpec. The check verified that every module-output unit parsed cleanly, not that it was dimensionally what the spec needed.
+4. **High cross-phase safety drift: `security_sandbox` disabled.** `agents.yaml` declares the role as "Always-on once any agent is enabled". Phases 4+5 enabled four other roles; `security_sandbox.enabled` stayed `false`. The rule was prose; no code read or enforced it.
+
+### Root cause
+Four new failure modes:
+
+- *Hard rule made optional via a client-controlled API parameter* — issue 1.
+- *Validating one input shape but not all input shapes the rule covers* — issue 2.
+- *Compatibility checks that pattern-match instead of validating dimensionality* — issue 3.
+- *Cross-cutting safety rule encoded in a comment but not enforced in code* — issue 4.
+
+### Fix
+- `ProposalBody` no longer accepts `require_reviewed`. The endpoint hard-codes `True`. UI checkbox removed; `apiClient.createProposal(capsule)` no longer accepts the flag. Regression test posts the bypass attempt, asserts 400, AND verifies no artifacts land on disk.
+- `_enforce_human_review` now also walks the four interpretation Markdown documents and refuses any that still contain `"needs human review"` or `"agent draft"`. Regression test plants the banner in `assumptions.md` and asserts the generator refuses.
+- `ModuleMatcher.unit_compat` rewritten: `_required_output_dims(spec)` returns the dims the consumer needs (number density for species), `unit_compat = n_required_covered / len(required)`. Parses-but-wrong-dim → 0. Regression test creates a fake module whose only output is `second` and asserts `unit_compat < 1.0`.
+- `agents.yaml` flips `security_sandbox.enabled` to `true`. New `tests/regression/test_security_sandbox_enforcement.py` reads the YAML and asserts: if any non-sandbox role is enabled, `security_sandbox` MUST be enabled too.
+
+### Regression protection
+- `test_phase_5_gate_walk.py::test_phase_5_api_rejects_require_reviewed_bypass`
+- `test_phase_5_gate_walk.py::test_phase_5_refuses_when_interpretation_markdown_still_has_review_banner`
+- `test_module_retrieval.py::test_unit_compat_rejects_dimensionally_incompatible_outputs`
+- `test_security_sandbox_enforcement.py` (3 tests)
+
+### Agent warning — sixteen behavioral checks
+The Phase Gate Procedure's twelve checks didn't catch any of these four issues. Four new checks join the list:
+
+- **#13. Hard rules don't take a client-controlled flag.** Every "must hold" rule is enforced inside the library, not by trusting a request-body field. UI controls don't expose toggles for security checks.
+- **#14. Mixed-shape rules cover every shape.** When a rule applies to "every interpretation artifact" (or any union-of-shapes set), enumerate the shapes and assert the check has a branch per shape.
+- **#15. Compatibility checks compare against the consumer's contract.** Don't accept "parses cleanly" or "is non-empty" as compatibility. Compute the consumer's required shape and check coverage of THAT.
+- **#16. Cross-cutting "always-on" prose has a regression test.** Each cross-cutting invariant has a test that reads the relevant state and fails when the invariant drifts.
+
+Phases 1, 2, 3, 4, and 5 each shipped an incomplete close. Sixteen behavioral checks now — four more than before.
+
+---
+
 ## 2026-05-03: Phase 4 post-close audit (round 2) — PDF success path + scope drift
 
 ### Affected subsystem

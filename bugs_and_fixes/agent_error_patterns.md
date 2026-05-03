@@ -857,3 +857,113 @@ For every "supports X" claim — PDF parsing, HDF5 writing, GPU backends, option
 
 ### Bug log
 - 2026-05-03 *Phase 4 post-close audit (round 2)*: PDF import returned HTTP 500 because (a) pypdf wasn't installed, (b) the API didn't catch `TextExtractionError`. The structured error was correct in principle but unreachable in practice; no PDF was ever successfully imported by the Phase 4 close.
+
+---
+
+## Error Pattern: Hard rule made optional via a client-controlled API parameter
+
+### Why it is bad
+Plan §Phase 4 says agent-only interpretation cannot feed Phase 5 ModelSpec generation — a hard rule, no exceptions. The Phase 5 close exposed a `require_reviewed: bool` field on `POST /api/proposals` (and a checkbox in the UI). Any client (curl, agent, scripted attacker) could send `{"require_reviewed": false}` and the rule was silently bypassed. A direct probe wrote `model_spec.yaml` and `experiment_proposal.md` from agent-only interpretation.
+
+The pattern: a hard rule gets a `bypass: bool` knob, usually because tests or development workflows want the bypass. The knob travels from the library to the API to the UI, and nothing along the way questions whether the rule should still be optional at the system boundary. Clients trust client-supplied flags, hard rules become soft.
+
+### Required behavior
+Hard rules belong **inside** the function, not as a caller-controlled flag at the system boundary. Concretely:
+
+- Library functions can take a `_for_tests=True` (or similarly clearly-scoped) keyword that bypasses the rule. The naming makes it clear the flag is not for production callers.
+- Public API endpoints NEVER expose the flag. The endpoint hard-codes `require_reviewed=True` (or whatever the rule's positive form is); extra fields in the request body are silently ignored or rejected.
+- UI controls follow the same rule: no checkbox or toggle for "skip the security check". The user has access to the library if they need a one-off bypass for development; the UI represents production behavior.
+- A regression test sends the bypass attempt from outside the library and asserts the rule still fires. Negative test on the bypass field is the canary.
+
+### Detection
+- Pre-close grep: `grep -rn "require_reviewed\|bypass\|skip_check\|force\|override" packages/core/src/simworkbench/api/server.py` — any of these knobs on a request-body schema is a flag.
+- Test review: every "soft option" knob on an API body must have a regression test that sends the negation and asserts the gate still fires (returns 4xx, persists no artifacts).
+- Code review: a hard rule that admits a config flag is a strict-rule that's been silently downgraded. Question the flag.
+
+### Bug log
+- 2026-05-03 *Phase 5 post-close audit*: `POST /api/proposals` accepted `require_reviewed=false`; UI had a "Require reviewer signatures" checkbox; bypass wrote `model_spec.yaml` and `experiment_proposal.md` from agent-only interpretation.
+
+---
+
+## Error Pattern: Validating one input shape but not all input shapes the rule covers
+
+### Why it is bad
+The Phase 4 hard rule covers every interpretation artifact: equations, parameters, AND the four interpretation Markdown files (`paper_summary.md`, `assumptions.md`, `validity_domain.md`, `implementation_plan.md`). The Phase 5 generator's `_enforce_human_review` checked the structured rows (`edited_by` field on equations + parameters) but not the Markdown. A capsule with signed rows but Markdown still carrying the agent banner ("AGENT DRAFT — needs human review") was accepted, and a ModelSpec was written.
+
+The pattern: a rule applies to an *artifact set* of mixed shapes (JSON rows + YAML rows + Markdown files), and the implementation spans only the shapes that already had structured fields. The rule was about whether the artifact had been reviewed; the check was about whether the rows had been signed. A reviewer who edited the rows but not the Markdown looked reviewed by the row-only check.
+
+### Required behavior
+A check that enforces a rule across a mixed-shape artifact set has one branch per shape:
+
+- Structured rows: assert the per-row review field (`edited_by`, `reviewed_at`, etc.) is non-empty.
+- Free-form Markdown / text: assert the agent's draft banner is no longer present (e.g. `"needs human review" not in body.lower()`). The banner is the agent's "I haven't been reviewed yet" signal; deleting or rewriting it is the reviewer's signature.
+- Other shapes (binary, generated config) have their own per-shape review marker.
+
+The check enumerates EVERY shape the rule covers, not just the easy-to-validate ones. A single regression test plants the unreviewed banner in a Markdown file and asserts the rule fires.
+
+### Detection
+- For every "is this artifact reviewed?" check, list the artifact shapes the rule covers. Diff against the check's branches. Missing shapes are the gap.
+- Code review: a `_enforce_*` function that walks one container of one shape (`for row in rows:`) when the rule's prose says "every interpretation artifact" deserves a review-shape check.
+- Banner grep: production capsules should NEVER carry the agent draft banner in artifacts that have crossed a review gate. A grep that finds the banner in a "reviewed" capsule is a leak.
+
+### Bug log
+- 2026-05-03 *Phase 5 post-close audit*: Phase 5 only checked `edited_by` on equations/parameters; capsule with signed rows + agent-banner Markdown was accepted as reviewed.
+
+---
+
+## Error Pattern: Compatibility checks that pattern-match instead of validating dimensionality
+
+### Why it is bad
+Phase 5B's `ModuleMatcher.unit_compat` returned 1.0 if every module-output unit was *parseable by pint* — regardless of whether the dimensionality matched the ModelSpec's needs. A fake module with a single output of dimension `[time]` (units: `second`) scored 1.0 against a species-domain ModelSpec whose canonical output is number density (`1 / [length]^3`). Parsing succeeds; compatibility doesn't.
+
+Same pattern: a check that *something well-formed exists* gets confused with a check that *the right thing exists*. "Has any output" gets confused with "has the output the spec needs"; "every unit string parses" gets confused with "every unit dimension matches". The agent picks the easier check because it's easier to write.
+
+### Required behavior
+A compatibility check distinguishes *well-formedness* from *fitness for purpose*:
+
+- Well-formedness: parses cleanly (units → pint, JSON → schema, etc.). Necessary but not sufficient.
+- Fitness for purpose: the parsed value satisfies the consumer's contract. For unit compatibility: the dimensionality matches. For schema validation: every required field is populated AND the values are in-range.
+
+Concretely for `ModuleMatcher`:
+
+- `_required_output_dims(spec)` enumerates the dimensionalities the consumer (the runtime + ModelSpec) needs. For species-domain specs that's `1 / [length]^3` (number density).
+- `unit_compat` is the fraction of *required* dims covered by some module output, NOT the fraction of module outputs that parse.
+- A module that emits only `second` for a species-domain spec scores 0/1 = 0.0, not 1.0.
+
+### Detection
+- For every "compat" / "match" / "compatible" sub-score: write a fake-input test where the input is well-formed (parses, validates) but wrong-for-purpose. Assert the score is < 1.0.
+- Code review: a check that runs `try / parse / except: return 0.0; else: return 1.0` is a well-formedness check, not a compatibility check. The compatibility check should compare the parsed thing to a target, not just succeed at parsing.
+
+### Bug log
+- 2026-05-03 *Phase 5 post-close audit*: a fake `rate_equation_0d` module outputting `second` scored `unit_compat=1.0` for a species-density ModelSpec.
+
+---
+
+## Error Pattern: Cross-cutting safety rule encoded in a comment but not enforced in code
+
+### Why it is bad
+`configs/agents.yaml` says::
+
+    - role: security_sandbox
+      description: Prevents unsafe file or execution behavior. Always-on once any agent is enabled.
+      enabled: false
+
+Across Phases 4 and 5 the workbench enabled `paper_ingestion`, `physics_interpretation`, `model_spec`, and `module_retrieval`. The "always-on once any agent is enabled" rule was prose; nothing read or enforced it. `security_sandbox.enabled` stayed `false`.
+
+The pattern: a safety invariant is documented in a comment / description / docstring, but no code reads the comment. As phase work flips other rules, the safety rule drifts. The agent looks at the rule it's flipping and doesn't re-examine the rules cross-linked from it.
+
+### Required behavior
+A cross-cutting rule that says "X must hold whenever Y" needs:
+
+1. A regression test that asserts the invariant. The test reads the relevant config / state / artifact and fails when X drifts from Y.
+2. The rule's prose stays for human readers, but the test is the enforcement.
+3. When the rule's scope changes (a new agent role, a new artifact type), the test fails until the rule is re-applied.
+
+For `agents.yaml`'s always-on `security_sandbox`: `tests/regression/test_security_sandbox_enforcement.py` reads the YAML, computes `enabled - {security_sandbox}`, and fails if that set is non-empty while `security_sandbox` is disabled.
+
+### Detection
+- Grep for "always-on", "must be enabled", "always required", "always check" in config / docs / patterns. Each match needs a regression test that fails when the invariant drifts.
+- Code review: a config field whose comment makes a cross-cutting claim and whose value doesn't reflect the current scope is a flag. The reviewer asks: what other state changed that should have triggered this?
+
+### Bug log
+- 2026-05-03 *Phase 5 post-close audit*: `security_sandbox.enabled = false` while `paper_ingestion`, `physics_interpretation`, `model_spec`, `module_retrieval` were all enabled — violated the "Always-on once any agent is enabled" rule that the role's own description carried.

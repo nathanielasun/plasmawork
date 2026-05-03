@@ -69,6 +69,14 @@ def _modules_root() -> Path:
     return repo_root() / "packages" / "physics_modules"
 
 
+def _relative_to_repo(path: Path) -> str:
+    """Return ``path`` as repo-relative when possible, else absolute."""
+    try:
+        return str(path.relative_to(repo_root()))
+    except ValueError:
+        return str(path)
+
+
 class ModuleMatcher:
     """Match a ModelSpec against the on-disk physics-module registry."""
 
@@ -97,7 +105,7 @@ class ModuleMatcher:
                     score=score,
                     sub_scores=sub_scores,
                     reasons=reasons,
-                    directory=str(module_yaml.parent.relative_to(repo_root())),
+                    directory=_relative_to_repo(module_yaml.parent),
                 )
             )
         # Sort highest-scoring first.
@@ -137,34 +145,77 @@ def _score(metadata: dict[str, Any], spec: ModelSpec) -> tuple[dict[str, float],
     else:
         sub["domain_match"] = 0.0
 
-    # 5B.3 — I/O comparison: a species-domain spec wants a module with at
-    # least one array-shaped output; we don't have a tight contract yet,
-    # but presence of a module-level outputs list is a positive signal.
+    # 5B.3 — I/O comparison: every module output port whose `units` is
+    # dimensionally compatible with one of the ModelSpec's expected
+    # output dimensions (number density for species; field-specific for
+    # fields_) counts as a hit. Missing or unparseable units → 0.
     outputs = metadata.get("outputs") or []
-    if outputs:
-        sub["io_match"] = 1.0
-        reasons.append(f"module declares {len(outputs)} output port(s)")
-    else:
+    expected_dims = _expected_output_dims(spec)
+    if not outputs:
         sub["io_match"] = 0.0
         reasons.append("module declares no outputs")
+    else:
+        registry = get_registry()
+        n_compatible = 0
+        for port in outputs:
+            unit = port.get("units", "")
+            if not unit:
+                continue
+            try:
+                module_dim = registry.parse_units(unit).dimensionality
+            except Exception:  # noqa: BLE001
+                continue
+            if any(module_dim == d for d in expected_dims):
+                n_compatible += 1
+        sub["io_match"] = (
+            min(1.0, n_compatible / max(len(expected_dims), 1))
+            if expected_dims
+            else 0.5
+        )
+        reasons.append(
+            f"{n_compatible}/{len(outputs)} output port(s) match an expected "
+            f"ModelSpec dimensionality"
+        )
 
-    # 5B.4 — Unit compatibility: every module output unit must be
-    # parseable by pint. If any unit fails to parse, it's a mismatch.
+    # 5B.4 — Unit compatibility: REQUIRED spec dims must each be covered
+    # by some module output. The earlier implementation accepted any
+    # parseable unit (including a single `second`-port module for a
+    # number-density spec) as 1.0. The fix: check coverage of the spec's
+    # *required* output dims (species → number density) and unparseable
+    # units. Carries `agent_error_patterns.md` "Compatibility checks that
+    # pattern-match instead of validating dimensionality".
     registry = get_registry()
     bad_units: list[str] = []
+    module_dims = []
     for port in outputs:
         unit = port.get("units", "")
         if not unit:
             continue
         try:
-            registry.parse_units(unit)
+            module_dims.append(registry.parse_units(unit).dimensionality)
         except Exception:  # noqa: BLE001
             bad_units.append(unit)
+    required_dims = _required_output_dims(spec)
     if bad_units:
         sub["unit_compat"] = 0.0
         reasons.append(f"unparseable unit(s): {bad_units!r}")
-    else:
+    elif not required_dims:
         sub["unit_compat"] = 1.0
+    else:
+        n_required_covered = sum(
+            1 for rd in required_dims if any(md == rd for md in module_dims)
+        )
+        sub["unit_compat"] = n_required_covered / len(required_dims)
+        if n_required_covered == 0:
+            reasons.append(
+                f"module covers 0/{len(required_dims)} of the spec's "
+                "required output dimensionalities"
+            )
+        elif n_required_covered < len(required_dims):
+            reasons.append(
+                f"module covers {n_required_covered}/{len(required_dims)} "
+                "required output dimensionalities (partial)"
+            )
 
     # 5B.5 — Solver compatibility.
     recommended = {s.name for s in spec.solvers.recommended}
@@ -177,6 +228,51 @@ def _score(metadata: dict[str, Any], spec: ModelSpec) -> tuple[dict[str, float],
         sub["solver_match"] = 0.0
 
     return sub, reasons
+
+
+def _required_output_dims(spec: ModelSpec) -> list:
+    """The dimensionalities a module MUST cover to count as compatible.
+
+    For species-domain specs the required output is number density —
+    runtime needs species trajectories in number density. Time is
+    accepted as part of `_expected_output_dims` (a module's auxiliary
+    output) but is not required at this gate; modules that ONLY emit
+    time should not score 1.0 against a species spec.
+    """
+    registry = get_registry()
+    required: list = []
+    if spec.species:
+        required.append(registry.parse_units("1 / m^3").dimensionality)
+    return required
+
+
+def _expected_output_dims(spec: ModelSpec) -> list:
+    """Collect the dimensionalities a module would need to produce to be
+    compatible with this ModelSpec.
+
+    For species-domain specs the canonical output is number density
+    (``1 / [length]^3``) — the runtime returns species trajectories in
+    that unit. Plus a time axis (``[time]``). For field-bearing specs we
+    also accept the field's declared init-units when present.
+    """
+    registry = get_registry()
+    expected: list = []
+    # Species → number density.
+    if spec.species:
+        expected.append(registry.parse_units("1 / m^3").dimensionality)
+    # Always accept a time axis.
+    expected.append(registry.parse_units("second").dimensionality)
+    # Field-specific dimensionalities, if any field declares units in
+    # initialization.
+    for field_def in spec.fields_:
+        init = field_def.initialization or {}
+        for value in init.values():
+            if isinstance(value, str):
+                try:
+                    expected.append(registry.parse_units(value).dimensionality)
+                except Exception:  # noqa: BLE001
+                    continue
+    return expected
 
 
 __all__ = ["ModuleMatch", "ModuleMatchReport", "ModuleMatcher"]

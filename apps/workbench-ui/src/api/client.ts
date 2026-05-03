@@ -206,7 +206,7 @@ export interface ApiClient {
   importPaper(capsule: string, sourcePath: string): Promise<PaperImportResult>;
   getPaperExtracted(capsule: string): Promise<PaperExtracted>;
   editPaperArtifact(capsule: string, body: PaperEditPayload): Promise<{ capsule: string; ok: boolean }>;
-  createProposal(capsule: string, requireReviewed?: boolean): Promise<ProposalResult>;
+  createProposal(capsule: string): Promise<ProposalResult>;
 }
 
 export interface ProposalMatchRow {
@@ -406,13 +406,16 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
         },
         baseUrl,
       ),
-    createProposal: (capsule, requireReviewed = true) =>
+    createProposal: (capsule) =>
+      // Backend enforces plan §Phase 4 hard rule (must be human-reviewed)
+      // unconditionally. Earlier audit found this was bypassable via a
+      // `require_reviewed: false` body field; that knob is gone now.
       fetchJson(
         "/proposals",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ capsule, require_reviewed: requireReviewed }),
+          body: JSON.stringify({ capsule }),
         },
         baseUrl,
       ),

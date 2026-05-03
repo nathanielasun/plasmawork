@@ -353,9 +353,9 @@ git commit -m "..."   # Use the HEREDOC pattern below.
 git push
 ```
 
-### Closing a phase — twelve behavioral checks (Phase 2 + 3 + 4 lessons)
+### Closing a phase — sixteen behavioral checks (Phase 2 + 3 + 4 + 5 lessons)
 
-Phases 1, 2, 3, and 4 each shipped an incomplete close (Phase 4 twice). Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these twelve before the close commit:
+Phases 1, 2, 3, 4, and 5 each shipped an incomplete close (Phase 4 twice; Phase 5 once). Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these sixteen before the close commit:
 
 1. **End-to-end gate walk.** Every plan §Phase-N gate criterion exercised on a real artifact. For Phase 2 that meant: run the example, save it as a capsule, reload it via `scripts/dev/run_capsule.sh`, validate it, export it, fork it, reload the fork. Each step on its own integration test, not just a manual demo.
 2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README, CLAUDE.md, or any docs page advertises as a current entrypoint runs successfully on a typical input. (Phase 2 close shipped `scripts/dev/run_capsule.sh` still as the Phase-0 stub even though README documented it as the reload path.)
@@ -378,7 +378,15 @@ Phases 1, 2, 3, and 4 each shipped an incomplete close (Phase 4 twice). Steps 1�
 
 12. **Success path runs, not just the structured failure** *(Phase 4 audit round 2)*. For every "supports X" claim, the close commit verifies three things: (a) the dep is installed (`pyproject.toml` + `scripts/dev/install.sh` + a probe like `.venv/bin/python -c "import pypdf"`), (b) the structured exception propagates to the user (every `raise <Error>` has a matching `try / except` in `simworkbench.api.server` AND a test asserting the documented status code), (c) a happy-path test exercises the success path with a real fixture (for binary formats: hand-roll the smallest valid file). The Phase 4 close had a clean `TextExtractionError` for "PDF without pypdf" — but pypdf wasn't installed, the API didn't catch the error (HTTP 500 instead of 400), and no test ever imported a PDF successfully. The structured failure path was complete; the success path was unreachable.
 
-The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 33 patterns; the three new ones from the first Phase 4 audit + one from the second audit are at the bottom).
+13. **Hard rules don't take a client-controlled flag** *(Phase 5 audit lesson)*. Every "must hold" rule is enforced inside the library, not by trusting a request-body field. UI controls do not expose toggles for security checks. A library may keep a `_for_tests=True` kwarg, but the API endpoint hard-codes the rule. Negative regression test: send the bypass attempt as a body field; assert the rule still fires (4xx, no artifacts on disk). The Phase 5 close shipped `POST /api/proposals` accepting `require_reviewed: false`; bypass wrote `model_spec.yaml` and `experiment_proposal.md` from agent-only interpretation.
+
+14. **Mixed-shape rules cover every shape** *(Phase 5 audit lesson)*. When a rule applies to "every interpretation artifact" (or any union-of-shapes set), enumerate the shapes and assert the check has a branch per shape. Structured rows: `edited_by` non-empty. Markdown / free text: agent's "needs human review" / "AGENT DRAFT" banner is gone. Binary blobs: per-shape review marker. The Phase 5 close shipped a `_enforce_human_review` that walked equations + parameters but never opened the four interpretation Markdown files; capsule with signed rows + banner-bearing Markdown was accepted as reviewed.
+
+15. **Compatibility checks compare against the consumer's contract** *(Phase 5 audit lesson)*. Don't accept "parses cleanly" or "is non-empty" as compatibility. Compute the consumer's required shape — required dimensions, required schema fields, required port set — and check coverage of THAT, not just "the input parsed". The Phase 5 close shipped a `unit_compat` that returned 1.0 if every module-output unit was pint-parseable; a fake module emitting only `second` for a species-density spec scored 1.0.
+
+16. **Cross-cutting "always-on" prose has a regression test** *(Phase 5 audit lesson)*. Grep the repo for "always", "must be enabled", "always required", "always check" — every cross-cutting invariant has a regression test that reads the relevant config / state / artifact and fails when the invariant drifts. The Phase 5 close left `security_sandbox.enabled = false` in `agents.yaml` while four other roles were enabled, despite the role's own description carrying the "Always-on once any agent is enabled" rule. Prose without a test ages into a lie.
+
+The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 37 patterns; the four new ones from the Phase 5 audit are at the bottom: hard-rule-via-client-flag, mixed-shape-rule-incomplete, compat-by-pattern-match, cross-cutting-rule-in-comments-only).
 
 ### Reality-test plan-derived patterns
 

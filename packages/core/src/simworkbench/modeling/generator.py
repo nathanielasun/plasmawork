@@ -78,7 +78,7 @@ class ModelSpecGenerator:
         interpretation = self._read_interpretation(paper_sources)
 
         if self.require_reviewed:
-            self._enforce_human_review(equations, parameters)
+            self._enforce_human_review(equations, parameters, interpretation)
 
         domain = self._infer_domain(interpretation)
         spec = ModelSpec(
@@ -163,11 +163,33 @@ class ModelSpecGenerator:
 
     @staticmethod
     def _enforce_human_review(
-        equations: list[dict[str, Any]], parameters: list[dict[str, Any]]
+        equations: list[dict[str, Any]],
+        parameters: list[dict[str, Any]],
+        interpretation: dict[str, str],
     ) -> None:
         """Plan §Phase 4 hard rule: a Phase-5 generator only consumes
-        artifacts that a human reviewer has touched. Any row where
-        ``edited_by`` is empty fails the gate.
+        artifacts that a human reviewer has touched.
+
+        The rule covers every interpretation artifact, not just the
+        structured rows. Two checks:
+
+        1. Every equation row + every parameter row carries a non-empty
+           ``edited_by`` field.
+        2. None of the four interpretation Markdown documents
+           (paper_summary / assumptions / validity_domain /
+           implementation_plan) still carries the
+           ``TemplateInterpretationAgent``'s "needs human review" /
+           "AGENT DRAFT" banner. The Phase 4 banner phrasing is::
+
+                "> **Status: Draft — needs human review.**"
+
+           So we look for the lowercase substring "needs human review";
+           any reviewed Markdown deletes or rewords that line.
+
+        Both checks must pass for the gate to open. Carries
+        `agent_error_patterns.md` "Validating one input shape but not
+        all input shapes the rule covers" — earlier post-Phase-5 audit
+        found we checked rows but not Markdown.
         """
         unreviewed: list[str] = []
         for row in equations:
@@ -176,13 +198,25 @@ class ModelSpecGenerator:
         for row in parameters:
             if not row.get("edited_by"):
                 unreviewed.append(f"parameter {row.get('name')!r}")
+        # Markdown banner check — covers the four interpretation files.
+        for slug, body in interpretation.items():
+            if not body:
+                continue
+            lowered = body.lower()
+            if "needs human review" in lowered or "agent draft" in lowered:
+                unreviewed.append(
+                    f"interpretation:{slug} (still carries the agent draft "
+                    "banner; reviewer must edit and remove it)"
+                )
         if unreviewed:
             raise ModelSpecGenerationError(
-                f"Refusing to generate ModelSpec: {len(unreviewed)} interpretation "
-                f"row(s) have no edited_by reviewer. Plan §Phase 4 forbids "
-                "feeding agent-only interpretation into Phase 5 ModelSpec "
-                "generation. Set ModelSpecGenerator(require_reviewed=False) "
-                "to bypass during dry-run / development. Unreviewed: "
+                f"Refusing to generate ModelSpec: {len(unreviewed)} "
+                "interpretation artifact(s) are still agent-only / "
+                "unreviewed. Plan §Phase 4 forbids feeding agent-only "
+                "interpretation into Phase 5 ModelSpec generation. "
+                "Reviewer must edit each row's `edited_by` field and "
+                "remove the 'needs human review' banner from each "
+                "Markdown file. Unreviewed: "
                 f"{unreviewed[:5]}"
                 + (" ..." if len(unreviewed) > 5 else "")
             )
