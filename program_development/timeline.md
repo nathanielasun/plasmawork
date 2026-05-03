@@ -24,6 +24,27 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-02 (Phase 3 false-close audit — five review findings fixed)
+
+### Completed
+- **Audit.** User review of the Phase 3 close (commit `c7040c1`) surfaced five legitimate findings — every one logged in `bugs_and_fixes/bugfixes.md` and translated into a named pattern in `agent_error_patterns.md` (29 patterns total now). The audit caught: (1) the Phase 3 gate's verbs (test, register, use-in-experiment, export) had no implementation; (2) path traversal in `register_from_template`; (3) template registration produced unloadable tools; (4) lifecycle promotion to `validated` checked the actor but not the artifact's scientific state; (5) output contracts declared but not enforced.
+- **Critical 1 — Phase 3 gate verbs implemented.** Four new endpoints (`POST /api/tools/{name}/run-tests`, `POST /api/tools/{name}/execute`, `POST /api/tools/{name}/export`, `POST /api/tools/import`) plus the experiment-binding side: `Experiment.tool_refs: list[ToolReference]` and `simworkbench.tools.apply_tools(experiment, diagnostics)`. New canonical gate-walk integration test at `tests/integration/test_phase_3_gate_walk.py` exercises every verb end-to-end (six tests).
+- **Critical 2 — `register_from_template` path traversal closed.** Syntactic refusal (`/`, `\`, `..`, leading `.`, absolute paths, empty/whitespace) AND `target.resolve().relative_to(root.resolve())` BEFORE any filesystem touch. Regression test asserts eight forbidden names raise without leaking directories outside the registry root.
+- **High 3 — Template registration produces loadable tools.** `register_from_template` now also rewrites `name = "TEMPLATE"` in the entrypoint module so the class identity matches the metadata. Regression test registers a template and asserts `entry.load_class().name == target_name`.
+- **High 4 — Lifecycle promotion gated on scientific state.** `set_status(name, ToolStatus.VALIDATED, ...)` now requires `validation.tests` non-empty AND runs pytest on those tests before flipping the label. Two regression tests cover the empty-list refusal and the failing-test refusal.
+- **High 5 — Output contracts enforced.** `RegisteredTool.execute()` validates the returned `ToolOutput` against `metadata.outputs` and raises `ToolRegistryError` listing the missing port names. Regression test deliberately drops a declared port and asserts the failure message.
+- **Phase Gate Procedure updated.** Both CLAUDE.md and AGENTS.md now carry a **ninth behavioral check**: gate-clause verb walk. Read the plan's `## Phase Gate` paragraph; extract every verb; confirm each verb has (a) a real implementation, (b) a user-facing surface, (c) a `tests/integration/test_phase_N_gate_walk.py` test that exercises it on a real artifact with a negative case. The Phase 3 close passed all eight previous behavioral checks while four of the five gate verbs were unimplemented — checks 1–8 don't catch missing verbs because verbs aren't entities, they're operations.
+- **Convention checker.** Eight new assertions cover the gate-walk file, `binding.py`, `Experiment.tool_refs`, and the four new API endpoints. Default mode now 366/366 ok (was 358; +8).
+- **Final state.** 375 Python tests pass (was 364; +11 gate-walk + regression tests); 14 UI vitest tests pass; ruff clean; both build scripts succeed.
+
+### Open questions
+- The API still trusts the client-provided `actor` field in `POST /api/tools/{name}/status`. For a single-user local workbench this is acceptable; a future multi-user / agent-with-untrusted-input deployment would need a server-side reviewer-identity flow recorded in provenance. Logged as a follow-up but not blocking for Phase 3.
+
+### Next steps
+- Open Phase 4 per plan §Phase 4 using the existing milestone Pre-gate template, augmented with the **nine** behavioral checks before any close commit. The ninth check (gate-clause verb walk) is mandatory.
+
+---
+
 ## 2026-05-02 (Phase 3 closes — Internal Tool SDK and Registry complete)
 
 ### Completed

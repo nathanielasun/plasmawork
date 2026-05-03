@@ -590,3 +590,148 @@ A phase's status string lives in one place per file when possible. When two plac
 
 ### Bug log
 - 2026-05-02 *Phase 2 false close*: README:5 said "Phase 2 complete" while README:33 said "In progress".
+
+---
+
+## Error Pattern: Implementing the gate's verbs you can see, not the verbs the plan listed
+
+### Why it is bad
+The Phase 3 gate is "create a custom diagnostic tool, **test it**, document it, register it, **use it in an experiment**, and **export it**." (Plan §Phase 3, also restated in the milestone Phase Gate.) The Phase 3 close commit shipped *list*, *view docs*, and *update status* and called Phase 3 done. Five gate verbs (test, execute, import, export, use-in-experiment) had no implementation. The convention checker existed-checked the React component files; the existing UI test mocked `/api/tools` and `/api/tools/{name}` only; neither caught that "test it" / "execute it" / "import it" / "export it" / "use it in an experiment" had no code path at all.
+
+This is a stronger, gate-specific form of *Implementing the agent's checklist instead of the plan's deliverable list*. The agent enumerated the entities visible in the *milestone hint* ("ToolList, ToolDetail, ToolDocs, ToolStatus") and built convention-checker assertions for them, then implemented exactly what the assertions covered. The plan's enumerated **verbs** got skipped because they didn't appear as file paths in the milestone hint.
+
+### Required behavior
+For every plan-stated **verb** in a phase gate, the close commit ships:
+
+1. A backend endpoint or library function that performs the verb on a real artifact (not a stub, not a TODO comment).
+2. A UI surface that lets a user trigger the verb (button, form, link).
+3. An integration test under `tests/integration/test_phase_N_gate_walk.py` that exercises the verb end-to-end against a real fixture and asserts the user-observable result. Negative cases too — a "test it" verb must have a test that points at a deliberately failing test and asserts the failure surfaces.
+
+The gate-walk file is the canonical name, mirrored across phases. Every phase that names verbs in its gate gets one. The convention checker's default branch checks the file exists; the test asserts the verbs work.
+
+### Detection
+- Read the plan's `## Phase Gate` paragraph for the phase. Extract every verb. Diff against the gate-walk integration test's `def test_phase_N_gate_walk_<verb>` functions. Missing verbs are missing implementation.
+- Pre-close: `grep -E "POST /api/" packages/core/src/simworkbench/api/server.py` should cover every mutating gate verb. A gate that mentions "export" or "import" with only `GET` endpoints is incomplete.
+- For UI verbs, open the relevant component and confirm there is a button or form for each verb. A panel that only renders metadata is read-only — it does not satisfy a verb gate.
+
+### Bug log
+- 2026-05-02 *Phase 3 false close — five legitimate review findings*: shipped read-only Tools tab with no execute / run-tests / import / export / use-in-experiment paths. The Phase 3 gate explicitly lists those verbs.
+
+---
+
+## Error Pattern: Path traversal via unvalidated user-controlled component in destination paths
+
+### Why it is bad
+A function that accepts a user-controlled name (`target_name`, `tool_name`, `capsule_name`, ...) and joins it onto a sandbox root must validate the resulting path BEFORE any side effect. Phase 3's `register_from_template(template_dir, target_name, target_root=...)` did:
+
+```python
+target = root / target_name             # `..` not refused
+shutil.copytree(src, target)            # writes wherever target lands
+```
+
+A probe with `target_name="../../escape_probe"` created a directory outside the registry root before `is_under_workbench(root)` (which only validated `root` itself) had a chance to fire. This is the same pattern as path-escape in HTTP file servers — the guard validates the *root*, but the *resolved target* is what the OS actually opens.
+
+### Required behavior
+For any function that takes a user-controlled name and joins it to a sandbox root:
+
+1. **Syntactic refusal** of obvious escape attempts BEFORE any filesystem touch — `..`, leading `..`, `/`, `\`, leading `.`, empty / whitespace-only names, absolute paths.
+2. **Resolved-path check** with `target.resolve().relative_to(root.resolve())` to catch symlinks and platform-specific oddities the syntactic check misses.
+3. Both checks happen before any `mkdir` / `copytree` / `unlink` / `write_text`.
+
+Pattern (ToolRegistry):
+
+```python
+if "/" in target_name or "\\" in target_name:
+    raise RegistryError(f"target_name {target_name!r} contains a path separator")
+if target_name in {".", ".."} or target_name.startswith(".."):
+    raise RegistryError(f"target_name {target_name!r} traverses the root")
+target = (root / target_name).resolve()
+target.relative_to(root.resolve())  # raises ValueError on escape
+```
+
+### Detection
+- Test: pass a `target_name="../../escape"` and assert `register_from_template` raises BEFORE any directory leaks into the parent. The "before" matters — a guard that raises after the rmtree is no guard at all (cf. *Destructive-before-guard in exporters*).
+- Code review: any `Path(root) / user_supplied` followed by `mkdir` / `copytree` / `write_text` without an intervening `.resolve().relative_to(root)` check is a flag.
+
+### Bug log
+- 2026-05-02 *Phase 3 false close*: `register_from_template` accepted `target_name="../../_phase3_escape_probe"` and created the directory before any name-shaped validation fired.
+
+---
+
+## Error Pattern: Cross-check on registered artifact that ignores half its identity
+
+### Why it is bad
+`ToolRegistry.register_from_template` rewrote `tool.yaml`'s `name:` to the user's chosen target_name but left `src/tool.py`'s `name = "TEMPLATE"` literal alone. Then `RegisteredTool.load_class()` cross-checked class.name vs metadata.name and rejected the mismatch. Result: every tool registered through the canonical template flow was unloadable. The cross-check was correct in spirit (catch divergence) but the *register* operation only updated half the identity; the *load* operation then rejected its own output.
+
+This is the registration-side flavor of *Schema drift between writers and validators* (post-Phase-2-close pattern). The producer touched two artifacts that share an identity but updated only one; the validator then refused the inconsistency the producer just created.
+
+### Required behavior
+A registration / promotion / migration step that touches a tool's identity updates **every place that identity lives** in one operation. For Phase 3:
+
+```python
+# tool.yaml's `name:` field.
+data["name"] = target_name
+yaml.safe_dump(data, ...)
+# AND src/tool.py's `name = "TEMPLATE"` literal — re-resolve via metadata.entrypoint.
+entry_path = (target / metadata.entrypoint.split(":", 1)[0]).resolve()
+entry_path.relative_to(target)   # path-escape guard
+source = entry_path.read_text()
+entry_path.write_text(source.replace('name = "TEMPLATE"', f'name = "{metadata.name}"'))
+```
+
+For other registries (capsules, modules), enumerate the identity fields once and update them together.
+
+### Detection
+- Integration test: register a template; immediately call `entry.load_class()`; assert `cls.name == target_name`.
+- Code review: a `register_from_X` that writes one identity field but not the others is a flag. Diff against the consumer (the validator / loader / cross-check) — if the consumer reads N fields, the producer must write N.
+
+### Bug log
+- 2026-05-02 *Phase 3 false close*: registering the diagnostic template produced a non-loadable tool because the source class still had `name = "TEMPLATE"`.
+
+---
+
+## Error Pattern: Lifecycle promotion that checks the actor but not the artifact's scientific state
+
+### Why it is bad
+Plan §9.5 says a `validated` tool "Passes tests and benchmark cases". Phase 3's `set_status(name, ToolStatus.VALIDATED, actor="human")` only checked the **actor** (agent vs human) and the **state transition** (candidate → validated is allowed). It did not check whether the tool had any tests declared, let alone whether they passed. A candidate tool with `validation.tests: []` was happily promoted to `validated`. The lifecycle gate enforced who was allowed to flip the bit, not whether the bit corresponded to scientific truth.
+
+This is the post-Phase-2-close *Schema drift between writers and validators* pattern applied to lifecycle: the registry stores `validated` as a label, but the criterion the label represents wasn't checked at the moment the label was written.
+
+### Required behavior
+Lifecycle promotion checks include the artifact's scientific state, not just the actor. For tools:
+
+- `→ validated` requires (a) `validation.tests` is non-empty in `tool.yaml`, AND (b) every test in that list passes (the registry runs them via pytest before flipping the label).
+- `→ trusted` requires the tool to already be `validated` (state transition rule), AND a recorded human review (actor=human is necessary but not sufficient — the API SHOULD eventually require an explicit reviewer identity recorded in provenance).
+
+The same shape applies to physics-module promotions (`candidate → validated → trusted`) and to capsule format-version promotions (a manifest claiming `v0.2` is rejected if the v0.2 migration hasn't run successfully).
+
+### Detection
+- Test: declare `validation.tests: []` and assert promotion to `validated` raises `LifecycleError` with a message naming the empty list. Then point `validation.tests` at a deliberately-failing test and assert the registry runs it and refuses the promotion.
+- Code review: a `set_status` / `promote` function whose body is one transition-rule check and one disk write — without any I/O against the artifact's evidence — is a flag.
+
+### Bug log
+- 2026-05-02 *Phase 3 false close*: a candidate tool with no tests was accepted as validated.
+
+---
+
+## Error Pattern: Validating inputs but not outputs at scientific boundaries
+
+### Why it is bad
+Phase 3A's `BaseTool` validated inputs through `inputs.require_array(...)` but `execute()` accepted whatever the subclass returned as long as it was a `ToolOutput`. A tool declaring `outputs: [peaks, peak_count]` could `return ToolOutput({"wrong": 1})` and the boundary said "fine". The first downstream consumer (UI, capsule writer, agent) would fail with a `KeyError` instead of a structured contract violation pointing at the offending tool.
+
+Inputs and outputs are symmetric scientific boundaries. The reasons for refusing raw floats on the input side (units, shape, contract) apply just as forcefully on the output side: a tool that drops a declared port silently is a tool whose downstream consumers can't trust its declared contract.
+
+### Required behavior
+Every `tool.yaml`-driven boundary checks both directions:
+
+- Input side: `BaseTool.execute` calls `validate_inputs` (already present).
+- Output side: the registry-aware path (`RegisteredTool.execute`) walks `metadata.outputs` and asserts every declared port name appears in the returned `ToolOutput`. Extra keys are tolerated; missing keys are a `ToolRegistryError` with the missing list spelled out.
+
+Direct `BaseTool().execute()` callers can opt into the output check by going through the registry, which is the canonical user-facing path.
+
+### Detection
+- Test: write a tool that deliberately drops a declared output and assert `RegisteredTool.execute()` raises with `missing declared` in the message.
+- Code review: any `def execute()` that runs `validate_inputs` but not an `outputs` check at the same boundary is a flag.
+
+### Bug log
+- 2026-05-02 *Phase 3 false close*: a tool returning `{"wrong": 1}` while declaring `outputs: [peaks, peak_count]` was accepted.

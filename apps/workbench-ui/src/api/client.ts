@@ -199,6 +199,10 @@ export interface ApiClient {
   getTool(name: string): Promise<ToolDetail>;
   getToolDocs(name: string): Promise<ToolDocs>;
   setToolStatus(name: string, status: ToolStatus, actor?: string): Promise<{ name: string; status: ToolStatus }>;
+  runToolTests(name: string): Promise<{ name: string; passed: boolean; returncode: number; stdout: string; stderr: string }>;
+  executeTool(name: string, kwargs: Record<string, unknown>, units?: Record<string, string>): Promise<{ name: string; output: Record<string, unknown> }>;
+  exportTool(name: string): Promise<{ name: string; archive: string; size_bytes: number }>;
+  importTool(sourcePath: string, targetName: string): Promise<{ name: string; directory: string }>;
 }
 
 export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
@@ -259,6 +263,38 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status, actor }),
+        },
+        baseUrl,
+      ),
+    runToolTests: (name) =>
+      fetchJson(
+        `/tools/${encodeURIComponent(name)}/run-tests`,
+        { method: "POST" },
+        baseUrl,
+      ),
+    executeTool: (name, kwargs, units = {}) =>
+      fetchJson(
+        `/tools/${encodeURIComponent(name)}/execute`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kwargs, units }),
+        },
+        baseUrl,
+      ),
+    exportTool: (name) =>
+      fetchJson(
+        `/tools/${encodeURIComponent(name)}/export`,
+        { method: "POST" },
+        baseUrl,
+      ),
+    importTool: (sourcePath, targetName) =>
+      fetchJson(
+        "/tools/import",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_path: sourcePath, target_name: targetName }),
         },
         baseUrl,
       ),

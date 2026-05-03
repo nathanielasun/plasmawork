@@ -26,6 +26,11 @@ Endpoints:
 - ``GET  /api/tools/{name}``                   — full tool metadata (Phase 3D).
 - ``GET  /api/tools/{name}/docs``              — README + tool.yaml text (Phase 3D).
 - ``POST /api/tools/{name}/status``            — lifecycle promotion (Phase 3D).
+- ``POST /api/tools/{name}/run-tests``         — pytest the tool (Phase 3D).
+- ``POST /api/tools/{name}/execute``           — invoke the tool with kwargs (Phase 3D).
+- ``POST /api/tools/{name}/export``            — zip the tool tree (Phase 3D).
+- ``POST /api/tools/import``                   — copy a tool tree into
+  ``local_cache/imported_tools/`` (Phase 3D).
 
 Phase 1F runs are synchronous: the server starts the run on the request
 thread and returns the final state. Async / pause-resume across HTTP is a
@@ -98,6 +103,20 @@ class ToolStatusBody(BaseModel):
 
     status: str
     actor: str = "agent"
+
+
+class ToolExecuteBody(BaseModel):
+    """POST /api/tools/{name}/execute body."""
+
+    kwargs: dict[str, Any] = Field(default_factory=dict)
+    units: dict[str, str] = Field(default_factory=dict)
+
+
+class ToolImportBody(BaseModel):
+    """POST /api/tools/import body."""
+
+    source_path: str
+    target_name: str
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +517,166 @@ def create_app() -> FastAPI:
         return {
             "name": entry.name,
             "status": entry.status.value,
+        }
+
+    @app.post("/api/tools/{name}/run-tests")
+    def run_tool_tests(name: str) -> dict[str, Any]:
+        """Run the tool's declared validation tests via pytest.
+
+        Phase 3 gate verb: "test it". Returns ``{passed, returncode,
+        stdout, stderr}`` so the UI can render the result without a
+        second round-trip.
+        """
+        import subprocess
+        import sys as _sys
+
+        try:
+            entry = _registry().get(name)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        tests = list(entry.metadata.validation.tests)
+        if not tests:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Tool {name!r} declares no validation tests. Add at least "
+                    "one entry under tool.yaml validation.tests before running."
+                ),
+            )
+        # Resolve every path under the tool directory (refuse path-escape).
+        test_paths: list[str] = []
+        tool_dir = entry.directory.resolve()
+        for rel in tests:
+            target = (tool_dir / rel).resolve()
+            try:
+                target.relative_to(tool_dir)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Test {rel!r} escapes tool directory; refusing to run.",
+                ) from exc
+            test_paths.append(str(target))
+        result = subprocess.run(
+            [_sys.executable, "-m", "pytest", "-x", "--tb=short", *test_paths],
+            cwd=str(tool_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return {
+            "name": name,
+            "passed": result.returncode == 0,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+
+    @app.post("/api/tools/{name}/execute")
+    def execute_tool(name: str, body: ToolExecuteBody) -> dict[str, Any]:
+        """Run a registered tool with JSON-serializable kwargs.
+
+        Phase 3 gate verb: "use it (execute it)". For unit-aware ports,
+        pass the magnitude in ``kwargs`` and the unit string in
+        ``units`` (the endpoint wraps each magnitude with
+        ``simworkbench.units.Q``). Output ports declared in tool.yaml
+        are validated by ``RegisteredTool.execute``.
+        """
+        from simworkbench.units import Q
+
+        try:
+            entry = _registry().get(name)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        # Build kwargs: any key in `body.units` gets wrapped in Q().
+        prepared: dict[str, Any] = {}
+        for key, value in body.kwargs.items():
+            if key in body.units:
+                prepared[key] = Q(value, body.units[key])
+            else:
+                prepared[key] = value
+        try:
+            output = entry.execute(**prepared)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Convert any unit-aware results back to (magnitude, units) pairs
+        # so the response is JSON-serializable.
+        from simworkbench.units.registry import get_registry as _ureg
+
+        def _serialize(v: Any) -> Any:
+            if isinstance(v, _ureg().Quantity):
+                mag = v.magnitude
+                if hasattr(mag, "tolist"):
+                    mag = mag.tolist()
+                return {"magnitude": mag, "units": str(v.units)}
+            if hasattr(v, "tolist"):
+                return v.tolist()
+            return v
+
+        return {
+            "name": name,
+            "output": {k: _serialize(output[k]) for k in output},
+        }
+
+    @app.post("/api/tools/{name}/export")
+    def export_tool(name: str) -> dict[str, Any]:
+        """Zip the tool's directory under local_cache/exports/.
+
+        Phase 3 gate verb: "export it". Returns the archive path relative
+        to the repo root so the UI can show / link it.
+        """
+        import zipfile
+        from pathlib import Path as _Path
+
+        from simworkbench.paths import local_cache_root as _local
+
+        try:
+            entry = _registry().get(name)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        archive_dir = _local() / "exports"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive = archive_dir / f"{entry.name}.tool.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for path in entry.directory.rglob("*"):
+                if path.is_file():
+                    arcname = _Path(entry.name) / path.relative_to(entry.directory)
+                    zf.write(path, arcname=str(arcname))
+        return {
+            "name": name,
+            "archive": str(archive.relative_to(repo_root())),
+            "size_bytes": archive.stat().st_size,
+        }
+
+    @app.post("/api/tools/import")
+    def import_tool(body: ToolImportBody) -> dict[str, Any]:
+        """Copy an external tool tree into ``local_cache/imported_tools/``.
+
+        Phase 3 gate verb: "import it". The source must be a directory
+        containing a ``tool.yaml``; the target name is sanitized via
+        ``ToolRegistry.register_from_template`` (which refuses path-
+        escape names).
+        """
+        from simworkbench.paths import local_cache_root as _local
+        from simworkbench.tools import ToolRegistryError
+
+        source = Path(body.source_path).expanduser().resolve()
+        if not source.is_dir() or not (source / "tool.yaml").is_file():
+            raise HTTPException(
+                status_code=400,
+                detail=f"source_path {body.source_path!r} is not a tool directory.",
+            )
+        target_root = _local() / "imported_tools"
+        target_root.mkdir(parents=True, exist_ok=True)
+        registry = _registry()
+        try:
+            entry = registry.register_from_template(
+                source, body.target_name, target_root=target_root
+            )
+        except ToolRegistryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "name": entry.name,
+            "directory": str(entry.directory.relative_to(repo_root())),
         }
 
     return app

@@ -13,6 +13,9 @@ export default function ToolList() {
   const [tools, setTools] = useState<ToolIndexRow[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [importPath, setImportPath] = useState("");
+  const [importName, setImportName] = useState("");
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     setError(null);
@@ -25,6 +28,23 @@ export default function ToolList() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const importExternal = async () => {
+    if (!importPath.trim() || !importName.trim()) {
+      setImportStatus("Both source path and target name are required.");
+      return;
+    }
+    setImportStatus("Importing…");
+    try {
+      await apiClient.importTool(importPath.trim(), importName.trim());
+      setImportStatus(`Imported as ${importName.trim()}.`);
+      setImportPath("");
+      setImportName("");
+      refresh();
+    } catch (e) {
+      setImportStatus(`Import failed: ${e}`);
+    }
+  };
 
   if (error)
     return (
@@ -58,6 +78,37 @@ export default function ToolList() {
           and run <code>./scripts/dev/refresh_registry.sh</code>.
         </p>
       )}
+
+      <section aria-label="Import external tool">
+        <h3>Import external tool</h3>
+        <p className="muted">
+          Copies an external tool tree into{" "}
+          <code>local_cache/imported_tools/</code>. The directory must
+          contain a <code>tool.yaml</code>. The target name is sanitized —
+          path-escape names (<code>..</code>, leading <code>/</code>, etc.)
+          are refused.
+        </p>
+        <p>
+          <input
+            type="text"
+            placeholder="/path/to/external/tool"
+            value={importPath}
+            onChange={(e) => setImportPath(e.target.value)}
+            aria-label="Source path"
+          />{" "}
+          <input
+            type="text"
+            placeholder="my_imported_tool"
+            value={importName}
+            onChange={(e) => setImportName(e.target.value)}
+            aria-label="Target name"
+          />{" "}
+          <button type="button" onClick={importExternal}>
+            Import
+          </button>
+        </p>
+        {importStatus && <p className="muted">{importStatus}</p>}
+      </section>
 
       {Array.from(byType.entries())
         .sort(([a], [b]) => a.localeCompare(b))

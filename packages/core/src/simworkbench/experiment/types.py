@@ -123,6 +123,31 @@ class RunConfig(BaseModel):
         return self
 
 
+class ToolReference(BaseModel):
+    """Phase 3 — declarative reference to a registered internal tool.
+
+    Lets an experiment declare "after the run, apply tool X to the
+    diagnostics" without hard-coding which tool. Resolved at apply time
+    by ``simworkbench.tools.ToolRegistry``.
+
+    ``inputs_from`` maps each tool input port name to either:
+      * ``"diagnostic:<key>"`` — pull from ``RunResult.diagnostics``;
+      * a literal value (number, string, list).
+
+    Numeric ports declared in the tool's ``tool.yaml`` MUST also have an
+    entry in ``units`` so the apply step can wrap the magnitude with
+    ``simworkbench.units.Q``. Without ``units`` the tool's
+    ``require_array(units=...)`` would refuse the bare value.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str  # tool name as it appears in the registry
+    version: str | None = None  # optional pin; loose-match if None
+    inputs_from: dict[str, Any] = Field(default_factory=dict)
+    units: dict[str, str] = Field(default_factory=dict)
+
+
 class Experiment(BaseModel):
     """User-created experiment assembled from a ModelSpec and configurations.
 
@@ -132,7 +157,7 @@ class Experiment(BaseModel):
     Outputs: an inspectable, serializable experiment object.
     Assumptions: the class does not execute simulations; Phase 1C runtime owns
     start/pause/resume/checkpoint behavior.
-    References: plan Phase 1A; ADR-0003; ADR-0004.
+    References: plan Phase 1A; ADR-0003; ADR-0004; Phase 3 / §9 tool binding.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
@@ -143,6 +168,10 @@ class Experiment(BaseModel):
     run_config: RunConfig = Field(default_factory=RunConfig)
     backend_config: BackendConfig = Field(default_factory=BackendConfig)
     diagnostics: list[DiagnosticConfig] = Field(default_factory=list)
+    # Phase 3 — internal tools bound to this experiment. Each ToolReference
+    # is applied to the run's diagnostics after the runtime completes; the
+    # results land alongside the diagnostics in the saved capsule.
+    tool_refs: list[ToolReference] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")

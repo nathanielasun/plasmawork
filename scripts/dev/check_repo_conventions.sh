@@ -513,6 +513,20 @@ check_grep_absent_in_file 'Phase 0 skeleton' docs_site/src/content/internal_tool
 check_grep_in_file 'Tutorial' docs_site/src/content/internal_tools.tsx "internal_tools docs include a tutorial heading"
 check_grep_in_file 'absorption_spectrum_diagnostic' docs_site/src/content/internal_tools.tsx "internal_tools docs walk through the example tool"
 
+# Phase 3 gate-walk verb coverage. Added after the Phase 3 false-close audit
+# (post-Phase-3 patterns: "Implementing the gate's verbs you can see, not the
+# verbs the plan listed"). Each Phase whose gate names verbs ships a
+# tests/integration/test_phase_N_gate_walk.py.
+section "Phase 3 — Gate verb walk"
+check_file_exists tests/integration/test_phase_3_gate_walk.py
+check_file_exists packages/core/src/simworkbench/tools/binding.py
+check_grep_in_file 'apply_tools' packages/core/src/simworkbench/tools/binding.py "apply_tools defined"
+check_grep_in_file 'tool_refs' packages/core/src/simworkbench/experiment/types.py "Experiment.tool_refs declared"
+check_grep_in_file '/api/tools/\{name\}/run-tests' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/{name}/run-tests (Phase 3 gate verb)"
+check_grep_in_file '/api/tools/\{name\}/execute' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/{name}/execute (Phase 3 gate verb)"
+check_grep_in_file '/api/tools/\{name\}/export' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/{name}/export (Phase 3 gate verb)"
+check_grep_in_file '/api/tools/import' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/import (Phase 3 gate verb)"
+
 # ---------------------------------------------------------------------------
 # Open-workstream TODO branch. Currently empty — Phase 3 closed 2026-05-02
 # and Phase 4 has not yet opened.

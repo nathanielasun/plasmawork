@@ -13,6 +13,7 @@ from .types import (
     Experiment,
     ExperimentError,
     RunConfig,
+    ToolReference,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "Experiment",
     "ExperimentError",
     "RunConfig",
+    "ToolReference",
 ]

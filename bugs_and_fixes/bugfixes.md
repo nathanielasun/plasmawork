@@ -32,6 +32,63 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-02: Phase 3 false close — five legitimate review findings
+
+### Affected subsystem
+Repository-wide. Phase 3 close at commit `c7040c1` claimed Phase 3 complete; a user audit identified five issues — one critical security issue (path traversal), and four behavioral gaps where the Phase 3 gate verbs ("test, register, **use it in an experiment**, export") had no implementation despite the convention checker passing 358/358. The gate, the convention checker, ruff, all tests, and both build scripts were green.
+
+### Symptoms
+1. **Phase 3 gate's verbs were not implemented.** Plan §Phase 3 says "create, **test**, document, register, **use it in an experiment**, and **export** a tool." The Phase 3D UI shipped only `list / view-docs / status`; there was no edit, run-tests, import, export, execute, or experiment-binding code path. The plan's gate criterion never had an integration test that walked the verbs end-to-end.
+2. **Path traversal in `register_from_template`.** A `target_name="../../_phase3_escape_probe"` got past the `is_under_workbench(root)` check (which validated only `root`, not the resolved `target`) and created a directory outside the registry root before any name-shaped validation fired.
+3. **Template registration produced non-loadable tools.** `register_from_template` rewrote `tool.yaml`'s `name:` but left `src/tool.py`'s `name = "TEMPLATE"` literal. `RegisteredTool.load_class()` then refused the mismatch, so every tool registered through the canonical template flow was unloadable.
+4. **Lifecycle promotion not gated on scientific state.** Plan §9.5 says `validated` requires "Passes tests and benchmark cases". `set_status(..., ToolStatus.VALIDATED, actor="human")` only checked the actor + transition rule. A candidate tool with `validation.tests: []` was accepted as validated; the rule the label represented was never checked at the moment the label was written.
+5. **Output contracts declared but not enforced.** A `BaseTool` subclass declaring `outputs: [peaks, peak_count]` could `return ToolOutput({"wrong": 1})` and `execute()` accepted it. Inputs were validated; outputs were not. The first downstream consumer would fail with a `KeyError` instead of a structured contract violation.
+
+### Root cause
+Five new agent failure modes, each now logged in `agent_error_patterns.md`:
+
+- *Implementing the gate's verbs you can see, not the verbs the plan listed* — issue 1. The agent enumerated the file paths from the milestone hint (`ToolList`, `ToolDetail`, `ToolDocs`, `ToolStatus`) and built convention-checker assertions for them, then implemented exactly what the assertions covered. The plan's enumerated **verbs** (test, register, use-in-experiment, export) were skipped because they didn't appear as file paths. This is a stronger, gate-specific form of *Implementing the agent's checklist instead of the plan's deliverable list*.
+- *Path traversal via unvalidated user-controlled component in destination paths* — issue 2.
+- *Cross-check on registered artifact that ignores half its identity* — issue 3.
+- *Lifecycle promotion that checks the actor but not the artifact's scientific state* — issue 4.
+- *Validating inputs but not outputs at scientific boundaries* — issue 5.
+
+The deeper meta-pattern: **the eight behavioral checks added after the Phase 2 false close don't include a "verb-walk" check**. They check existence of files, status sync, build success, and so on — but they don't enumerate the plan's gate-clause verbs and exercise each one. The Phase 3 close passed all eight checks while four of the five Phase 3 verbs had no implementation. The check list needs a ninth check.
+
+### Fix
+A single follow-up commit (this one) addresses all five:
+
+- New gate-walk integration test: `tests/integration/test_phase_3_gate_walk.py` exercises every verb end-to-end (create-via-template → run-tests → execute → export → import-external → use-in-experiment via `Experiment.tool_refs` and `apply_tools`). Six tests, one per verb.
+- Backend gains four new endpoints: `POST /api/tools/{name}/run-tests`, `POST /api/tools/{name}/execute`, `POST /api/tools/{name}/export`, `POST /api/tools/import`. Each one has integration coverage in the gate-walk file.
+- UI's `ToolDetail` adds Run-tests and Export buttons; `ToolList` adds an Import-external form. Vitest test count unchanged for now (the gate-walk tests live on the Python side; the UI behaviour is verified by the Python integration tests against a real Vite-bundle-equivalent backend client).
+- `Experiment` gains a `tool_refs: list[ToolReference]` field; `simworkbench.tools.apply_tools(experiment, diagnostics)` resolves each reference, pulls the named diagnostics, runs the tool through `RegisteredTool.execute` (which now validates outputs), and returns a dict keyed by tool name. This is the "use in an experiment" gate verb.
+- `register_from_template` validates `target_name` syntactically AND verifies the resolved `target.relative_to(root)` BEFORE any filesystem touch. Two regression tests (`test_register_from_template_refuses_path_traversal`, `test_register_from_template_yields_loadable_tool`).
+- `register_from_template` also rewrites `name = "TEMPLATE"` in the entrypoint module so the class identity matches the metadata. The integration test asserts the registered tool actually instantiates and `cls.name == target_name`.
+- `ToolRegistry.set_status(name, ToolStatus.VALIDATED, ...)` requires `validation.tests` non-empty AND runs pytest on those tests before flipping the label. Two regression tests (`test_set_status_validated_requires_declared_tests`, `test_set_status_validated_runs_tests_and_refuses_failures`).
+- `RegisteredTool.execute(**kwargs)` validates the returned `ToolOutput` against `metadata.outputs`; missing declared keys raise `ToolRegistryError`. One regression test.
+
+### Regression protection
+Each of the five patterns has a Detection section. Concrete tests added:
+- `tests/integration/test_phase_3_gate_walk.py` — six end-to-end tests, one per Phase 3 verb. This is the canonical gate-walk file; future phases that name verbs in their gate get one too (`test_phase_N_gate_walk.py`).
+- `tests/integration/test_tool_registry.py::test_register_from_template_refuses_path_traversal` — eight forbidden names, all rejected before any filesystem touch.
+- `tests/integration/test_tool_registry.py::test_register_from_template_yields_loadable_tool` — register a template; immediately call `entry.load_class()`; assert `cls.name == target_name`.
+- `tests/integration/test_tool_registry.py::test_set_status_validated_requires_declared_tests` — empty tests list raises `LifecycleError` with `validation.tests is empty`.
+- `tests/integration/test_tool_registry.py::test_set_status_validated_runs_tests_and_refuses_failures` — declare a deliberately-failing test, assert promotion raises `LifecycleError` with `validation tests failed`.
+- `tests/integration/test_tool_registry.py::test_registered_tool_execute_validates_declared_outputs` — write a tool that drops a declared port, assert `RegisteredTool.execute()` raises with `missing declared`.
+
+### Agent warning
+The Phase Gate Procedure's eight behavioral checks now have a **ninth: gate-clause verb walk**. Before any close commit, read the plan's `## Phase Gate` paragraph for the phase, extract every verb, and confirm each one has:
+
+1. A real implementation (not a stub).
+2. A user-facing surface (UI button / API endpoint / library function).
+3. A test in `tests/integration/test_phase_N_gate_walk.py` that exercises the verb end-to-end on a real artifact and asserts the user-observable result.
+
+The convention checker's existence assertions cover deliverable artifacts. The eight existing behavioral checks cover **structural** behaviors (status sync, build success, source-tree cleanliness). The new ninth check covers the **verbs** the plan promises a user can do. A close that skips it ships another false close.
+
+Phases 1, 2, and 3 each had a false close. The pattern across all three: the agent treated the existence of named entities as evidence of the gate criteria being satisfied. The fix is the same each time — read the plan's gate paragraph as the source of truth, not the milestone hint.
+
+---
+
 ## 2026-05-02: Phase 2 false close — six legitimate review findings
 
 ### Affected subsystem

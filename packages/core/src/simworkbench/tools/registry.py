@@ -24,7 +24,8 @@ import yaml
 from simworkbench.paths import is_under_workbench, local_cache_root, repo_root
 
 from .base_tool import BaseTool
-from .lifecycle import ToolStatus, require_transition
+from .io import ToolOutput
+from .lifecycle import LifecycleError, ToolStatus, require_transition
 from .metadata import ToolMetadata, load_tool_yaml, write_tool_yaml
 
 
@@ -81,6 +82,34 @@ class RegisteredTool:
                 f"{self.metadata.name!r} at {self.directory}"
             )
         return cls
+
+    def execute(self, **kwargs: object) -> ToolOutput:
+        """Instantiate the entrypoint class and run it, validating both
+        ``ToolInput`` and ``ToolOutput`` against ``tool.yaml``.
+
+        ``BaseTool.execute`` already validates the input side; this wrapper
+        adds the output side: every port name declared in
+        ``tool.yaml`` ``outputs:`` must be present in the returned
+        ``ToolOutput`` (carries ``agent_error_patterns.md``
+        "Validating inputs but not outputs at scientific boundaries" — the
+        post-Phase-3 audit found a tool returning ``{"wrong": 1}`` was
+        accepted because nothing checked the output keys against the
+        declared port list).
+        """
+        cls = self.load_class()
+        instance = cls()
+        result = instance.execute(**kwargs)
+        declared = [p.name for p in self.metadata.outputs]
+        missing = [name for name in declared if name not in result]
+        if missing:
+            raise ToolRegistryError(
+                f"Tool {self.name!r} returned a ToolOutput missing declared "
+                f"port(s): {missing!r}. tool.yaml outputs declared "
+                f"{declared!r} but the run() returned {sorted(result)!r}. "
+                "Either return the missing keys or update tool.yaml to "
+                "match what the tool actually emits."
+            )
+        return result
 
 
 def _registry_root() -> Path:
@@ -191,8 +220,34 @@ class ToolRegistry:
 
         ``target_root`` defaults to the canonical registry root. We refuse
         to write outside the workbench-managed roots — same guard the
-        Phase 2C exporters use.
+        Phase 2C exporters use — AND we refuse a ``target_name`` that
+        traverses out of the registry root via ``..`` / absolute paths /
+        embedded slashes (carries ``agent_error_patterns.md``
+        "Path traversal via unvalidated user-controlled component in
+        destination paths" — a probe with ``target_name="../../escape"``
+        previously created a directory outside the registry root before
+        any validation fired).
         """
+        # Reject path-escape `target_name` BEFORE touching the filesystem.
+        # The registered name must be a single path component: no slashes,
+        # no `..`, no leading `.`, and the resolved target must land inside
+        # the registry root.
+        if not target_name or target_name.strip() != target_name:
+            raise ToolRegistryError("target_name must not be empty / whitespace")
+        if "/" in target_name or "\\" in target_name:
+            raise ToolRegistryError(
+                f"target_name {target_name!r} contains a path separator. "
+                "Tool names must be a single directory component."
+            )
+        if target_name in {".", ".."} or target_name.startswith(".."):
+            raise ToolRegistryError(
+                f"target_name {target_name!r} traverses out of the registry root."
+            )
+        if Path(target_name).is_absolute():
+            raise ToolRegistryError(
+                f"target_name {target_name!r} must be relative, not absolute."
+            )
+
         src = Path(template_dir).resolve()
         if not src.is_dir():
             raise ToolRegistryError(f"Template not found: {src}")
@@ -201,7 +256,16 @@ class ToolRegistry:
             raise PermissionError(
                 f"Refusing to register tool outside workbench-managed roots: {root}"
             )
-        target = root / target_name
+        target = (root / target_name).resolve()
+        # Belt + suspenders: confirm the resolved path stays inside ``root``.
+        # Even with the syntactic checks above, a symlinked ``root`` or an
+        # OS-specific oddity could let things drift; this is the last line.
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise ToolRegistryError(
+                f"target {target!r} resolved outside the registry root {root!r}"
+            ) from exc
         if target.exists():
             raise ToolRegistryError(
                 f"Tool target already exists: {target}. Pick a different name "
@@ -218,6 +282,26 @@ class ToolRegistry:
                 target_yaml.write_text(
                     yaml.safe_dump(data, sort_keys=False), encoding="utf-8"
                 )
+        # Also rewrite ``name = "TEMPLATE"`` in the entrypoint module so the
+        # class identity matches the metadata. Without this rewrite, freshly
+        # registered template tools failed to load (carries
+        # `agent_error_patterns.md` "Cross-check on registered artifact that
+        # ignores half its identity").
+        if target_yaml.is_file():
+            metadata = load_tool_yaml(target_yaml)
+            entry_rel = metadata.entrypoint.split(":", 1)[0]
+            entry_path = (target / entry_rel).resolve()
+            try:
+                entry_path.relative_to(target)
+            except ValueError:
+                entry_path = None  # type: ignore[assignment]
+            if entry_path is not None and entry_path.is_file():
+                source = entry_path.read_text(encoding="utf-8")
+                rewritten = source.replace(
+                    'name = "TEMPLATE"', f'name = "{metadata.name}"'
+                )
+                if rewritten != source:
+                    entry_path.write_text(rewritten, encoding="utf-8")
         self.refresh()
         return self.get(target_name)
 
@@ -227,21 +311,91 @@ class ToolRegistry:
         new_status: ToolStatus,
         *,
         actor: str = "agent",
+        run_tests: bool = True,
     ) -> RegisteredTool:
         """Promote / demote a tool. Persists by rewriting its tool.yaml.
 
-        Raises ``LifecycleError`` on illegal transitions or unauthorized
-        agent promotions (plan §9.5 — agents may not set ``trusted`` or
-        ``validated``).
+        Raises ``LifecycleError`` on illegal transitions, unauthorized
+        agent promotions (plan §9.5 — agents may not set ``trusted`` /
+        ``validated``), AND on candidate→validated when the tool's
+        declared ``validation.tests`` is empty or any of those tests
+        fail. The lifecycle gate must include the artifact's scientific
+        state, not just the actor (carries
+        ``agent_error_patterns.md`` "Lifecycle promotion that checks the
+        actor but not the artifact's scientific state").
+
+        Pass ``run_tests=False`` only from a test fixture that explicitly
+        wants to bypass the pytest invocation; production callers always
+        run them.
         """
         entry = self.get(name)
         require_transition(entry.status, new_status, actor=actor)
+
+        # Scientific gate for promotion to validated: the tool MUST declare
+        # tests AND those tests MUST pass. Promotion to trusted is gated
+        # by an external human-review process (recorded in the actor=
+        # "human" gate above) but the validated→trusted step inherits
+        # whatever validation evidence the tool already collected.
+        if new_status is ToolStatus.VALIDATED and run_tests:
+            tests = list(entry.metadata.validation.tests)
+            if not tests:
+                raise LifecycleError(
+                    f"Tool {name!r} cannot be promoted to validated: "
+                    "tool.yaml validation.tests is empty. Plan §9.5 "
+                    "requires a validated tool to pass tests + benchmark "
+                    "cases. Add at least one test under tests/ and list "
+                    "it in validation.tests before promoting."
+                )
+            self._run_validation_tests(entry, tests)
+
         new_metadata = entry.metadata.model_copy(update={"status": new_status})
         write_tool_yaml(new_metadata, entry.directory / "tool.yaml")
         self._entries[name] = RegisteredTool(
             metadata=new_metadata, directory=entry.directory
         )
         return self._entries[name]
+
+    @staticmethod
+    def _run_validation_tests(entry: RegisteredTool, tests: list[str]) -> None:
+        """Run pytest on the tool's declared validation tests. Raises
+        ``LifecycleError`` if any test fails or the test invocation errors.
+        """
+        import subprocess
+        import sys
+
+        # Resolve every test path under the tool's directory and refuse
+        # path-escape (a tool.yaml with `tests: ["../../etc/passwd"]`
+        # must not let the validator run anything outside the tool tree).
+        test_paths: list[str] = []
+        for rel in tests:
+            target = (entry.directory / rel).resolve()
+            try:
+                target.relative_to(entry.directory.resolve())
+            except ValueError as exc:
+                raise LifecycleError(
+                    f"Tool {entry.name!r}: validation test {rel!r} resolves "
+                    f"outside the tool directory ({target}). Refusing to run."
+                ) from exc
+            if not target.exists():
+                raise LifecycleError(
+                    f"Tool {entry.name!r}: declared validation test {rel!r} "
+                    f"does not exist at {target}."
+                )
+            test_paths.append(str(target))
+
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-x", "--tb=short", *test_paths],
+            cwd=str(entry.directory),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise LifecycleError(
+                f"Tool {entry.name!r} cannot be promoted to validated: "
+                f"validation tests failed (exit {result.returncode}).\n\n"
+                f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
+            )
 
 
 __all__ = [

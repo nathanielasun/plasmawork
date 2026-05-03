@@ -17,6 +17,7 @@ example verbatim.
 from __future__ import annotations
 
 from .base_tool import BaseTool
+from .binding import ToolBindingError, apply_tools
 from .io import ToolInput, ToolIOError, ToolOutput
 from .lifecycle import (
     AGENT_ALLOWED,
@@ -44,6 +45,7 @@ __all__ = [
     "LifecycleError",
     "ORDER",
     "RegisteredTool",
+    "ToolBindingError",
     "ToolIOError",
     "ToolInput",
     "ToolMetadata",
@@ -54,6 +56,7 @@ __all__ = [
     "ToolRequires",
     "ToolStatus",
     "ToolValidation",
+    "apply_tools",
     "can_transition",
     "load_tool_yaml",
     "require_transition",

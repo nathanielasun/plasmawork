@@ -348,20 +348,26 @@ git commit -m "..."   # Use the HEREDOC pattern below.
 git push
 ```
 
-### Closing a phase — eight behavioral checks (the Phase 2 false-close lesson)
+### Closing a phase — nine behavioral checks (Phase 2 + 3 false-close lessons)
 
-Phase 1 and Phase 2 each shipped a false close. Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these eight before the close commit:
+Phases 1, 2, and 3 each shipped a false close. Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these nine before the close commit:
 
 1. **End-to-end gate walk.** Every plan §Phase-N gate criterion exercised on a real artifact. For Phase 2 that meant: run the example, save it as a capsule, reload it via `scripts/dev/run_capsule.sh`, validate it, export it, fork it, reload the fork. Each step on its own integration test, not just a manual demo.
 2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README, CLAUDE.md, or any docs page advertises as a current entrypoint runs successfully on a typical input. (Phase 2 close shipped `scripts/dev/run_capsule.sh` still as the Phase-0 stub even though README documented it as the reload path.)
 3. **Producer-writer wiring.** Every writer that landed in this phase appears in the producer's call site by file:line. Round-trip the producer's output through the writer's `load_*` to catch hand-rolled equivalents. (Phase 2 close shipped `save_capsule` writing a hand-rolled `provenance.lock` that didn't validate as `ProvenanceLock`; `environment.yaml` wasn't written; `agent_trace.md` was overwritten instead of appended.)
 4. **Validator field parity.** Every new producer output corresponds to a validator required-field added in the same workstream. Diff the validator's `REQUIRED_FILES` and the producer's outputs — they must agree. (Phase 2 close shipped the validator requiring `diagnostics.json` while the canonical format had become `diagnostics.h5`.)
-5. **Destructive-after-validate in exporters.** Every exporter validates the entire plan before any `rmtree` / `unlink` / write. Tests assert source-survival on self-export (`export_X(capsule, capsule, ...)` raises AND the source is still on disk afterwards).
+5. **Destructive-after-validate in exporters / registries.** Every exporter validates the entire plan before any `rmtree` / `unlink` / write. Tests assert source-survival on self-export. Same rule for registry mutations: `register_from_template`, `set_status`, etc. validate user-controlled names BEFORE any filesystem touch (Phase 3 close shipped `register_from_template` accepting `target_name="../../escape"` and creating the directory before any name-shaped check fired).
 6. **UI panels actually render.** Every UI panel that promises to show X has a Vitest test that mounts the component, mocks the backend, and asserts X is in the rendered output. (Phase 2 close shipped `CapsuleCodeView` requesting `src/generated/__index__` from the file endpoint — always 404 — and the test suite never noticed because there was no test that asserted code actually rendered.)
 7. **Status-sync grep reads every match.** `grep -nE "Phase NN" README.md` will sometimes return multiple lines in the same file (banner + table). Read all of them. (Phase 2 close shipped README:5 saying "complete" while README:33 said "In progress".)
 8. **Build scripts succeed and emit no source-tree artifacts.** `scripts/build/ui.sh` and `scripts/docs/build.sh` exit 0; `find apps/*/src docs_site/src -name '*.js' -o -name '*.d.ts'` is empty afterwards. (Phase 2 close shipped `tsc -b && vite build` which leaked `.js` files into `src/` whenever typecheck failed; Vitest then double-counted them.)
+9. **Gate-clause verb walk** *(Phase 3 false-close lesson)*. Read the plan's `## Phase Gate` paragraph for the phase. Extract every **verb**. For each verb, confirm three things exist:
+   - A real backend or library implementation (not a stub, not a TODO comment).
+   - A user-facing surface (UI button / API endpoint / documented function).
+   - A test in `tests/integration/test_phase_N_gate_walk.py` that exercises the verb end-to-end on a real artifact, with at least one negative case.
 
-The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 24 patterns; the six new ones from the Phase 2 audit are at the bottom).
+   The Phase 3 gate said "create, **test**, document, register, **use it in an experiment**, and **export** a tool." The close shipped list / view-docs / status only — five gate verbs went unimplemented while the convention checker, ruff, all tests, and both build scripts were green. Existence checks 1–8 don't catch missing verbs because the verbs aren't entities; they're operations. The gate-walk file makes the verbs first-class.
+
+The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 29 patterns; the five new ones from the Phase 3 audit are at the bottom).
 
 ### Reality-test plan-derived patterns
 
