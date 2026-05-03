@@ -26,18 +26,17 @@ Phase 1F+ enhancement; the in-process Runner already supports it (see
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 try:
     from fastapi import FastAPI, HTTPException
-except ImportError:  # pragma: no cover — fastapi is a hard dep, but keep a clear message.
+except ImportError as exc:  # pragma: no cover — fastapi is a hard dep.
     raise RuntimeError(
         "FastAPI is required for the workbench API server. "
         "Install via `pip install -e packages/core` or add fastapi explicitly."
-    )
+    ) from exc
 
 from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import load_yaml as load_modelspec_yaml
@@ -57,7 +56,10 @@ class StartRunRequest(BaseModel):
     """POST /api/runs body."""
 
     model_yaml_path: str = Field(
-        description="Repo-relative path to a ModelSpec YAML, e.g. 'examples/simple_rate_equations/model.yaml'."
+        description=(
+            "Repo-relative path to a ModelSpec YAML, e.g. "
+            "'examples/simple_rate_equations/model.yaml'."
+        )
     )
     end_time: str = "100 ns"
     max_steps: int = 100
@@ -71,6 +73,7 @@ class RunSummary(BaseModel):
     final_simulation_time: float
     diagnostics_keys: list[str]
     placeholder_used: bool = False
+    placeholders: list[str] = []
 
 
 class HealthResponse(BaseModel):
@@ -79,35 +82,35 @@ class HealthResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# In-memory run registry (Phase 1F — single-process; persistence Phase 2+).
+# App factory — per-app run registry lives in the closure, NOT module-global.
+# Honors agent_error_patterns.md "API factory advertises isolation while
+# sharing module-global state".
 # ---------------------------------------------------------------------------
 
-_RUNS: dict[str, dict[str, Any]] = {}
 
+def create_app() -> FastAPI:
+    """Build a fresh FastAPI app with its own in-memory run registry.
 
-def _runs_index() -> list[RunSummary]:
-    return [
-        RunSummary(
+    Tests use this so each test starts with a clean state. The registry
+    lives in the closure, NOT at module scope — see
+    `agent_error_patterns.md` "API factory advertises isolation while
+    sharing module-global state".
+    """
+    from simworkbench import __version__
+
+    runs: dict[str, dict[str, Any]] = {}
+
+    def _summary(rid: str, info: dict[str, Any]) -> RunSummary:
+        placeholders = list(info.get("placeholders", []))
+        return RunSummary(
             run_id=rid,
             state=info["state"],
             elapsed_seconds=info["elapsed_seconds"],
             final_simulation_time=info["final_simulation_time"],
             diagnostics_keys=list(info["diagnostics"].keys()),
+            placeholders=placeholders,
+            placeholder_used=bool(placeholders),
         )
-        for rid, info in _RUNS.items()
-    ]
-
-
-# ---------------------------------------------------------------------------
-# App factory
-# ---------------------------------------------------------------------------
-
-
-def create_app() -> FastAPI:
-    """Build a fresh FastAPI app. Tests use this instead of a module-level app
-    so each test starts with a clean run registry.
-    """
-    from simworkbench import __version__
 
     app = FastAPI(
         title="Scientific Simulation Workbench API",
@@ -121,20 +124,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/runs", response_model=list[RunSummary])
     def list_runs() -> list[RunSummary]:
-        return _runs_index()
+        return [_summary(rid, info) for rid, info in runs.items()]
 
     @app.get("/api/runs/{run_id}", response_model=RunSummary)
     def get_run(run_id: str) -> RunSummary:
-        if run_id not in _RUNS:
+        if run_id not in runs:
             raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found")
-        info = _RUNS[run_id]
-        return RunSummary(
-            run_id=run_id,
-            state=info["state"],
-            elapsed_seconds=info["elapsed_seconds"],
-            final_simulation_time=info["final_simulation_time"],
-            diagnostics_keys=list(info["diagnostics"].keys()),
-        )
+        return _summary(run_id, runs[run_id])
 
     @app.post("/api/runs", response_model=RunSummary)
     def start_run(req: StartRunRequest) -> RunSummary:
@@ -150,7 +146,10 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise HTTPException(
                 status_code=400,
-                detail=f"Refusing to load model spec outside the repository: {req.model_yaml_path!r}",
+                detail=(
+                    "Refusing to load model spec outside the repository: "
+                    f"{req.model_yaml_path!r}"
+                ),
             ) from exc
 
         spec = load_modelspec_yaml(spec_path)
@@ -164,26 +163,26 @@ def create_app() -> FastAPI:
             ),
         )
         runner = Runner(experiment, base_seed=req.seed)
-        result = runner.run()
-        _RUNS[runner.run_id] = {
+        try:
+            result = runner.run()
+        except ValueError as exc:
+            # Backend refusals (e.g. unsourced rates per plan §22) become
+            # 422s so the UI can surface the message verbatim.
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        runs[runner.run_id] = {
             "state": result.state.value,
             "elapsed_seconds": result.elapsed_seconds,
             "final_simulation_time": result.final_simulation_time,
             "diagnostics": {k: list(v) for k, v in result.diagnostics.items()},
+            "placeholders": list(result.placeholders),
         }
-        return RunSummary(
-            run_id=runner.run_id,
-            state=result.state.value,
-            elapsed_seconds=result.elapsed_seconds,
-            final_simulation_time=result.final_simulation_time,
-            diagnostics_keys=list(result.diagnostics.keys()),
-        )
+        return _summary(runner.run_id, runs[runner.run_id])
 
     @app.get("/api/runs/{run_id}/diagnostics/{name}")
     def get_diagnostic(run_id: str, name: str) -> dict[str, Any]:
-        if run_id not in _RUNS:
+        if run_id not in runs:
             raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found")
-        diagnostics = _RUNS[run_id]["diagnostics"]
+        diagnostics = runs[run_id]["diagnostics"]
         if name not in diagnostics:
             raise HTTPException(
                 status_code=404,
@@ -199,7 +198,11 @@ def create_app() -> FastAPI:
         if not content_dir.is_dir():
             return []
         return [
-            {"slug": p.stem, "title": p.stem.replace("_", " ").title(), "path": str(p.relative_to(repo_root()))}
+            {
+                "slug": p.stem,
+                "title": p.stem.replace("_", " ").title(),
+                "path": str(p.relative_to(repo_root())),
+            }
             for p in sorted(content_dir.glob("*.tsx"))
         ]
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simworkbench.diagnostics import Diagnostic, DiagnosticCollector
 
 
@@ -77,5 +76,5 @@ def test_collector_attaches_and_syncs_from_runner():
     assert len(report["B"]) == 10
     # And A + B is conserved within solver tolerance (relative — densities ~1e18).
     initial_total = report["A"].values[0] + report["B"].values[0]
-    for a, b in zip(report["A"].values, report["B"].values):
+    for a, b in zip(report["A"].values, report["B"].values, strict=True):
         assert abs((a + b) - initial_total) / initial_total < 1e-6

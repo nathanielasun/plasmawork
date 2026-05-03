@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from simworkbench import BackendConfig, DiagnosticConfig, Experiment, RunConfig
 from simworkbench.experiment import ExperimentError
 from simworkbench.model_spec import load_yaml

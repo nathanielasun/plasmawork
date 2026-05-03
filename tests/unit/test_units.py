@@ -11,9 +11,7 @@ Cover:
 
 from __future__ import annotations
 
-
 import pytest
-
 from simworkbench.units import (
     Q,
     UnitsError,
@@ -26,7 +24,6 @@ from simworkbench.units import (
     require_units,
     to_unit,
 )
-
 
 # ---------------------------------------------------------------------------
 # Quantity construction

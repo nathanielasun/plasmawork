@@ -73,6 +73,7 @@ export default function SimulationList() {
             <tr>
               <th>Run ID</th>
               <th>State</th>
+              <th>Validation</th>
               <th>t_final (s)</th>
               <th>Elapsed (s)</th>
               <th>Diagnostics</th>
@@ -85,6 +86,21 @@ export default function SimulationList() {
                   <code>{r.run_id}</code>
                 </td>
                 <td>{r.state}</td>
+                <td>
+                  {r.placeholder_used ? (
+                    <span
+                      className="placeholder"
+                      title={
+                        "Run used placeholder rate constants: " +
+                        r.placeholders.join(", ")
+                      }
+                    >
+                      ⚠ exploratory ({r.placeholders.length} placeholder{r.placeholders.length === 1 ? "" : "s"})
+                    </span>
+                  ) : (
+                    "validated"
+                  )}
+                </td>
                 <td>{r.final_simulation_time.toExponential(3)}</td>
                 <td>{r.elapsed_seconds.toFixed(3)}</td>
                 <td>{r.diagnostics_keys.join(", ")}</td>

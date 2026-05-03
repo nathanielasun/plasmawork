@@ -7,7 +7,7 @@ that want a one-call simulation entrypoint.
 from __future__ import annotations
 
 from simworkbench.experiment import Experiment
-from simworkbench.runtime import RunResult, Runner
+from simworkbench.runtime import Runner, RunResult
 
 
 def simulate(experiment: Experiment, *, base_seed: int = 0) -> RunResult:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from simworkbench.paths import temp_runs_root
 from simworkbench.runtime.checkpoint import (
     Checkpoint,

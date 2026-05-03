@@ -6,7 +6,6 @@ import math
 
 import numpy as np
 import pytest
-
 from simworkbench.diagnostics import (
     conservation_error,
     histogram,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simworkbench.runtime.progress import ProgressTracker, ProgressUpdate
 
 

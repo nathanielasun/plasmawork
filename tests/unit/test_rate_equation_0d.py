@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import load_yaml
 

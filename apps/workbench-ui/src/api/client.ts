@@ -11,7 +11,14 @@ export interface RunSummary {
   elapsed_seconds: number;
   final_simulation_time: number;
   diagnostics_keys: string[];
-  placeholder_used?: boolean;
+  /**
+   * True when one or more interactions used a flagged-placeholder rate
+   * constant. Phase 1 has no rate-parser, so every run currently has at
+   * least one placeholder. The UI must surface this so the user knows the
+   * run is exploratory, not validated.
+   */
+  placeholder_used: boolean;
+  placeholders: string[];
 }
 
 export interface StartRunRequest {

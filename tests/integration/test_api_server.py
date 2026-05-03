@@ -8,7 +8,6 @@ in-memory run registry doesn't leak.
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-
 from simworkbench.api import create_app
 
 
@@ -47,6 +46,12 @@ def test_start_run_executes_simple_rate_equations():
     assert body["final_simulation_time"] > 0
     assert "A" in body["diagnostics_keys"]
     assert "B" in body["diagnostics_keys"]
+    # The example flags its rate constant as a placeholder; the API must
+    # surface this so the UI can render an "exploratory" warning. Honors
+    # bugs_and_fixes/agent_error_patterns.md "Silently inventing missing
+    # physical coefficients".
+    assert body["placeholder_used"] is True
+    assert len(body["placeholders"]) >= 1
     run_id = body["run_id"]
 
     # And the run shows up in /api/runs.
@@ -54,6 +59,30 @@ def test_start_run_executes_simple_rate_equations():
     assert r2.status_code == 200
     listed = r2.json()
     assert any(item["run_id"] == run_id for item in listed)
+
+
+def test_two_apps_have_isolated_run_registries():
+    """Regression for `agent_error_patterns.md` "API factory advertises
+    isolation while sharing module-global state"."""
+    a = _client()
+    b = _client()
+    started = a.post(
+        "/api/runs",
+        json={
+            "model_yaml_path": "examples/simple_rate_equations/model.yaml",
+            "end_time": "100 ns",
+            "max_steps": 5,
+            "seed": 0,
+        },
+    )
+    assert started.status_code == 200
+    a_runs = a.get("/api/runs").json()
+    b_runs = b.get("/api/runs").json()
+    assert len(a_runs) == 1, "App A should see its own run"
+    assert len(b_runs) == 0, (
+        "App B should NOT see App A's run — registry must live in the "
+        "create_app() closure, not at module scope."
+    )
 
 
 def test_get_run_returns_404_for_unknown_id():

@@ -62,7 +62,7 @@ def test_magnetization_drops_monotonically_through_critical_region():
         mags.append(r["magnetization_per_spin"])
     # Allow a small wobble (Monte Carlo noise) — assert each step is at most
     # 0.05 above the previous.
-    for prev, curr in zip(mags, mags[1:]):
+    for prev, curr in zip(mags, mags[1:], strict=False):
         assert curr <= prev + 0.05, f"|m| increased: {prev:.3f} -> {curr:.3f}"
     # And the first vs. last differ by a lot.
     assert mags[0] - mags[-1] > 0.5

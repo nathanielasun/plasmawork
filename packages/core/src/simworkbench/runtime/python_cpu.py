@@ -83,12 +83,36 @@ class PythonCpuBackend:
                 continue
             reactant = species_participants[0]
             product = species_participants[1]
-            placeholder = any(
-                "placeholder" in str(src).lower() for src in ix.coefficient_sources
+
+            # Phase 1 has no real rate-constant parser — interactions must
+            # **explicitly** flag a placeholder rate, otherwise we'd silently
+            # fabricate. Plan §22 / agent_error_patterns.md "Silently
+            # inventing missing physical coefficients" — refuse rather than
+            # invent.
+            if not ix.coefficient_sources:
+                raise ValueError(
+                    f"Interaction {ix.name!r} has no coefficient_sources. "
+                    "Phase 1 cannot parse rate constants, so the run would "
+                    "use an unflagged default — that is silent fabrication. "
+                    "Declare an explicit 'placeholder: <reason>' source to "
+                    "mark the run exploratory, or wait for Phase 4+ paper "
+                    "ingestion to supply a real rate."
+                )
+            placeholder_flagged = any(
+                str(src).lower().startswith("placeholder")
+                for src in ix.coefficient_sources
             )
-            base_rate = 1.0 if placeholder else 1.0  # Phase 1 single-rate default
-            if placeholder:
-                placeholders.append(ix.name)
+            if not placeholder_flagged:
+                raise ValueError(
+                    f"Interaction {ix.name!r} declares coefficient_sources "
+                    f"{list(ix.coefficient_sources)!r} that do not begin with "
+                    "'placeholder:', but Phase 1 has no rate-parser to honor "
+                    "a real source. Either prefix the source with "
+                    "'placeholder:' to mark the rate as exploratory, or wait "
+                    "for Phase 4+ paper ingestion."
+                )
+            base_rate = 1.0  # Phase 1 single-rate exploratory default
+            placeholders.append(ix.name)
             # If there is a laser field involved, scale the rate by intensity
             # so density drops faster at higher intensity. This is an explicit
             # placeholder — no fabricated cross-section.
@@ -111,7 +135,10 @@ class PythonCpuBackend:
 
     def step(self, state: _RateState, dt: float) -> tuple[_RateState, dict[str, Any]]:
         if dt <= 0:
-            return state, {name: float(n) for name, n in zip(state.species_names, state.densities)}
+            return state, {
+                name: float(n)
+                for name, n in zip(state.species_names, state.densities, strict=True)
+            }
         # Use scipy's vetted LSODA via solve_ivp — never a hand-rolled loop.
         K = state.rate_matrix
 
@@ -137,7 +164,10 @@ class PythonCpuBackend:
             placeholders_used=list(state.placeholders_used),
             laser_intensity=state.laser_intensity,
         )
-        samples = {name: float(n) for name, n in zip(state.species_names, new_densities)}
+        samples = {
+            name: float(n)
+            for name, n in zip(state.species_names, new_densities, strict=True)
+        }
         return new_state, samples
 
     def is_complete(self, state: _RateState) -> bool:  # noqa: ARG002

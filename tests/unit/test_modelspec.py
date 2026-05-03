@@ -18,11 +18,10 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from simworkbench.model_spec import (
+    SCHEMA_VERSION,
     ModelSpec,
     ModelSpecError,
-    SCHEMA_VERSION,
     from_dict,
     get_json_schema,
     load_yaml,
@@ -32,7 +31,6 @@ from simworkbench.model_spec import (
     to_yaml,
 )
 from simworkbench.units import Q
-
 
 # ---------------------------------------------------------------------------
 # Minimum-viable spec used as the basis for many tests

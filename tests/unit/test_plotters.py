@@ -7,10 +7,9 @@ not pin pixel-perfect output — that's a Phase 7 concern.
 
 from __future__ import annotations
 
+import matplotlib
 import numpy as np
 import pytest
-
-import matplotlib
 
 matplotlib.use("Agg")  # headless
 

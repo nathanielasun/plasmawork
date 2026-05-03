@@ -11,7 +11,7 @@ yields a snapshot whenever progress advances.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 
 import pint
-
 from simworkbench.units import Q, magnitude, require_dimensionality
 
 

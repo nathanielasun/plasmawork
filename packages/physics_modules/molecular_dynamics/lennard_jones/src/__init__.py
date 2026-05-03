@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 import pint
-
 from simworkbench.units import Q, magnitude, require_dimensionality
 
 
@@ -44,7 +43,7 @@ def _lj_force_and_potential(
     return forces, potential
 
 
-def simulate(
+def simulate(  # noqa: PLR0915 — the MD kernel is a single physics-flow function; splitting hides the integration loop.
     *,
     n_particles: int,
     box_size: pint.Quantity,

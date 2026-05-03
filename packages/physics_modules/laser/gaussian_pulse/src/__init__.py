@@ -9,7 +9,6 @@ import math
 from dataclasses import dataclass
 
 import pint
-
 from simworkbench.units import Q, magnitude, require_dimensionality
 
 

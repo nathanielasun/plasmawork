@@ -1,0 +1,22 @@
+# Top-level ruff config covering everything ruff lints in this repo
+# (packages/core/src/, packages/physics_modules/, tests/, etc.). The per-
+# package pyproject.toml entries are kept for tools that read package-local
+# config; this file is the single source of truth ruff actually uses when
+# invoked from the repo root.
+
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "PL"]
+ignore = [
+  "PLR0913", # too-many-arguments — physics functions legitimately have many parameters
+  "PLR2004", # magic-value-comparison — literal "2" for 2D / "0" for empty are not magic in scientific code
+  "PLC0415", # import-not-at-top — needed for circular-import avoidance and lazy heavy imports
+]
+
+[lint.per-file-ignores]
+# Test files use single-letter physics symbols (I, T, V, etc.) that match
+# textbook notation; E741's ambiguity check is the wrong rule here.
+"tests/**/*.py" = ["E741"]
+"packages/physics_modules/**/tests/*.py" = ["E741"]

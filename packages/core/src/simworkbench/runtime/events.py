@@ -10,9 +10,8 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-
 
 EventLevel = str  # one of "DEBUG", "INFO", "WARN", "ERROR"
 _VALID_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
@@ -42,7 +41,7 @@ class Event:
             object.__setattr__(
                 self,
                 "timestamp_iso",
-                datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+                datetime.now(UTC).isoformat(timespec="microseconds"),
             )
 
     def to_dict(self) -> dict[str, Any]:

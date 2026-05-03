@@ -42,14 +42,23 @@ class Checkpoint:
 
 
 def checkpoint_dir(run_id: str, *, base: Path | None = None) -> Path:
-    """Resolve and create the checkpoint directory for ``run_id``.
+    """Resolve and (if allowed) create the checkpoint directory for ``run_id``.
 
     Default base is ``<repo>/temp_runs/<run_id>/checkpoints/``. ``base`` lets
     callers point at a capsule's ``results/checkpoints/`` instead.
+
+    **Validation runs BEFORE any side effect.** If the resolved target lies
+    outside the four allowed workbench roots the function raises
+    ``PermissionError`` and creates nothing — guards against
+    `agent_error_patterns.md` "Side-effecting before validating".
     """
     if base is None:
         base = temp_runs_root() / run_id
     target = Path(base) / "checkpoints"
+    if not is_under_workbench(target):
+        raise PermissionError(
+            f"Refusing to create checkpoint directory outside workbench-managed roots: {target}"
+        )
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -57,15 +66,13 @@ def checkpoint_dir(run_id: str, *, base: Path | None = None) -> Path:
 def write_checkpoint(checkpoint: Checkpoint, *, base: Path | None = None) -> Path:
     """Write ``checkpoint`` to disk; return the resulting path.
 
-    Refuses to write outside the four allowed workbench roots. This guard is
-    the regression for `agent_error_patterns.md` "Writing program artifacts
-    outside the project directory".
+    Refuses to write outside the four allowed workbench roots. The refusal
+    is enforced by ``checkpoint_dir()``'s pre-mkdir guard so the disk is
+    never touched on rejection. Honors `agent_error_patterns.md` "Writing
+    program artifacts outside the project directory" AND "Side-effecting
+    before validating".
     """
     target_dir = checkpoint_dir(checkpoint.run_id, base=base)
-    if not is_under_workbench(target_dir):
-        raise PermissionError(
-            f"Refusing to write checkpoint outside workbench-managed roots: {target_dir}"
-        )
     path = target_dir / f"step_{checkpoint.step:06d}.pkl"
     with path.open("wb") as fh:
         pickle.dump(checkpoint, fh, protocol=pickle.HIGHEST_PROTOCOL)

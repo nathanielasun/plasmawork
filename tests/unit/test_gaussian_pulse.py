@@ -8,9 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from simworkbench.units import Q, UnitsError, magnitude
-
 
 # Load the module from its plan-named location (not on the Python path).
 _MODULE_PATH = (

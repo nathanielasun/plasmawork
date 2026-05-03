@@ -22,9 +22,9 @@ from .progress import ProgressCallback, ProgressTracker, ProgressUpdate
 from .python_cpu import PythonCpuBackend
 from .runner import (
     BackendProtocol,
+    Runner,
     RunResult,
     RunState,
-    Runner,
     get_backend,
     known_backends,
     register_backend,

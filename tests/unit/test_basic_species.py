@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from simworkbench.units import Q, UnitsError, magnitude
 
 _MODULE_PATH = (

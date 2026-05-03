@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from simworkbench.runtime.seeds import SeedSet, derive
 
 
@@ -51,5 +50,8 @@ def test_numpy_generator_unknown_stream_raises():
 
 def test_seedset_is_frozen():
     s = SeedSet(base_seed=1, run_id="r", physics=2, solver=3)
-    with pytest.raises(Exception):
+    # Frozen dataclasses raise dataclasses.FrozenInstanceError on mutation —
+    # which is a subclass of AttributeError. We assert against AttributeError
+    # so the test isn't tied to the dataclass internal exception name.
+    with pytest.raises(AttributeError):
         s.physics = 99  # type: ignore[misc]

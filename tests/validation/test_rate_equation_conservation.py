@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import load_yaml
 from simworkbench.runtime import Runner
@@ -36,7 +34,9 @@ def test_total_density_is_conserved_within_solver_tolerance():
     A = result.diagnostics["A"]
     B = result.diagnostics["B"]
     initial_total = A[0] + B[0]
-    drift = max(abs((a + b) - initial_total) / initial_total for a, b in zip(A, B))
+    drift = max(
+        abs((a + b) - initial_total) / initial_total for a, b in zip(A, B, strict=True)
+    )
     # solve_ivp atol=1e-12 / rtol=1e-8 → drift well under 1e-6.
     assert drift < 1e-6
 
@@ -50,7 +50,7 @@ def test_B_is_monotone_non_decreasing():
     runner = Runner(exp)
     result = runner.run()
     B = result.diagnostics["B"]
-    for prev, curr in zip(B, B[1:]):
+    for prev, curr in zip(B, B[1:], strict=False):
         # Allow a tiny solver wobble below atol.
         assert curr >= prev - 1e-6 * max(abs(prev), 1.0)
 

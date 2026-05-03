@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pint
-
 from simworkbench.units import Q, require_dimensionality
 
 SpeciesKind = Literal["atom", "ion", "molecule", "electron", "photon", "quasi_particle"]

@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import load_yaml
 from simworkbench.runtime import Runner, RunState, known_backends

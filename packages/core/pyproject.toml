@@ -51,4 +51,13 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "PL"]
-ignore = ["PLR0913"]  # too-many-arguments — physics functions legitimately have many parameters
+ignore = [
+  "PLR0913", # too-many-arguments — physics functions legitimately have many parameters
+  "PLR2004", # magic-value-comparison — literal "2" for 2D / "0" for empty are not magic in scientific code
+  "PLC0415", # import-not-at-top — needed for circular-import avoidance and lazy heavy imports
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files use single-letter physics symbols (`I` for intensity, etc.) that
+# match textbook notation; ruff's E741 ambiguity check is the wrong rule here.
+"tests/**/*.py" = ["E741"]

@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import load_yaml
 from simworkbench.runtime import Runner
@@ -53,7 +52,9 @@ def test_pause_resume_identity_via_pause_only():
 
     for key in ("A", "B"):
         assert len(a_result.diagnostics[key]) == len(b_result.diagnostics[key])
-        for av, bv in zip(a_result.diagnostics[key], b_result.diagnostics[key]):
+        for av, bv in zip(
+            a_result.diagnostics[key], b_result.diagnostics[key], strict=True
+        ):
             assert av == pytest.approx(bv, rel=1e-9, abs=1e-9)
 
 
@@ -86,5 +87,5 @@ def test_pause_resume_identity_via_checkpoint_restore():
     a_tail = a_result.diagnostics["A"][7:]
     c_full = c_result.diagnostics["A"]
     assert len(a_tail) == len(c_full)
-    for av, cv in zip(a_tail, c_full):
+    for av, cv in zip(a_tail, c_full, strict=True):
         assert av == pytest.approx(cv, rel=1e-7, abs=1e-9)

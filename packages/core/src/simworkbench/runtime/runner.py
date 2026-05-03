@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -27,11 +26,11 @@ import numpy as np
 from simworkbench.experiment import Experiment
 from simworkbench.runtime.checkpoint import Checkpoint, write_checkpoint
 from simworkbench.runtime.events import EventBus
-from simworkbench.runtime.progress import ProgressTracker, ProgressUpdate
+from simworkbench.runtime.progress import ProgressTracker
 from simworkbench.runtime.seeds import SeedSet, derive
 
 
-class RunState(str, Enum):
+class RunState(StrEnum):
     """Lifecycle state of a ``Runner`` instance."""
 
     CREATED = "created"
@@ -97,6 +96,11 @@ class RunResult:
     final_simulation_time: float
     final_state: Any
     diagnostics: dict[str, Any] = field(default_factory=dict)
+    placeholders: list[str] = field(default_factory=list)
+
+    @property
+    def placeholder_used(self) -> bool:
+        return bool(self.placeholders)
 
 
 class Runner:
@@ -331,7 +335,21 @@ class Runner:
             final_simulation_time=self._sim_time,
             final_state=self._sim_state,
             diagnostics={k: list(v) for k, v in self._diagnostics.items()},
+            placeholders=self._collect_placeholders(),
         )
+
+    def _collect_placeholders(self) -> list[str]:
+        """Extract the backend's declared placeholder interactions, if any."""
+        state = self._sim_state
+        if state is None:
+            return []
+        # python_cpu's _RateState carries a placeholders_used list. Other
+        # backends may expose it differently; we read defensively so the
+        # runner doesn't depend on a single backend's state shape.
+        candidates = getattr(state, "placeholders_used", None)
+        if candidates is None:
+            return []
+        return list(candidates)
 
     # ----- helpers -------------------------------------------------------
 

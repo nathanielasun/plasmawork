@@ -59,7 +59,7 @@ def derive(base_seed: int, run_id: str) -> SeedSet:
 
 
 def _derive_one(base_seed: int, run_id: str, stream: str) -> int:
-    payload = f"{base_seed}|{run_id}|{stream}".encode("utf-8")
+    payload = f"{base_seed}|{run_id}|{stream}".encode()
     digest = hashlib.blake2b(payload, digest_size=8).digest()
     # Mask top bit so the result fits in a signed 63-bit int (numpy-friendly).
     return int.from_bytes(digest, "big") & ((1 << 63) - 1)
