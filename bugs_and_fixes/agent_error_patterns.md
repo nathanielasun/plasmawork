@@ -967,3 +967,161 @@ For `agents.yaml`'s always-on `security_sandbox`: `tests/regression/test_securit
 
 ### Bug log
 - 2026-05-03 *Phase 5 post-close audit*: `security_sandbox.enabled = false` while `paper_ingestion`, `physics_interpretation`, `model_spec`, `module_retrieval` were all enabled — violated the "Always-on once any agent is enabled" rule that the role's own description carried.
+
+---
+
+## Error Pattern: Validation runs the source-of-truth, not the generated artifact
+
+### Why it is bad
+Phase 6's `ValidationRunner` was supposed to validate the generated `<capsule>/src/generated/experiment.py`. Instead it reloaded `model/model_spec.yaml` and ran the spec through the runtime, never importing or executing the generated file. Corrupting `experiment.py` with invalid Python returned `incomplete` with no failure: the corrupted artifact was silently skipped because validation didn't read it.
+
+The pattern: a validation step is named after the artifact it validates ("ValidationRunner runs the generated experiment") but its implementation bypasses that artifact for the upstream source of truth. The artifact looks tested; it isn't.
+
+### Required behavior
+A "validate X" step must consume X. For executable artifacts: import them, execute them, surface failures. For declarative artifacts: parse them and assert structural identity with whatever the generator was supposed to emit. A failing or missing artifact must produce `failed` (not `incomplete`, not `passed`). Negative regression test: corrupt the artifact, run validation, assert `failed` + a non-empty `failure` field.
+
+### Detection
+- Grep for `Validat*Runner` / `validate_*` and check whether the body actually opens the artifact in question. If it loads a sibling file instead, the validation is bypassing.
+- Negative test: corrupt the artifact and re-run validation; non-`failed` status is a bug.
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: `ValidationRunner.run` skipped the generated `experiment.py` and ran `Runner` on the spec directly. A test that corrupted `experiment.py` got `validation_status: incomplete` instead of `failed`.
+
+---
+
+## Error Pattern: Validation rule fires after a permissive early-exit
+
+### Why it is bad
+Phase 1's `python_cpu` backend validated coefficient sources INSIDE a `for ix in spec.interactions` loop, but had a `if len(participants) < 2: continue` early-exit BEFORE the validation block. A one-participant interaction with a non-placeholder rate (e.g. `paper:k=1.0e7 1/s`) silently `continue`d — never raised, never produced any state change. The interaction looked like a no-op while the spec passed cleanly.
+
+The pattern: validation lives downstream of an `if … continue / return / break`. Inputs the early-exit covers slip past validation. Phase 4's review banner check had the same shape (Markdown read but never inspected; only structured rows checked).
+
+### Required behavior
+Validate every input shape FIRST, then apply business / operational logic. The order is: (1) declarative checks the rule covers, (2) decisions that may skip work. Both branches of the skip carry the same validation cost. Negative regression test: send the input the early-exit covers and assert the validation still fires.
+
+### Detection
+- Grep for `continue` / `break` / `return` inside loops and audit whether the validators above could be moved below them. If so, the validation is conditional on the skip.
+- Read every `for` loop in a validator: is there any path that exits without applying every rule?
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: `python_cpu.RatePopulationBackend.initialize` had `if len(species_participants) < 2: continue` BEFORE the coefficient-source validation. One-participant interactions with non-placeholder coefficient_sources passed cleanly and produced unchanged state.
+
+---
+
+## Error Pattern: Trusting a client-supplied actor identity for a privileged check
+
+### Why it is bad
+`POST /api/tools/{name}/status` accepted `actor=human` from the request body and treated it as proof of human authorship. The library's `set_status` blocks `actor=agent` for human-only promotions but happily accepts `actor=human` from anyone, including the autonomous agent itself. Any caller (UI, agent, curl) could promote a tool to `validated` by claiming `actor=human`.
+
+The pattern: a privileged check reads its actor from the request body. Without server-side authentication, the body is the agent. This is the network analogue of "Hard rule made optional via a client-controlled API parameter".
+
+### Required behavior
+Privileged checks derive the actor from server-side context (authenticated session, signed request, OS user). Until that infrastructure lands, the safe default is to require an out-of-band human-approval gate (config flag, file-based ack, prompt the user in the desktop app) — not to read the actor from the body.
+
+A short-term fix that's still better than the trust default: refuse `actor=human` over plain HTTP and require a separate "approve" endpoint that consumes a human-approval token written by an out-of-band path.
+
+### Detection
+- Grep for `actor`, `user`, `role` request-body fields paired with privileged checks (`set_status`, lifecycle promotion, capability grants). Each match needs a server-side derivation, not a body read.
+- Negative test: send `actor=human` from a context the server cannot authenticate; the privileged check must refuse.
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: `set_tool_status(actor="human")` accepted from any caller, allowing agent-driven `candidate → validated` promotion via the API. The library blocked `actor=agent`; the API blocked nothing.
+
+---
+
+## Error Pattern: Diff endpoint that doesn't compute a diff
+
+### Why it is bad
+`GET /api/capsules/{name}/codegen/diff` returned `{previous: <old manifest>, current_files: <hashes of current tree>}`. The caller had to compute `(added, removed, changed)` themselves. Worse, the test that asserted the endpoint "reports regeneration changes" only checked that `previous` and `current_files` keys existed — never actually asserted any file appeared as changed. After mutating the spec, calling the endpoint, and not regenerating, the response contained zero diff signal because no regeneration had occurred.
+
+The pattern: an endpoint named `diff` returns inputs to a diff, not the diff itself. The test asserts shape, not behavior. The reviewer reads the test name ("regeneration changes") and trusts the assertion ("keys exist"), even though the assertion is satisfied by an empty response.
+
+### Required behavior
+- An endpoint named after a transformation computes that transformation. `/diff` returns `{added, removed, changed, unchanged}`, each populated by a real comparison.
+- A test that says "X reports changes" asserts at least one row appears in the changed list under conditions that should produce a change.
+- Naming check: when the endpoint can't actually compute the named operation, rename it (`/state` instead of `/diff`).
+
+### Detection
+- Grep for endpoints whose name names a transformation (`/diff`, `/preview`, `/status-after-X`). Each must do the named work or be renamed.
+- Read every test name: does the assertion actually exercise the verb in the name?
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: `/api/capsules/{name}/codegen/diff` returned hashes only, no diff. Test `test_phase_6_gate_walk_diff_endpoint_reports_regeneration_changes` asserted only that two keys existed.
+
+---
+
+## Error Pattern: Archive contains its own destination
+
+### Why it is bad
+`export_archive` opened the destination zip file, then walked `capsule_path.rglob("*")`. When the destination was inside the source capsule (e.g. `<capsule>/exports/<capsule>.zip`), the in-flight zip captured itself. The user got an archive whose extract recursed.
+
+The pattern: the exporter doesn't check whether the destination is reachable from the source's `rglob`. The "validate target before write" rule from earlier audits applied — but the rule only checked workbench-managed roots, not source/destination overlap.
+
+### Required behavior
+- Validate destination is OUTSIDE source root before opening the archive. If overlap is unavoidable, exclude the destination explicitly during the walk (`if path.resolve() == archive.resolve(): continue`).
+- Regression test: call exporter with `target = capsule_path / "self-export.zip"` and assert the produced archive does NOT contain `self-export.zip`.
+
+### Detection
+- Grep for `rglob` / `iterdir` walks paired with `zipfile.ZipFile(...) as zf:` writes. If the archive is created before the walk and lives inside the walked tree, this pattern fires.
+- Test: exporter called with destination inside source. Assert resulting archive's contents.
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: `export_archive` opened `<capsule>/exports/<capsule>.zip` and then walked `<capsule>/`, including the in-flight zip in itself.
+
+---
+
+## Error Pattern: Serializer drops semantic fields when writing the canonical format
+
+### Why it is bad
+Phase 2A made HDF5 the canonical bulk format. The HDF5 metadata stored `placeholder_used: bool` (a flag) but discarded `placeholders: list[str]` (the names). The JSON sidecar carried the names but Phase 2D's validator marks JSON as warning-only — capsules can be HDF5-only. After save → load on an HDF5-only capsule, `placeholders` came back empty even though placeholders were used.
+
+The pattern: when a writer ports from format A to canonical format B, semantic fields that B happens not to "look like" get downgraded or dropped. The reviewer compares the file count, not the field set. Reload silently loses signal.
+
+### Required behavior
+- Every save → load round-trip preserves the same set of semantic fields. Pick the canonical format's representation for each field and document it.
+- Cross-format parity test: write a payload in canonical format only, read it back, assert every documented field matches the input.
+
+### Detection
+- Diff the writer's output vs. the data model's fields. Fields present in the model but absent from the canonical write are flag candidates.
+- Round-trip test that uses the canonical format ONLY (no sidecar fallback).
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: HDF5-only capsule reload returned `placeholders=[]` because `write_diagnostics_h5` stored only `placeholder_used: bool`.
+
+---
+
+## Error Pattern: Generator skips cleanup, leaving stale artifacts
+
+### Why it is bad
+Phase 6's `CodeGenerator` re-emitted into `<capsule>/src/generated/` without removing files the new run did not produce. After the spec lost a species, the old `diagnostics.py` references and stale test files lingered. Export bundled them. Reviewer saw a tree that didn't match the manifest.
+
+The pattern: regenerate-in-place writers trust that "every file the new run cares about overwrites the old one". For files that the new run no longer produces, the old version persists.
+
+### Required behavior
+- Track the prior generation manifest. On regenerate, compute (prior - current) and remove the orphans before writing the new tree. Sandbox-checked, so user_edits/ stays untouched.
+- Regression test: generate, mutate spec to drop an artifact, regenerate, assert the dropped artifact no longer exists.
+
+### Detection
+- Read every "regenerate" / "rewrite" / "refresh" code path. If it doesn't list-and-delete orphans, it leaks them.
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: `CodeGenerator.generate` left old files under `src/generated/` because no cleanup pass ran.
+
+---
+
+## Error Pattern: UI calls itself an editor while shipping a viewer
+
+### Why it is bad
+Plan §Phase 6 / 6D names the deliverable "Generated Code Viewer **and Editor**" with the bullet "Allow user edits". The shipped UI listed files and offered Regenerate / View diff / Run validation buttons — no inline editing. The reviewer who needs to tweak `user_edits/run.py` had to leave the workbench, edit on disk, return.
+
+The pattern: the plan's verb list ("view", "edit", "diff", "export") is treated as the menu of buttons rather than the menu of actions the panel must implement. The panel ships the buttons, calls the verbs done.
+
+### Required behavior
+- Word audit: every plan-named verb on a UI deliverable maps to a real interaction on the panel — a textarea for "edit", a real diff view for "diff", a download for "export".
+- Test: each verb has a Vitest test that exercises the interaction (not just that the button exists).
+
+### Detection
+- Compare plan §Phase N / NX bullets against component test names. Verbs without matching tests are flag candidates.
+
+### Bug log
+- 2026-05-03 *Phase 6 post-close audit*: `GeneratedCodeView` had no editor. Plan §6D's "Allow user edits" bullet was unimplemented despite the convention checker passing.

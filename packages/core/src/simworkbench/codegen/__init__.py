@@ -26,7 +26,7 @@ from .generator import (
     CodeGenerationResult,
     CodeGenerator,
 )
-from .sandbox import SandboxViolation, sandboxed_write
+from .sandbox import SandboxViolation, sandboxed_write, user_edit_write
 from .test_generation import TestGenerator
 from .validation_run import ValidationRunner
 
@@ -38,4 +38,5 @@ __all__ = [
     "TestGenerator",
     "ValidationRunner",
     "sandboxed_write",
+    "user_edit_write",
 ]

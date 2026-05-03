@@ -16,6 +16,13 @@ example verbatim.
 
 from __future__ import annotations
 
+from .approval import (
+    ApprovalError,
+    approval_path,
+    approvals_root,
+    consume_approval,
+    grant_approval,
+)
 from .base_tool import BaseTool
 from .binding import ToolBindingError, apply_tools
 from .io import ToolInput, ToolIOError, ToolOutput
@@ -41,6 +48,7 @@ from .registry import RegisteredTool, ToolRegistry, ToolRegistryError
 __all__ = [
     "AGENT_ALLOWED",
     "ALLOWED_TRANSITIONS",
+    "ApprovalError",
     "BaseTool",
     "LifecycleError",
     "ORDER",
@@ -57,7 +65,11 @@ __all__ = [
     "ToolStatus",
     "ToolValidation",
     "apply_tools",
+    "approval_path",
+    "approvals_root",
     "can_transition",
+    "consume_approval",
+    "grant_approval",
     "load_tool_yaml",
     "require_transition",
     "write_tool_yaml",

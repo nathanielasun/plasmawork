@@ -34,8 +34,18 @@ export default function GeneratedCodeView() {
   const [diff, setDiff] = useState<CodegenDiff | null>(null);
   const [lastRun, setLastRun] = useState<CodegenRun | null>(null);
   const [validationSummaryPath, setValidationSummaryPath] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "regenerate" | "diff" | "validate">("");
+  const [busy, setBusy] = useState<"" | "regenerate" | "diff" | "validate" | "save">("");
   const [error, setError] = useState<string | null>(null);
+
+  // 6D editor: reviewer-driven user_edits/ writes. We default to
+  // ``run_overrides.py`` so the textarea doesn't start empty when a
+  // first-time reviewer hasn't picked a name yet.
+  const [editPath, setEditPath] = useState<string>("run_overrides.py");
+  const [editContent, setEditContent] = useState<string>(
+    "# Reviewer edits for <capsule>/src/user_edits/.\n"
+      + "# Regeneration never overwrites this directory.\n",
+  );
+  const [editSaved, setEditSaved] = useState<string | null>(null);
 
   useEffect(() => {
     apiClient
@@ -101,6 +111,26 @@ export default function GeneratedCodeView() {
     try {
       const r = await apiClient.runValidation(selected);
       setValidationSummaryPath(r.summary_path);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const saveUserEdit = async () => {
+    if (!selected) return;
+    if (!editPath.trim()) {
+      setError("Pick a filename under src/user_edits/.");
+      return;
+    }
+    setBusy("save");
+    setError(null);
+    setEditSaved(null);
+    try {
+      const r = await apiClient.writeUserEdit(selected, editPath, editContent);
+      setEditSaved(r.path);
+      await loadListing(selected);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -237,6 +267,57 @@ export default function GeneratedCodeView() {
             Wrote <code>{validationSummaryPath}</code>. Open it to see the
             run's diagnostics, plots, and validation status.
           </p>
+        </section>
+      )}
+
+      {selected && (
+        <section aria-label="User edits editor">
+          <h3>User edits editor</h3>
+          <p className="muted">
+            Reviewer-driven edits land under{" "}
+            <code>&lt;capsule&gt;/src/user_edits/</code>. Regeneration{" "}
+            <strong>never</strong> touches this subtree (the backend's{" "}
+            <code>user_edit_write</code> enforces it). paper_sources/ and
+            provenance/ are refused by the same library check.
+          </p>
+          <p>
+            <label htmlFor="user-edit-path">
+              Path under user_edits/:&nbsp;
+            </label>
+            <input
+              id="user-edit-path"
+              type="text"
+              value={editPath}
+              onChange={(e) => setEditPath(e.target.value)}
+              size={40}
+            />
+          </p>
+          <p>
+            <label htmlFor="user-edit-content">Contents:</label>
+          </p>
+          <p>
+            <textarea
+              id="user-edit-content"
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              rows={10}
+              cols={80}
+            />
+          </p>
+          <p>
+            <button
+              type="button"
+              onClick={saveUserEdit}
+              disabled={!selected || busy !== ""}
+            >
+              {busy === "save" ? "Saving…" : "Save user edit"}
+            </button>
+          </p>
+          {editSaved && (
+            <p>
+              Saved <code>{editSaved}</code>.
+            </p>
+          )}
         </section>
       )}
     </article>

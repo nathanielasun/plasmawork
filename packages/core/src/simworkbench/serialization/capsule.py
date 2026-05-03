@@ -183,6 +183,11 @@ def save_capsule(
             "elapsed_seconds": result.elapsed_seconds,
             "final_simulation_time_seconds": result.final_simulation_time,
             "placeholder_used": bool(result.placeholders),
+            # Persist the full placeholder list, not just the boolean.
+            # Carries `agent_error_patterns.md` "Serializer drops
+            # semantic fields when writing the canonical format" — an
+            # HDF5-only capsule reload had been losing the names.
+            "placeholders": list(result.placeholders),
         },
     )
 
@@ -319,6 +324,14 @@ def load_capsule(path: str | Path) -> LoadedCapsule:
         h5_data, h5_meta = read_diagnostics_h5(h5_path)
         diagnostics = {k: v.tolist() for k, v in h5_data.items()}
         payload.update(h5_meta)
+        # ``placeholders`` is stored as a vlen-string list in HDF5; the
+        # reader returns ``list[str]``. We coerce empty-string elements
+        # away to keep the contract clean (an empty token list reads
+        # back as ``[]`` rather than ``[""]``).
+        if "placeholders" in payload and isinstance(payload["placeholders"], list):
+            payload["placeholders"] = [
+                str(p) for p in payload["placeholders"] if p
+            ]
     if json_path.is_file():
         json_payload = json.loads(json_path.read_text(encoding="utf-8"))
         if not diagnostics:

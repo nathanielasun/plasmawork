@@ -198,7 +198,16 @@ export interface ApiClient {
   listTools(): Promise<ToolIndexRow[]>;
   getTool(name: string): Promise<ToolDetail>;
   getToolDocs(name: string): Promise<ToolDocs>;
-  setToolStatus(name: string, status: ToolStatus, actor?: string): Promise<{ name: string; status: ToolStatus }>;
+  /**
+   * Promote/demote a tool. The backend chooses the actor server-side:
+   * agent-allowed transitions (draft / candidate / deprecated) run as
+   * `agent`; human-only transitions (validated / trusted) require a
+   * pre-written approval token under `local_cache/tool_approvals/`.
+   * Earlier the API trusted a client-supplied `actor` field; carries
+   * `agent_error_patterns.md` "Trusting a client-supplied actor
+   * identity for a privileged check".
+   */
+  setToolStatus(name: string, status: ToolStatus): Promise<{ name: string; status: ToolStatus }>;
   runToolTests(name: string): Promise<{ name: string; passed: boolean; returncode: number; stdout: string; stderr: string }>;
   executeTool(name: string, kwargs: Record<string, unknown>, units?: Record<string, string>): Promise<{ name: string; output: Record<string, unknown> }>;
   exportTool(name: string): Promise<{ name: string; archive: string; size_bytes: number }>;
@@ -217,6 +226,17 @@ export interface ApiClient {
   runCodegen(capsule: string): Promise<CodegenRun>;
   diffCodegen(capsule: string): Promise<CodegenDiff>;
   runValidation(capsule: string): Promise<{ capsule: string; summary_path: string }>;
+  /**
+   * Phase 6D editor — write reviewer-controlled content to
+   * `<capsule>/src/user_edits/<path>`. Backend refuses any path
+   * outside that subtree (the library's `user_edit_write` enforces
+   * the allow-list). Empty paths return 400.
+   */
+  writeUserEdit(
+    capsule: string,
+    path: string,
+    content: string,
+  ): Promise<{ capsule: string; path: string; size_bytes: number }>;
 }
 
 export interface CodegenFile {
@@ -247,13 +267,19 @@ export interface CodegenListing {
 export interface CodegenRun {
   capsule: string;
   files_written: string[];
+  files_removed: string[];
   manifest_path: string | null;
 }
 
 export interface CodegenDiff {
   capsule: string;
   previous: CodegenManifest | null;
-  current_files: CodegenManifestEntry[];
+  current_preview: CodegenManifestEntry[];
+  added: string[];
+  removed: string[];
+  changed: string[];
+  unchanged: string[];
+  note?: string;
 }
 
 export interface ProposalMatchRow {
@@ -385,13 +411,15 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
     getTool: (name) => fetchJson(`/tools/${encodeURIComponent(name)}`, undefined, baseUrl),
     getToolDocs: (name) =>
       fetchJson(`/tools/${encodeURIComponent(name)}/docs`, undefined, baseUrl),
-    setToolStatus: (name, status, actor = "human") =>
+    setToolStatus: (name, status) =>
+      // The actor is server-derived. Human-only promotions need a
+      // pre-written approval token; the API returns 403 if absent.
       fetchJson(
         `/tools/${encodeURIComponent(name)}/status`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status, actor }),
+          body: JSON.stringify({ status }),
         },
         baseUrl,
       ),
@@ -500,6 +528,21 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
         },
         baseUrl,
       ),
+    writeUserEdit: (capsule, path, content) => {
+      const safePath = path
+        .split("/")
+        .map((seg) => encodeURIComponent(seg))
+        .join("/");
+      return fetchJson(
+        `/capsules/${encodeURIComponent(capsule)}/user_edits/${safePath}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+        baseUrl,
+      );
+    },
   };
 }
 

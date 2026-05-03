@@ -1,16 +1,21 @@
 """Phase 6B — Code-generation sandbox.
 
 The sandbox is the single producer-side gate for every file the code
-generator writes. It carries `agent_error_patterns.md`:
+**generator** writes. It carries `agent_error_patterns.md`:
 
-- "Overwriting `<capsule>/src/user_edits/`" — every write is checked
-  BEFORE the open() call; user_edits/, paper_sources/, and
-  provenance/ are off-limits.
+- "Overwriting `<capsule>/src/user_edits/`" — every generator write
+  is checked BEFORE the open() call; user_edits/, paper_sources/,
+  and provenance/ are off-limits to the generator.
 - "Side-effecting before validating" — sandboxed_write validates the
   destination first, only then opens the file.
 - "Hard rule made optional via a client-controlled API parameter" —
   there is no ``allow_user_edits_overwrite`` knob. Library callers
   cannot opt out; API endpoints don't accept the field.
+
+Reviewer-driven edits to ``<capsule>/src/user_edits/`` go through a
+SEPARATE function, ``user_edit_write``, that has its own allowed-roots
+check (``user_edits/`` only). The split keeps "regeneration cannot
+touch user_edits/" enforced by API surface, not by caller convention.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from pathlib import Path
 
 ALLOWED_GENERATED_SUBDIR = Path("src") / "generated"
 ALLOWED_VALIDATION_SUBDIR = Path("validation")
+USER_EDITS_SUBDIR = Path("src") / "user_edits"
 
 OFF_LIMITS_SUBDIRS: tuple[Path, ...] = (
     Path("src") / "user_edits",
@@ -110,10 +116,58 @@ def sandboxed_write(
     return resolved
 
 
+def user_edit_write(
+    capsule_dir: Path,
+    relative_path: str | Path,
+    content: str,
+) -> Path:
+    """Reviewer-driven write under ``<capsule>/src/user_edits/`` only.
+
+    The function is the deliberate counterpart to ``sandboxed_write``:
+    it accepts ONLY paths under ``user_edits/`` so the regeneration
+    sandbox stays asymmetric. paper_sources/, provenance/, and
+    src/generated/ are forbidden here so a malicious caller can't
+    smuggle a generator-target write through the editor endpoint.
+    """
+    capsule = Path(capsule_dir)
+    target = Path(relative_path)
+    if target.is_absolute():
+        raise SandboxViolation(
+            f"user_edit_write expects a capsule-relative path; got "
+            f"absolute {target}."
+        )
+
+    capsule_resolved = capsule.resolve()
+    target_resolved = (capsule_resolved / target).resolve()
+    try:
+        relative_resolved = target_resolved.relative_to(capsule_resolved)
+    except ValueError as exc:
+        raise SandboxViolation(
+            f"Refusing to write outside the capsule: {target_resolved}"
+        ) from exc
+
+    # Only user_edits/ is allowed for this entry point.
+    if not _is_under(
+        capsule_resolved / relative_resolved,
+        capsule_resolved / USER_EDITS_SUBDIR,
+    ):
+        raise SandboxViolation(
+            f"user_edit_write only writes under {USER_EDITS_SUBDIR}/; "
+            f"got {relative_resolved}. Use the codegen API for "
+            "generated artifacts."
+        )
+
+    target_resolved.parent.mkdir(parents=True, exist_ok=True)
+    target_resolved.write_text(content, encoding="utf-8")
+    return target_resolved
+
+
 __all__ = [
     "ALLOWED_GENERATED_SUBDIR",
     "ALLOWED_VALIDATION_SUBDIR",
     "OFF_LIMITS_SUBDIRS",
     "SandboxViolation",
+    "USER_EDITS_SUBDIR",
     "sandboxed_write",
+    "user_edit_write",
 ]

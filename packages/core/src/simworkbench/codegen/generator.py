@@ -39,7 +39,7 @@ from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import ModelSpec
 from simworkbench.model_spec import to_dict as model_spec_to_dict
 
-from .sandbox import sandboxed_write
+from .sandbox import SandboxViolation, sandboxed_write
 from .test_generation import TestGenerator
 
 
@@ -53,13 +53,16 @@ class CodeGenerationResult:
 
     ``files_written`` is repo-relative-to-capsule paths in the order
     they landed; ``manifest_path`` points at ``codegen_manifest.json``
-    (used by the diff endpoint).
+    (used by the diff endpoint). ``removed_files`` lists prior-
+    generation orphans that this run cleaned up — the empty-list case
+    is the fresh-generation default.
     """
 
     capsule: Path
     files_written: list[str] = field(default_factory=list)
     file_hashes: dict[str, str] = field(default_factory=dict)
     manifest_path: Path | None = None
+    removed_files: list[str] = field(default_factory=list)
 
 
 _GENERATED_HEADER = (
@@ -87,10 +90,22 @@ class CodeGenerator:
         files: list[str] = []
         hashes: dict[str, str] = {}
 
-        # Refresh the generated/ tree by writing each artifact through the
-        # sandbox. We do NOT rmtree first — the tree is small and the
-        # sandbox guards against escapes; rmtree would risk wiping a
-        # symlinked user_edits/ if a reviewer ever did that.
+        # Pre-load the previous manifest (if any) so we can compute a
+        # real diff and clean orphans after writing the new tree.
+        # Carries `agent_error_patterns.md` "Generator skips cleanup,
+        # leaving stale artifacts".
+        prior_manifest_path = capsule / "src" / "generated" / "codegen_manifest.json"
+        prior_paths: set[str] = set()
+        if prior_manifest_path.is_file():
+            try:
+                prior = json.loads(prior_manifest_path.read_text(encoding="utf-8"))
+                prior_paths = {
+                    entry["path"]
+                    for entry in prior.get("files", [])
+                    if isinstance(entry, dict) and "path" in entry
+                }
+            except Exception:  # noqa: BLE001 — corrupt prior manifest = empty diff baseline.
+                prior_paths = set()
 
         # 1. Python experiment scaffold.
         files.append(self._write(
@@ -142,11 +157,29 @@ class CodeGenerator:
             manifest_path.read_text(encoding="utf-8")
         )
 
+        # Cleanup: remove stale files that the prior generation produced
+        # but the current run did not. Sandbox-checked so user_edits/,
+        # paper_sources/, provenance/ stay untouched even if the prior
+        # manifest had bogus paths under those subtrees.
+        current_set = set(files)
+        orphans = sorted(prior_paths - current_set)
+        removed: list[str] = []
+        for relative in orphans:
+            try:
+                self._remove_under_sandbox(capsule, relative)
+            except SandboxViolation:
+                # Refuse to delete anything outside the generated/
+                # subtree — defense in depth against a tampered
+                # manifest.
+                continue
+            removed.append(relative)
+
         return CodeGenerationResult(
             capsule=capsule,
             files_written=files,
             file_hashes=hashes,
             manifest_path=manifest_path,
+            removed_files=removed,
         )
 
     # ------------------------------------------------------------------
@@ -163,6 +196,46 @@ class CodeGenerator:
         sandboxed_write(capsule, relative, content)
         hashes[relative] = _sha256(content)
         return relative
+
+    @staticmethod
+    def _remove_under_sandbox(capsule: Path, relative: str) -> None:
+        """Delete a stale generated file. The path goes through the
+        same allowed-roots / off-limits checks as ``sandboxed_write``
+        so a tampered prior manifest cannot ask us to delete outside
+        ``src/generated/`` or under user_edits/.
+        """
+        from .sandbox import (
+            ALLOWED_GENERATED_SUBDIR,
+            ALLOWED_VALIDATION_SUBDIR,
+            OFF_LIMITS_SUBDIRS,
+        )
+
+        target = capsule.resolve() / Path(relative)
+        target_resolved = target.resolve()
+        try:
+            relative_resolved = target_resolved.relative_to(capsule.resolve())
+        except ValueError as exc:
+            raise SandboxViolation(
+                f"Refusing to delete outside the capsule: {target_resolved}"
+            ) from exc
+        for forbidden in OFF_LIMITS_SUBDIRS:
+            try:
+                relative_resolved.relative_to(forbidden)
+            except ValueError:
+                continue
+            raise SandboxViolation(
+                f"Refusing to delete under {forbidden}/: {relative_resolved}"
+            )
+        allowed = (ALLOWED_GENERATED_SUBDIR, ALLOWED_VALIDATION_SUBDIR)
+        if not any(
+            _is_under_path(relative_resolved, root) for root in allowed
+        ):
+            raise SandboxViolation(
+                f"Refusing to delete outside generated/validation roots: "
+                f"{relative_resolved}"
+            )
+        if target_resolved.is_file():
+            target_resolved.unlink()
 
     @staticmethod
     def _render_experiment(spec: ModelSpec) -> str:
@@ -318,6 +391,14 @@ class CodeGenerator:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _is_under_path(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+    except ValueError:
+        return False
+    return True
 
 
 def _utc_now_iso() -> str:

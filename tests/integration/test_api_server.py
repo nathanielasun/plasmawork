@@ -312,14 +312,25 @@ def test_get_tool_docs_returns_readme_and_yaml():
 
 
 def test_set_tool_status_rejects_unauthorized_agent_promotion(tmp_path):
-    """Phase 9.5: agents may not set ``validated``. The API surfaces the
-    LifecycleError from the registry as 400 with the rule explanation."""
+    """Phase 9.5: human-only promotions cannot be triggered through the
+    API by trusting a body field. The API never reads ``actor`` from the
+    body; agent-allowed transitions run as agent, and human-only
+    transitions require a single-use approval token written by the
+    local CLI / Python helper.
+
+    This test asserts:
+      1. POST without an approval → 403 (no client-side bypass).
+      2. POST with a granted approval → 200 (correct path).
+      3. The approval token is single-use (re-POST without re-granting
+         returns 403).
+    """
     # Use the real example tool but reset to candidate after the test if we
     # successfully promoted it, so we don't permanently flip its status.
     import shutil
     import uuid
 
     from simworkbench.paths import local_cache_root
+    from simworkbench.tools import grant_approval
     src = (
         repo_root()
         / "packages"
@@ -341,19 +352,65 @@ def test_set_tool_status_rejects_unauthorized_agent_promotion(tmp_path):
     )
     try:
         client = _client()
-        # Agent promotion to validated → 400.
-        r = client.post(
-            f"/api/tools/{name}/status",
-            json={"status": "validated", "actor": "agent"},
+        # 1. POST without approval → 403 (the bypass path is closed).
+        r = client.post(f"/api/tools/{name}/status", json={"status": "validated"})
+        assert r.status_code == 403, r.text
+        # 2. Grant approval, then POST → 200.
+        grant_approval(
+            name,
+            from_status="candidate",
+            to_status="validated",
+            reviewer="pytest",
         )
-        assert r.status_code == 400
-        # Human promotion → 200.
+        r = client.post(f"/api/tools/{name}/status", json={"status": "validated"})
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "validated"
+        # 3. Single-use: re-POSTing for the next transition without a
+        #    fresh approval token returns 403.
+        r = client.post(f"/api/tools/{name}/status", json={"status": "trusted"})
+        assert r.status_code == 403, r.text
+    finally:
+        shutil.rmtree(target, ignore_errors=True)
+
+
+def test_set_tool_status_ignores_actor_from_body():
+    """Even posting ``actor=human`` in the body must NOT bypass the
+    approval gate. The API ignores the field; the PydanticV2 model uses
+    extra='ignore' (the default for our other status bodies).
+    """
+    import shutil
+    import uuid
+
+    from simworkbench.paths import local_cache_root
+
+    src = (
+        repo_root()
+        / "packages"
+        / "internal_tools"
+        / "registry"
+        / "absorption_spectrum_diagnostic"
+    )
+    cache = local_cache_root() / "imported_tools"
+    cache.mkdir(parents=True, exist_ok=True)
+    name = f"_pytest_api_actor_{uuid.uuid4().hex[:6]}"
+    target = cache / name
+    shutil.copytree(src, target)
+    yaml_path = target / "tool.yaml"
+    yaml_path.write_text(
+        yaml_path.read_text().replace(
+            "name: absorption_spectrum_diagnostic", f"name: {name}"
+        )
+    )
+    try:
+        client = _client()
         r = client.post(
             f"/api/tools/{name}/status",
             json={"status": "validated", "actor": "human"},
         )
-        assert r.status_code == 200, r.text
-        assert r.json()["status"] == "validated"
+        assert r.status_code == 403, (
+            "Posting actor=human must not unlock human-only promotions; "
+            f"got {r.status_code}: {r.text}"
+        )
     finally:
         shutil.rmtree(target, ignore_errors=True)
 

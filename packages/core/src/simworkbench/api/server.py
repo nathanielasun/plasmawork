@@ -68,7 +68,14 @@ from simworkbench.paths import (
 )
 from simworkbench.runtime import Runner
 from simworkbench.serialization import CapsuleValidator, load_manifest
-from simworkbench.tools import LifecycleError, ToolRegistry, ToolStatus
+from simworkbench.tools import (
+    AGENT_ALLOWED,
+    ApprovalError,
+    LifecycleError,
+    ToolRegistry,
+    ToolStatus,
+    consume_approval,
+)
 
 # ---------------------------------------------------------------------------
 # Request / response schemas
@@ -105,10 +112,23 @@ class HealthResponse(BaseModel):
 
 
 class ToolStatusBody(BaseModel):
-    """POST /api/tools/{name}/status body."""
+    """POST /api/tools/{name}/status body.
+
+    The ``actor`` field is intentionally absent. Earlier the API
+    accepted ``actor="human"`` from the body and the registry
+    promoted on the strength of that string alone — any caller could
+    promote a tool to ``validated`` by claiming to be a human. Carries
+    `agent_error_patterns.md` "Trusting a client-supplied actor
+    identity for a privileged check".
+
+    Agent-allowed transitions (draft / candidate / deprecated) run as
+    ``actor="agent"``. Human-only transitions (validated / trusted)
+    require a single-use approval token written via
+    ``simworkbench.tools.grant_approval`` (or the local CLI). The
+    endpoint reads + deletes the token before promoting.
+    """
 
     status: str
-    actor: str = "agent"
 
 
 class ToolExecuteBody(BaseModel):
@@ -170,6 +190,19 @@ class CodegenBody(BaseModel):
     """
 
     model_config = {"extra": "ignore"}
+
+
+class UserEditBody(BaseModel):
+    """POST /api/capsules/{name}/user_edits/{path:path} body.
+
+    Reviewer-driven editor surface. The library's ``user_edit_write``
+    enforces that ``path`` is under ``src/user_edits/`` only — paper_
+    sources/, provenance/, and src/generated/ are refused at the
+    library level, so the API can pass through without re-deriving
+    the rule (carries the producer/consumer defense-in-depth pattern).
+    """
+
+    content: str
 
 
 # ---------------------------------------------------------------------------
@@ -243,16 +276,28 @@ def create_app() -> FastAPI:
                 ),
             ) from exc
 
-        spec = load_modelspec_yaml(spec_path)
-        experiment = Experiment.from_model_spec(
-            spec,
-            run_config=RunConfig(
-                start_time="0 s",
-                end_time=req.end_time,
-                max_steps=req.max_steps,
-                seed=req.seed,
-            ),
-        )
+        # Build the experiment + run config inside try/except — a malformed
+        # end_time / max_steps / seed must surface as 400, not 500. Earlier
+        # the constructors ran outside the wrapper and any ValidationError
+        # escaped as a server error (carries `agent_error_patterns.md`
+        # "Boundary validation parity": API endpoints validate every input
+        # they consume, not just the ones FastAPI auto-validates).
+        try:
+            spec = load_modelspec_yaml(spec_path)
+            experiment = Experiment.from_model_spec(
+                spec,
+                run_config=RunConfig(
+                    start_time="0 s",
+                    end_time=req.end_time,
+                    max_steps=req.max_steps,
+                    seed=req.seed,
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError, etc.
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         runner = Runner(experiment, base_seed=req.seed)
         try:
             result = runner.run()
@@ -559,17 +604,44 @@ def create_app() -> FastAPI:
         try:
             new_status = ToolStatus(body.status)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=f"Unknown status: {body.status!r}") from exc
+            raise HTTPException(
+                status_code=400, detail=f"Unknown status: {body.status!r}"
+            ) from exc
         registry = _registry()
         try:
-            entry = registry.set_status(name, new_status, actor=body.actor)
+            entry = registry.get(name)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        # Pick the actor SERVER-SIDE: agent-allowed transitions run as
+        # actor="agent"; human-only transitions require a pre-written
+        # single-use approval token in local_cache/tool_approvals/.
+        # The actor is never read from the request body — that was the
+        # Phase-6 audit finding "Trusting a client-supplied actor
+        # identity for a privileged check".
+        if new_status in AGENT_ALLOWED:
+            actor = "agent"
+        else:
+            try:
+                reviewer = consume_approval(
+                    name,
+                    from_status=entry.status.value,
+                    to_status=new_status.value,
+                )
+            except ApprovalError as exc:
+                raise HTTPException(status_code=403, detail=str(exc)) from exc
+            actor = "human"
+            _ = reviewer  # captured by approval token; future audit log
+
+        try:
+            promoted = registry.set_status(name, new_status, actor=actor)
         except LifecycleError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {
-            "name": entry.name,
-            "status": entry.status.value,
+            "name": promoted.name,
+            "status": promoted.status.value,
         }
 
     @app.post("/api/tools/{name}/run-tests")
@@ -909,6 +981,7 @@ def create_app() -> FastAPI:
         return {
             "capsule": name,
             "files_written": list(result.files_written),
+            "files_removed": list(result.removed_files),
             "manifest_path": (
                 str(result.manifest_path.relative_to(repo_root()))
                 if result.manifest_path
@@ -918,33 +991,106 @@ def create_app() -> FastAPI:
 
     @app.get("/api/capsules/{name}/codegen/diff")
     def codegen_diff(name: str) -> dict[str, Any]:
-        """Return the previous generation manifest + the current file
-        hashes so the UI can render a regeneration diff.
+        """Compute a real diff between the prior-generation manifest
+        and what would result from regenerating right now.
+
+        Returns ``{previous, current_preview, added, removed, changed,
+        unchanged}``. Earlier this endpoint was misnamed: it returned
+        ``previous`` + ``current_files`` only, leaving the diff
+        derivation to the caller. Carries
+        `agent_error_patterns.md` "Diff endpoint that doesn't compute a
+        diff".
+
+        ``current_preview`` is computed by running the generator on
+        an in-memory capsule fixture (the spec on disk + a temp tree
+        we write to under ``temp_runs/``), so the comparison reflects
+        what would be written, not what was last written. The temp
+        tree is removed before returning.
         """
-        import hashlib as _hashlib
         import json as _json
+        import shutil as _shutil
+        import uuid as _uuid
+
+        from simworkbench.codegen import CodeGenerator
+        from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
+        from simworkbench.paths import temp_runs_root
 
         capsule_path = _resolve_capsule(name)
         generated_root = capsule_path / "src" / "generated"
-        manifest_path = generated_root / "codegen_manifest.json"
+        prior_manifest_path = generated_root / "codegen_manifest.json"
         previous: dict[str, Any] | None = None
-        if manifest_path.is_file():
+        if prior_manifest_path.is_file():
             try:
-                previous = _json.loads(manifest_path.read_text(encoding="utf-8"))
+                previous = _json.loads(
+                    prior_manifest_path.read_text(encoding="utf-8")
+                )
             except Exception:  # noqa: BLE001
                 previous = None
-        current_files: list[dict[str, Any]] = []
-        if generated_root.is_dir():
-            for path in sorted(generated_root.rglob("*")):
-                if not path.is_file() or path.name == "codegen_manifest.json":
-                    continue
-                rel = path.relative_to(capsule_path).as_posix()
-                sha = _hashlib.sha256(path.read_bytes()).hexdigest()
-                current_files.append({"path": rel, "sha256": sha})
+
+        # Generate a preview into a temp capsule clone so the disk
+        # state isn't mutated.
+        spec_path = capsule_path / "model" / "model_spec.yaml"
+        if not spec_path.is_file():
+            return {
+                "capsule": name,
+                "previous": previous,
+                "current_preview": [],
+                "added": [],
+                "removed": [],
+                "changed": [],
+                "unchanged": [],
+                "note": "No model_spec.yaml — generate a proposal first.",
+            }
+        preview_root = temp_runs_root() / f"_codegen_diff_{_uuid.uuid4().hex[:8]}.lxp"
+        try:
+            (preview_root / "model").mkdir(parents=True)
+            (preview_root / "src" / "generated").mkdir(parents=True)
+            (preview_root / "src" / "user_edits").mkdir(parents=True)
+            (preview_root / "model" / "model_spec.yaml").write_text(
+                spec_path.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            preview_spec = _load_modelspec_yaml(
+                preview_root / "model" / "model_spec.yaml"
+            )
+            preview = CodeGenerator().generate(preview_root, preview_spec)
+            current_preview = [
+                {"path": p, "sha256": preview.file_hashes[p]}
+                for p in preview.files_written
+                if p != "src/generated/codegen_manifest.json"
+            ]
+        finally:
+            _shutil.rmtree(preview_root, ignore_errors=True)
+
+        # Compute added / removed / changed by comparing prior manifest
+        # files (sha256 included) against the preview hashes.
+        prior_files = {
+            entry["path"]: entry.get("sha256", "")
+            for entry in (previous.get("files", []) if previous else [])
+            if isinstance(entry, dict) and "path" in entry
+        }
+        # codegen_manifest.json itself changes on every generate; exclude
+        # from the diff so the rest of the tree is comparable.
+        prior_files.pop("src/generated/codegen_manifest.json", None)
+        current_files = {entry["path"]: entry["sha256"] for entry in current_preview}
+
+        added = sorted(set(current_files) - set(prior_files))
+        removed = sorted(set(prior_files) - set(current_files))
+        changed = sorted(
+            p for p in (set(prior_files) & set(current_files))
+            if prior_files[p] != current_files[p]
+        )
+        unchanged = sorted(
+            p for p in (set(prior_files) & set(current_files))
+            if prior_files[p] == current_files[p]
+        )
         return {
             "capsule": name,
             "previous": previous,
-            "current_files": current_files,
+            "current_preview": current_preview,
+            "added": added,
+            "removed": removed,
+            "changed": changed,
+            "unchanged": unchanged,
         }
 
     @app.post("/api/capsules/{name}/validate-run")
@@ -960,6 +1106,36 @@ def create_app() -> FastAPI:
         return {
             "capsule": name,
             "summary_path": str(summary_path.relative_to(repo_root())),
+        }
+
+    # -----------------------------------------------------------------------
+    # Phase 6D — Reviewer editor for src/user_edits/. The plan calls Phase 6D
+    # "Generated Code Viewer AND Editor"; this endpoint is the editor side.
+    # The library enforces the user_edits/ allow-list; the API just passes
+    # through.
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/capsules/{name}/user_edits/{file_path:path}")
+    def write_user_edit(
+        name: str, file_path: str, body: UserEditBody
+    ) -> dict[str, Any]:
+        from simworkbench.codegen import SandboxViolation, user_edit_write
+
+        capsule_path = _resolve_capsule(name)
+        if not file_path:
+            raise HTTPException(
+                status_code=400,
+                detail="Empty path; supply a path under src/user_edits/.",
+            )
+        relative = f"src/user_edits/{file_path}"
+        try:
+            written = user_edit_write(capsule_path, relative, body.content)
+        except SandboxViolation as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "capsule": name,
+            "path": str(written.relative_to(capsule_path)),
+            "size_bytes": written.stat().st_size,
         }
 
     return app

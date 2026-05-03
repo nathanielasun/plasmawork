@@ -296,11 +296,15 @@ def test_phase_6_gate_walk_diff_endpoint_reports_regeneration_changes(
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    # The diff endpoint reports the prior generation manifest + a regenerate
-    # preview. After mutation a second call to generate produces ≥ 1 changed
-    # file. The endpoint exposes the previous file hashes; the test compares.
+    # The diff endpoint computes a real diff between the prior manifest
+    # and an in-memory regeneration preview. After mutating the spec,
+    # at least one generated file must show up in the changed list.
     assert "previous" in body
-    assert "current_files" in body
+    assert "added" in body and "removed" in body
+    assert "changed" in body and "unchanged" in body
+    assert (
+        body["changed"] or body["added"] or body["removed"]
+    ), f"Spec mutation produced no diff signal: {body}"
 
 
 # ---------------------------------------------------------------------------

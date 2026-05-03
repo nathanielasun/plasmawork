@@ -64,22 +64,39 @@ def read_diagnostics_h5(path: str | Path) -> tuple[dict[str, np.ndarray], dict[s
 
 
 def _coerce_attr(value: Any) -> Any:
-    """Make a Python value HDF5-attribute-friendly. Leaves scalars and arrays
-    alone; converts None to empty string and bools to numpy bool."""
+    """Make a Python value HDF5-attribute-friendly.
+
+    Lists / tuples of strings are stored as a vlen-string array so the
+    full list survives the round-trip. Earlier the writer leaked
+    list-shaped fields silently (e.g. ``placeholders: list[str]``
+    became an opaque object). Carries
+    `agent_error_patterns.md` "Serializer drops semantic fields when
+    writing the canonical format".
+    """
     if value is None:
         return ""
     if isinstance(value, bool):
         return np.bool_(value)
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return np.array([], dtype=h5py.string_dtype())
+        return np.array(
+            [str(v) for v in value], dtype=h5py.string_dtype()
+        )
     return value
 
 
 def _from_attr(value: Any) -> Any:
-    """Reverse `_coerce_attr` for read-back: bytes -> str."""
+    """Reverse ``_coerce_attr`` for read-back.
+
+    bytes -> str. Vlen-string arrays -> list[str]. Numeric arrays stay
+    arrays (caller decides). bool_ -> bool.
+    """
     if isinstance(value, bytes):
         return value.decode("utf-8")
     if isinstance(value, np.bool_):
         return bool(value)
-    if isinstance(value, np.ndarray) and value.dtype.kind in ("S", "O"):
+    if isinstance(value, np.ndarray) and value.dtype.kind in ("S", "O", "U"):
         return [_from_attr(v) for v in value.tolist()]
     return value
 

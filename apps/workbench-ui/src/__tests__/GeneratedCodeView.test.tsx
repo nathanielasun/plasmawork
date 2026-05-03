@@ -90,6 +90,40 @@ describe("GeneratedCodeView", () => {
     });
   });
 
+  it("saves a user_edits/ file via the editor and reports the saved path", async () => {
+    mockBackend({
+      "/api/capsules": {
+        body: [{ name: "demo.lxp", path: "simulation_capsules/demo.lxp" }],
+      },
+      "/api/capsules/demo.lxp/codegen": {
+        body: {
+          capsule: "demo.lxp",
+          generated_files: [],
+          user_edits_files: [],
+          manifest: null,
+        },
+      },
+      "/api/capsules/demo.lxp/user_edits/run_overrides.py": {
+        body: {
+          capsule: "demo.lxp",
+          path: "src/user_edits/run_overrides.py",
+          size_bytes: 32,
+        },
+      },
+    });
+    render(<GeneratedCodeView />);
+    await screen.findByText("demo.lxp");
+    fireEvent.change(screen.getByLabelText(/Capsule:/i), {
+      target: { value: "demo.lxp" },
+    });
+    fireEvent.click(screen.getByText("Save user edit"));
+    await waitFor(() => {
+      expect(
+        screen.getByText(/src\/user_edits\/run_overrides\.py/),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("reports the validation summary path after running validation", async () => {
     mockBackend({
       "/api/capsules": {

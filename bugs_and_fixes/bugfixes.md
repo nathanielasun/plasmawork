@@ -32,6 +32,68 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-03: Phase 6 post-close audit — eight legitimate review findings
+
+### Affected subsystem
+- `simworkbench.codegen.validation_run` (Phase 6E)
+- `simworkbench.runtime.python_cpu` (Phase 1, exposed by Phase 6 codegen path)
+- `simworkbench.api.server` — `/api/tools/{name}/status`, `/api/runs`, `/api/capsules/{name}/codegen/diff`
+- `simworkbench.serialization.bulk_data` + `simworkbench.serialization.capsule` (HDF5 round-trip)
+- `simworkbench.serialization.exporters.archive`
+- `simworkbench.codegen.generator` (regeneration cleanup)
+- `apps/workbench-ui/src/components/codegen/GeneratedCodeView.tsx` (editor)
+
+### Symptoms
+1. **Critical:** `ValidationRunner.run` reloaded `model_spec.yaml` and ran `Runner` directly — never imported `<capsule>/src/generated/experiment.py`. Corrupting the generated file with invalid Python returned `incomplete` with no failure.
+2. **Critical:** One-participant interactions with non-placeholder `paper:` coefficients silently no-op'd. The backend skipped them BEFORE coefficient validation fired (`if len(species) < 2: continue`).
+3. **High:** `POST /api/tools/{name}/status` accepted `actor=human` from the body. Any caller (including the autonomous agent) could promote a tool to `validated` by claiming to be a human.
+4. **Medium:** `POST /api/runs` returned HTTP 500 on malformed `RunConfig` inputs (e.g. `max_steps=0`, malformed `end_time`). The constructor lived outside the try/except.
+5. **Medium:** HDF5 metadata stored only `placeholder_used: bool`. HDF5-only capsule reload returned `placeholders=[]` — the names were lost.
+6. **Medium:** `export_archive` walked `<capsule>` with `rglob` after creating the destination zip. A target inside the capsule (e.g. `<capsule>/exports/<capsule>.zip`) captured itself.
+7. **Medium:** `/api/capsules/{name}/codegen/diff` returned `{previous, current_files}` only — no real diff. The gate-walk test asserted only that two keys existed in the response.
+8. **Low:** `CodeGenerator.generate` overwrote files but never deleted orphans. Stale `src/generated/` artifacts lingered through regeneration into export.
+9. **Low:** Phase 6D plan said "Generated Code Viewer **and Editor**". The shipped UI was a list/action panel — no inline editor for `user_edits/`.
+
+### Root cause
+The Phase 6 close commit verified file presence + the sixteen behavioral checks but did not (a) corrupt the generated artifact and re-run validation, (b) iterate every interaction arity through the runtime, (c) test the API's privileged path with a credential bypass, (d) round-trip an HDF5-only capsule, (e) self-export to an archive inside the source, (f) actually compute the diff endpoint's claim, (g) regenerate after dropping a spec field, or (h) word-audit the plan deliverable description against the shipped panel. Each failure mode is a behavioral check the Phase 6 close was missing — eight new patterns now in `agent_error_patterns.md` and four new behavioral checks (#17–#24 in `CLAUDE.md → Phase Gate Procedure → Closing a phase`).
+
+### Fix
+1. `ValidationRunner` now uses `runpy.run_path` against `<capsule>/src/generated/experiment.py`, calls its `run()` function, and surfaces every exception as `validation_status: failed` with the exception text in `failure`.
+2. `python_cpu.RatePopulationBackend.initialize` validates coefficient sources for every interaction BEFORE the arity branch, then implements decay (arity 1) AND conversion (arity 2) AND rejects arity 3+ explicitly.
+3. `ToolStatusBody.actor` is removed entirely. The API hard-codes `actor="agent"` for agent-allowed transitions; human-only transitions consume a single-use approval token written by `simworkbench.tools.grant_approval` (or `python -m simworkbench.tools.approve`). The token lives at `<repo>/local_cache/tool_approvals/<name>__<from>-to-<to>.approval` and is read+deleted on use.
+4. `start_run` now wraps `load_modelspec_yaml`, `Experiment.from_model_spec`, and `RunConfig(...)` in try/except — every `ValueError` / Pydantic `ValidationError` returns 400.
+5. `_coerce_attr` now stores `list[str]` as a vlen-string array. `save_capsule` writes `placeholders: list[str]` to HDF5 metadata; `load_capsule` reads it back (sidecar fills in only when HDF5 doesn't carry the field).
+6. `export_archive` validates `archive.relative_to(capsule)` raises BEFORE creating the destination, with a defense-in-depth `path.resolve() == archive_resolved` exclude in the rglob walk.
+7. `/codegen/diff` runs the generator into a temp capsule under `temp_runs/`, computes `added`/`removed`/`changed`/`unchanged` against the prior manifest, and tears down the temp tree before returning.
+8. `CodeGenerator.generate` now reads the prior manifest, computes orphans, and removes them through `_remove_under_sandbox` (same allowed-roots / off-limits checks as `sandboxed_write`). `CodeGenerationResult.removed_files` lists what was cleaned.
+9. `GeneratedCodeView` gains a Path/Contents textarea + Save button bound to `apiClient.writeUserEdit`. New backend endpoint `POST /api/capsules/{name}/user_edits/{path:path}` calls `simworkbench.codegen.user_edit_write` — a separate library function that accepts paths under `user_edits/` ONLY (paper_sources/, provenance/, src/generated/ are refused).
+
+### Regression protection
+- `tests/regression/test_validation_runner_executes_generated_code.py` — corrupts `experiment.py` with invalid Python; asserts `validation_status: failed` with `SyntaxError` in `failure`.
+- `tests/regression/test_interaction_validation_fires_for_all_arity.py` — sends arity-1 with `paper:` (raises), arity-1 with `placeholder:` (runs), arity-2 with `paper:` (raises), arity-3 (raises).
+- `tests/integration/test_api_server.py::test_set_tool_status_rejects_unauthorized_agent_promotion` — POST without approval → 403; POST with grant → 200; second POST → 403 (single-use). Plus `test_set_tool_status_ignores_actor_from_body` — posting `actor=human` → 403.
+- `tests/regression/test_run_config_400_not_500.py` — `max_steps=0` / malformed `end_time` / unknown YAML path each → 400, never 500.
+- `tests/regression/test_capsule_hdf5_only_preserves_placeholders.py` — strips JSON sidecar; reload preserves `placeholders` byte-for-byte.
+- `tests/regression/test_archive_does_not_contain_itself.py` — refuses target inside source; canonical export does not contain its own filename.
+- `tests/regression/test_codegen_cleanup_and_diff.py` — orphan file removed on regenerate; `/diff` returns added/removed/changed; `/diff` does not mutate disk.
+- `tests/regression/test_user_edits_editor_endpoint.py` — POST writes under `user_edits/`; library refuses `paper_sources/`, `provenance/`, `src/generated/`, and path-escape.
+
+### Agent error patterns added
+8 new patterns at the bottom of `bugs_and_fixes/agent_error_patterns.md`:
+- "Validation runs the source-of-truth, not the generated artifact"
+- "Validation rule fires after a permissive early-exit"
+- "Trusting a client-supplied actor identity for a privileged check"
+- "Diff endpoint that doesn't compute a diff"
+- "Archive contains its own destination"
+- "Serializer drops semantic fields when writing the canonical format"
+- "Generator skips cleanup, leaving stale artifacts"
+- "UI calls itself an editor while shipping a viewer"
+
+### Warning to future agents
+The Phase Gate Procedure's behavioral checks now span twenty-four entries (was sixteen). Read 17–24 before any Phase 7+ close — they catch the modes that pass existence checks while shipping broken behavior. The pattern this audit reinforces: *every plan verb maps to a real artifact, a real test, and a real corrupt-the-input regression*. "It compiled" / "the test passed" / "the convention checker is green" are necessary, not sufficient.
+
+---
+
 ## 2026-05-03: Phase 5 post-close audit — four legitimate review findings
 
 ### Affected subsystem

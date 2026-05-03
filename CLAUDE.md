@@ -109,8 +109,15 @@ cd apps/workbench-ui && npm test
 - Every new FastAPI endpoint adds matching types to `apps/workbench-ui/src/api/client.ts` first; UI components import the type, never call `fetch` directly.
 - `tsc -b` leaks `.js` and `.d.ts` into `src/`; build scripts use `tsc --noEmit && vite build`. `.gitignore` carries fallback rules but don't rely on them.
 - Convention checker has two modes: default (hard gate, must stay green) and `--include-open-workstreams` (TODO list, may fail by design). Tests in `tests/regression/test_convention_checker_modes.py` enforce the contract.
-- Five consecutive phases (1–5) shipped incomplete closes; every audit added named patterns to `bugs_and_fixes/agent_error_patterns.md`. Read the latest 4–8 patterns before any close commit, not just the gate criteria.
+- Six consecutive phases (1–6) shipped incomplete closes; every audit added named patterns to `bugs_and_fixes/agent_error_patterns.md`. Read the latest 4–8 patterns before any close commit, not just the gate criteria.
 - `rate_equation_0d` (under `packages/physics_modules/species/`) is the Phase 1 canonical solver and the reference module for ModelSpec / ModuleMatcher tests. New species-domain integration tests typically target it.
+- "Validate X" code paths must consume X. If a validator is named after the generated artifact, it imports/parses the artifact — not the spec the artifact was generated from. Negative test: corrupt the artifact, expect `failed`.
+- Loop-based validators do their checks BEFORE any `continue` / `break` / `return` skip. Inputs that the early-exit covers still get validated. Phase 1's `python_cpu` had this shape; Phase 4's interpretation banner check had it too.
+- HTTP API never reads `actor`, `role`, `user`, or any privilege claim from the request body. Privileged paths require an out-of-band token (e.g. `simworkbench.tools.grant_approval` writes a single-use file under `local_cache/tool_approvals/`).
+- Endpoints named `/diff`, `/preview`, `/state-after-X` perform that operation server-side. Returning inputs and asking the caller to compute the result is a bug, even if the test passes.
+- Exporters that walk a tree validate the destination is OUTSIDE the source BEFORE writing. Defense-in-depth: also exclude the in-flight archive from the rglob walk.
+- HDF5 metadata serialization can drop list-shaped fields. Cross-format parity test: write canonical-only, read back, assert every documented field round-trips. Lists become vlen-string arrays, not bools.
+- Regenerate-in-place writers track the prior manifest and DELETE orphans through the same sandbox that gates writes. Without that step, stale files survive into export.
 
 ---
 
@@ -368,9 +375,9 @@ git commit -m "..."   # Use the HEREDOC pattern below.
 git push
 ```
 
-### Closing a phase — sixteen behavioral checks (Phase 2 + 3 + 4 + 5 lessons)
+### Closing a phase — twenty-four behavioral checks (Phase 2 + 3 + 4 + 5 + 6 lessons)
 
-Phases 1, 2, 3, 4, and 5 each shipped an incomplete close (Phase 4 twice; Phase 5 once). Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these sixteen before the close commit:
+Phases 1, 2, 3, 4, 5, and 6 each shipped an incomplete close (Phase 4 twice; Phase 5 once; Phase 6 with eight findings). Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these twenty-four before the close commit:
 
 1. **End-to-end gate walk.** Every plan §Phase-N gate criterion exercised on a real artifact. For Phase 2 that meant: run the example, save it as a capsule, reload it via `scripts/dev/run_capsule.sh`, validate it, export it, fork it, reload the fork. Each step on its own integration test, not just a manual demo.
 2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README, CLAUDE.md, or any docs page advertises as a current entrypoint runs successfully on a typical input. (Phase 2 close shipped `scripts/dev/run_capsule.sh` still as the Phase-0 stub even though README documented it as the reload path.)
@@ -401,7 +408,23 @@ Phases 1, 2, 3, 4, and 5 each shipped an incomplete close (Phase 4 twice; Phase 
 
 16. **Cross-cutting "always-on" prose has a regression test** *(Phase 5 audit lesson)*. Grep the repo for "always", "must be enabled", "always required", "always check" — every cross-cutting invariant has a regression test that reads the relevant config / state / artifact and fails when the invariant drifts. The Phase 5 close left `security_sandbox.enabled = false` in `agents.yaml` while four other roles were enabled, despite the role's own description carrying the "Always-on once any agent is enabled" rule. Prose without a test ages into a lie.
 
-The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 37 patterns; the four new ones from the Phase 5 audit are at the bottom: hard-rule-via-client-flag, mixed-shape-rule-incomplete, compat-by-pattern-match, cross-cutting-rule-in-comments-only).
+17. **A "validate X" step must consume X** *(Phase 6 audit lesson)*. Validators named after generated/derived artifacts must actually open them — import the Python file, parse the YAML, exec the script — not bypass the artifact for the upstream source of truth. Negative regression test: corrupt the artifact (invalid Python, missing entry point); the validator must report `failed`, not `passed` / `incomplete`. The Phase 6 close shipped a `ValidationRunner` that reloaded `model_spec.yaml` and never imported `<capsule>/src/generated/experiment.py`; a corrupted generated file passed silently.
+
+18. **Validation rules fire BEFORE permissive early-exits** *(Phase 6 audit lesson)*. Every contract check that loops over inputs runs before any `continue` / `break` / `return` that skips the input. Inputs that the early-exit would cover still get validated. Negative test: send the input the early-exit covers and assert the validator still raises. The Phase 6 close shipped a `python_cpu` backend that validated coefficient sources INSIDE the iteration body and AFTER an `if len(species) < 2: continue`. One-participant interactions with non-placeholder rates silently no-op'd.
+
+19. **Privileged checks derive identity server-side** *(Phase 6 audit lesson)*. The HTTP API never reads `actor`, `role`, `user`, or any privilege claim from a request body. Either the server has authentication (then derive from the session) or the privileged path requires an out-of-band token (a file written by a local CLI, a one-shot approval). Negative test: post the bypass field and assert 4xx. The Phase 6 close shipped `POST /api/tools/{name}/status` accepting `actor=human` from the body — the autonomous agent could promote tools to `validated` by claiming to be a human.
+
+20. **Endpoints named after a transformation perform that transformation** *(Phase 6 audit lesson)*. `/diff` returns `{added, removed, changed, unchanged}`, not `{previous, current}`. `/preview` shows what *would* happen, not what already happened. If the endpoint can't perform the named operation, rename it (`/state`, `/snapshot`). The matching test asserts behavior under conditions that should produce a non-trivial result, not just key-presence. The Phase 6 close shipped `/codegen/diff` that returned manifest + hashes only; the gate-walk test asserted only that two keys existed in the response.
+
+21. **Archive / export targets validated outside source** *(Phase 6 audit lesson)*. Every exporter that walks a directory and writes an archive validates `target.relative_to(source)` raises, BEFORE creating the destination. Defense-in-depth: also exclude the in-flight archive from the walk via `path.resolve() == archive.resolve()`. Negative test: call exporter with a target inside the source; assert refusal AND assert the archive's contents don't include the archive itself. The Phase 6 close shipped `export_archive` that wrote `<capsule>/exports/<capsule>.zip` and then walked `<capsule>/`, capturing itself.
+
+22. **Canonical-format serializers preserve every semantic field** *(Phase 6 audit lesson)*. When format A is the canonical store and format B is a sidecar, every field that exists in B exists in A — not in a downgraded form. List of strings → vlen-string array, not a boolean. Cross-format parity test: write through canonical-only path, read back, assert every documented field matches. The Phase 6 close shipped HDF5 metadata that stored `placeholder_used: bool` and dropped `placeholders: list[str]`; HDF5-only capsules reloaded with empty placeholders.
+
+23. **Regenerate-in-place writers list and clean orphans** *(Phase 6 audit lesson)*. Every "regenerate" / "rewrite" / "refresh" code path tracks the prior manifest's file set, computes `(prior - current)`, and removes orphans through the same sandbox that gates writes. Regression test: generate, mutate spec to drop an artifact, regenerate, assert the dropped artifact no longer exists on disk AND appears in `result.removed_files`. The Phase 6 close shipped a `CodeGenerator` that overwrote files but never removed orphans — old files lingered into export.
+
+24. **Plan verbs drive UI components, not just plan-named buttons** *(Phase 6 audit lesson)*. When the plan says "Generated Code Viewer **and Editor**", the panel ships a textarea + write endpoint. When it says "Allow user edits", there is an interaction users can perform. Word-by-word audit of the plan's deliverable description: every verb maps to a real UI affordance and a Vitest test that exercises the affordance (not just that a button exists). The Phase 6 close shipped a list/action panel; "Edit" was prose, not a feature.
+
+The full list of named patterns these checks defend against lives in `bugs_and_fixes/agent_error_patterns.md` (currently 45 patterns; the eight new ones from the Phase 6 audit are at the bottom: validation-runs-source-of-truth-not-artifact, validation-rule-fires-after-early-exit, client-supplied-actor-identity, diff-endpoint-doesnt-diff, archive-contains-its-own-destination, serializer-drops-semantic-fields, generator-skips-cleanup, ui-claims-editor-ships-viewer).
 
 ### Reality-test plan-derived patterns
 

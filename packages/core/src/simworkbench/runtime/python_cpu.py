@@ -76,19 +76,11 @@ class PythonCpuBackend:
 
         for ix in spec.interactions:
             participants = list(ix.participants)
-            # Filter to species participants (fields are not state variables).
-            species_participants = [p for p in participants if p in index]
-            if len(species_participants) < 2:
-                # No conversion edge to add.
-                continue
-            reactant = species_participants[0]
-            product = species_participants[1]
-
-            # Phase 1 has no real rate-constant parser — interactions must
-            # **explicitly** flag a placeholder rate, otherwise we'd silently
-            # fabricate. Plan §22 / agent_error_patterns.md "Silently
-            # inventing missing physical coefficients" — refuse rather than
-            # invent.
+            # Validate coefficient sources FIRST, regardless of whether this
+            # backend can apply the interaction. Carries
+            # `agent_error_patterns.md` "Validation rule fires after a
+            # permissive early-exit": one-participant interactions with non-
+            # placeholder coefficients silently passed before this fix.
             if not ix.coefficient_sources:
                 raise ValueError(
                     f"Interaction {ix.name!r} has no coefficient_sources. "
@@ -111,16 +103,45 @@ class PythonCpuBackend:
                     "'placeholder:' to mark the rate as exploratory, or wait "
                     "for Phase 4+ paper ingestion."
                 )
+
+            # Filter to species participants (fields are not state variables).
+            species_participants = [p for p in participants if p in index]
+
+            # Phase 1's rate-equation backend implements two regimes:
+            #   - 1 species participant → first-order decay: dN/dt = -k N.
+            #   - 2 species participants → conversion: A -> B at rate k.
+            # Three or more participants are not yet supported (kinetic
+            # backend lands later); refuse loudly rather than silently drop.
+            if len(species_participants) == 0:
+                raise ValueError(
+                    f"Interaction {ix.name!r} has no species participants. "
+                    "Phase 1 needs at least one species participant; "
+                    "field-only interactions land in Phase 8+."
+                )
+            if len(species_participants) > 2:
+                raise ValueError(
+                    f"Interaction {ix.name!r} has "
+                    f"{len(species_participants)} species participants. "
+                    "Phase 1 supports decay (1) and conversion (2); "
+                    "higher-order kinetics land in Phase 7+."
+                )
+
             base_rate = 1.0  # Phase 1 single-rate exploratory default
             placeholders.append(ix.name)
-            # If there is a laser field involved, scale the rate by intensity
-            # so density drops faster at higher intensity. This is an explicit
-            # placeholder — no fabricated cross-section.
             field_participants = [p for p in participants if p not in index]
             rate = base_rate
             if field_participants and laser_intensity > 0.0:
-                # Normalize so a 1e10 W/m^2 reference intensity gives the base rate.
                 rate = base_rate * (laser_intensity / 1.0e10)
+
+            if len(species_participants) == 1:
+                # First-order decay term.
+                i_r = index[species_participants[0]]
+                K[i_r, i_r] -= rate
+                continue
+            # 2-participant conversion: A -> B at rate k. The rate already
+            # carries any laser-intensity scaling computed above.
+            reactant = species_participants[0]
+            product = species_participants[1]
             i_r, i_p = index[reactant], index[product]
             K[i_r, i_r] -= rate  # depletes reactant
             K[i_p, i_r] += rate  # produces product

@@ -18,28 +18,38 @@ Output lives under ``<capsule>/validation/`` (sandbox-allowed root):
     can render. We emit CSV (not PNG) so the runner stays
     matplotlib-free; the visualization role plots from the CSV.
 
-Plan §15.2: the runner uses the project's vetted Phase-1 ``Runner`` —
-NEVER a hand-rolled timestep loop (carries
-`agent_error_patterns.md` "Replacing validated solver calls with
-naive generated loops").
+The runner **executes the generated** ``<capsule>/src/generated/run.py``
+so a corrupted generated artifact actually fails validation. Earlier
+the validator reloaded ``model/model_spec.yaml`` and ran ``Runner``
+directly — bypassing the generated code entirely. Carries
+`agent_error_patterns.md` "Validation runs the source-of-truth, not
+the generated artifact".
+
+Plan §15.2: the generated experiment uses the project's vetted Phase-1
+``Runner`` — NEVER a hand-rolled timestep loop. We don't validate
+that here (the test generator's smoke test does); we just exec
+``run.py`` and surface whatever happens.
 """
 
 from __future__ import annotations
 
+import runpy
 from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
-from simworkbench.experiment import Experiment, RunConfig
-from simworkbench.model_spec import load_yaml
-from simworkbench.runtime import Runner
-
 from .sandbox import sandboxed_write
 
 
 class ValidationRunner:
-    """Run the generated experiment and write a validation summary."""
+    """Execute the generated experiment and write a validation summary.
+
+    We import the generated ``src/generated/run.py`` via ``runpy`` so
+    syntax errors, import errors, runtime exceptions all bubble up as
+    ``failed`` validation status. The earlier implementation bypassed
+    the generated artifact entirely.
+    """
 
     def run(self, capsule_dir: str | Path) -> Path:
         capsule = Path(capsule_dir)
@@ -49,28 +59,42 @@ class ValidationRunner:
                 f"No ModelSpec under {capsule}; run CodeGenerator first."
             )
         generated = capsule / "src" / "generated"
-        if not (generated / "experiment.py").is_file():
+        experiment_module = generated / "experiment.py"
+        if not experiment_module.is_file():
             raise FileNotFoundError(
-                f"No generated experiment under {generated}; "
+                f"No generated experiment at {experiment_module}; "
                 "run CodeGenerator first."
             )
 
+        # Read spec for header/summary metadata only — the actual run goes
+        # through the generated artifact below.
+        from simworkbench.model_spec import load_yaml
+
         spec = load_yaml(spec_path)
-        experiment = Experiment.from_model_spec(
-            spec,
-            run_config=RunConfig(
-                start_time="0 s", end_time="50 ns", max_steps=25, seed=0
-            ),
-        )
+
+        # Execute the generated experiment.py through runpy so syntax /
+        # import / runtime errors in the generated tree show up as a
+        # validation failure. ``experiment.py`` uses absolute imports
+        # (``from simworkbench…``) so it runs cleanly without being
+        # mounted as a package.
         try:
-            result = Runner(experiment, base_seed=0).run()
+            namespace = runpy.run_path(
+                str(experiment_module), run_name="__capsule_validation__"
+            )
+            run_fn = namespace.get("run")
+            if not callable(run_fn):
+                raise RuntimeError(
+                    "Generated experiment.py did not expose a callable "
+                    "'run'. Regenerate before re-running validation."
+                )
+            _experiment, result = run_fn()
             run_state = result.state.value
             elapsed = result.elapsed_seconds
             t_final = result.final_simulation_time
             diagnostics = {k: list(v) for k, v in result.diagnostics.items()}
             placeholders = list(result.placeholders)
             failure: str | None = None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — every failure mode is "failed".
             run_state = "failed"
             elapsed = 0.0
             t_final = 0.0

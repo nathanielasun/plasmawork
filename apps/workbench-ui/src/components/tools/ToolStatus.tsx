@@ -1,12 +1,17 @@
 /**
  * ToolStatus — renders the lifecycle bar (draft / candidate / validated /
- * trusted / deprecated) and exposes a promote button. Promotion to
- * `validated` and `trusted` requires the human-actor flag (plan §9.5);
- * the UI sends `actor: "human"` so the backend allows the transition.
+ * trusted / deprecated) and exposes a promote button.
  *
- * The bar is informational by default; ``onPromote`` activates the
- * forward-step button when the parent component is willing to handle
- * the side effect.
+ * The backend chooses the actor server-side. Agent-allowed transitions
+ * (draft / candidate / deprecated) succeed unconditionally. Human-only
+ * transitions (validated / trusted) require a single-use approval token
+ * pre-written to `local_cache/tool_approvals/` via the local CLI
+ * (`python -m simworkbench.tools.approve <tool> <to_status>`). If
+ * absent the API returns 403 and the UI surfaces the message.
+ *
+ * Earlier the UI sent `actor: "human"` and the API trusted the field;
+ * carries `agent_error_patterns.md` "Trusting a client-supplied actor
+ * identity for a privileged check".
  */
 import { useState } from "react";
 import {
@@ -45,7 +50,7 @@ export default function ToolStatus({ toolName, current, onChanged }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const result = await apiClient.setToolStatus(toolName, next, "human");
+      const result = await apiClient.setToolStatus(toolName, next);
       onChanged?.(result.status);
     } catch (e) {
       setError(String(e));

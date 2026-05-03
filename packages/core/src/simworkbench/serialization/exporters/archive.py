@@ -24,6 +24,12 @@ def export_archive(
     If ``target`` is None, the archive lands under
     ``<repo>/local_cache/exports/<name>.lxp.zip`` (the canonical workbench-
     managed location for export artifacts).
+
+    The archive must NOT live inside the source capsule. Earlier the
+    exporter created the destination, then walked the source's
+    ``rglob("*")`` — when the destination was a child of the source,
+    the in-flight zip captured itself. Carries
+    `agent_error_patterns.md` "Archive contains its own destination".
     """
     capsule_path = Path(capsule_dir)
     if not capsule_path.is_dir():
@@ -40,6 +46,26 @@ def export_archive(
         if archive.suffix != ".zip":
             archive = archive / f"{capsule_path.name}.zip"
 
+    # Refuse a destination inside the source capsule BEFORE creating
+    # parent directories. Even with the rglob exclude below as a
+    # belt-and-suspenders, the capsule's own export/ subtree should
+    # not silently grow on every export call.
+    capsule_resolved = capsule_path.resolve()
+    archive_resolved = archive.resolve() if archive.exists() else (
+        archive.parent.resolve() / archive.name
+    )
+    try:
+        archive_resolved.relative_to(capsule_resolved)
+    except ValueError:
+        pass  # archive is outside the source — fine.
+    else:
+        raise ValueError(
+            f"Refusing to write archive inside the source capsule: "
+            f"{archive_resolved} is under {capsule_resolved}. Pick a target "
+            "outside the capsule (or pass target=None for the canonical "
+            "local_cache/exports/ location)."
+        )
+
     if require_workbench_target and not is_under_workbench(archive):
         raise PermissionError(
             f"Refusing to write archive outside workbench-managed roots: {archive}. "
@@ -50,8 +76,17 @@ def export_archive(
 
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for path in capsule_path.rglob("*"):
-            if path.is_file():
-                zf.write(path, arcname=path.relative_to(capsule_path.parent))
+            if not path.is_file():
+                continue
+            # Defense in depth: if a future change ever permits an
+            # in-source archive, exclude the in-flight file from the
+            # walk so it can't capture itself.
+            try:
+                if path.resolve() == archive_resolved:
+                    continue
+            except OSError:
+                pass
+            zf.write(path, arcname=path.relative_to(capsule_path.parent))
 
     return archive
 
