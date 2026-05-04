@@ -385,16 +385,37 @@ grep -nE "Phase NN" README.md \
 
 # 4. Confirm every match agrees with the new status.
 
-# 5. Stage all status-bearing files and commit in one commit.
+# 5. Update LIMITATIONS.md.
+#    The phase introduced new capabilities AND new limitations.
+#    Bump the dated header at the top of LIMITATIONS.md and add a real
+#    Capabilities + Limitations table for the phase under the matching
+#    section. Same commit as the status flip.
+
+# 6. Stage all status-bearing files and commit in one commit.
 git add README.md \
   program_development/milestones/phase_NN_*.md \
   program_development/timeline.md \
+  LIMITATIONS.md \
   <other status-bearing files>
 git commit -m "..."   # Use the HEREDOC pattern below.
 
-# 6. Push (this is a major change per Autonomous Git Operations).
+# 7. Push (this is a major change per Autonomous Git Operations).
 git push
 ```
+
+### Updating LIMITATIONS.md
+
+`LIMITATIONS.md` is the outward-facing capability map: what the workbench can and cannot do today. The convention checker pins its existence and the `Last updated:` header line. The agent's responsibility is keeping the dated header current and the per-phase tables honest.
+
+Update LIMITATIONS.md when:
+- A phase status flips to "Complete" — add the phase's real Capabilities + Limitations rows.
+- A module / backend / tool is promoted to `validated` or `trusted` — update the validated-set table.
+- An audit finds a claimed-but-not-shipped feature — flip the row from "shipped" to "pending" or remove the false claim.
+- The autonomy layer gains a real LLM (vs. the heuristic stand-in shipped in Phase 10) — major rewrite of that section.
+
+Do NOT update on: routine bug fixes, refactors that preserve contracts, test additions confirming an already-documented capability. Noise in `LIMITATIONS.md` is worse than silence — only meaningful capability changes belong.
+
+The maintenance protocol lives in `LIMITATIONS.md` itself; this file just enforces "update on phase close" as part of the close commit.
 
 ### Closing a phase — twenty-four behavioral checks (Phase 2 + 3 + 4 + 5 + 6 lessons)
 

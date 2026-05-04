@@ -42,6 +42,8 @@ Initial focus is laser–species interaction (KrF excimer, photoionization, rate
 
 See [`program_development/milestones/`](./program_development/milestones/) for per-phase notes and [`program_development/timeline.md`](./program_development/timeline.md) for chronology.
 
+> **Reading the status table above as "production-ready" would be a mistake.** All ten phases ship as planned, but the convention checker verifies *structural* completeness, not scientific capability. Read [`LIMITATIONS.md`](./LIMITATIONS.md) for the honest, kept-current map of what works today (real numerical core, schemas, sweep / UQ / optimization, FastAPI + UI, approval gates) and what is heuristic / template / stub (the autonomy "agents", paper interpretation drafts, the C++/CUDA solver suite — `axpy` only —, real laser–plasma physics modules).
+
 ---
 
 ## Installation

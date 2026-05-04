@@ -1057,6 +1057,13 @@ check_grep_in_file 'def grant_autonomy_approval' \
   packages/core/src/simworkbench/autonomy/approval_gates.py \
   "grant_autonomy_approval helper defined"
 
+section "Top-level governance docs"
+check_file_exists LIMITATIONS.md
+check_grep_in_file 'Last updated:' LIMITATIONS.md \
+  "LIMITATIONS.md carries a Last-updated header"
+check_grep_in_file 'Maintenance protocol' LIMITATIONS.md \
+  "LIMITATIONS.md documents the update cadence"
+
 section "Phase 10 — Cross-cutting + gate walk"
 check_file_exists tests/integration/test_phase_10_gate_walk.py
 check_file_exists tests/regression/test_approval_gates_enforcement.py
