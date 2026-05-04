@@ -134,8 +134,21 @@ class ModuleMatcher:
                     module_status=str(metadata.get("status", "candidate")),
                 )
             )
-        # Sort highest-scoring first.
-        report.matches.sort(key=lambda m: m.score, reverse=True)
+        # Sort highest-scoring first, preferring validated/trusted modules
+        # when the scientific fit ties. Phase 7 added `module_status`
+        # specifically so consumers do not pick a candidate over validated
+        # evidence at the same score.
+        status_rank = {
+            "trusted": 3,
+            "validated": 2,
+            "candidate": 1,
+            "draft": 0,
+            "deprecated": -1,
+        }
+        report.matches.sort(
+            key=lambda m: (m.score, status_rank.get(m.module_status, 0)),
+            reverse=True,
+        )
 
         # If no module's domain matches, the spec's domain is unmatched.
         if not any(m.score > 0.5 for m in report.matches):

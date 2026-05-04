@@ -125,6 +125,8 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 - Use the templates in `packages/internal_tools/templates/` and `packages/physics_modules/templates/`.
 - Lifecycle: `draft → candidate → validated → trusted → deprecated`. Agents may create `draft` and `candidate` only. Promotion to `trusted` requires a human reviewer.
 - Promotion criteria are in plan §14.3.
+- Lifecycle promotion gates must live in the registry/library function that mutates `tool.yaml` or `module.yaml`, not only in an API wrapper. For physics modules, `candidate → validated` requires a single-use human approval token, benchmark artifacts listed in `module.yaml`, declared tests that exist, and a passing test run before the status field is rewritten. Do not expose public `skip_approval`, `consume_approval=False`, `run_tests=False`, or similar bypass flags on lifecycle mutators.
+- Plan-named module families must be enumerated exactly before a phase/workstream is closed. Do not collapse a named family into one "reference module" unless the deferral is explicit in the milestone and encoded as an opt-in TODO assertion.
 
 ---
 
@@ -152,6 +154,9 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 - Do not "clean up" or "simplify" code in `validated`/`trusted` modules without an ADR.
 - Do not change tolerances in validation tests to make them pass. Investigate the root cause.
 - Do not switch backends to make a number look better. Backend choice never silently changes physics.
+- Registry discovery must not hide invalid `module.yaml` / `tool.yaml` by silently skipping bad files. Bad metadata is a failed gate, not an absent module.
+- Do not promote a module by trusting `actor="human"` or any other caller-supplied identity. The mutating registry path must consume server/local approval evidence itself.
+- Do not let stale metadata point at missing tests or benchmarks. Every path declared in `module.yaml` is part of the public contract and must resolve during promotion checks.
 
 ---
 

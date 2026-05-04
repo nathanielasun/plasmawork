@@ -1,6 +1,6 @@
 # Phase 8 — HPC and Hardware Backends
 
-**Status: Not started**
+**Status: Complete (2026-05-04).** All six workstreams 8A–8F shipped. Default convention checker green at 609 checks; opt-in mode reports no open workstreams.
 
 ## Objective
 Scale from local interactive experiments to high-performance parameter sweeps and large simulations. (Plan §Phase 8.)
@@ -27,18 +27,18 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 Starting-point hints from plan §Phase 8:
 
-- ☐ Stable backend interface in `packages/core/src/simworkbench/runtime/solver_backend.py` matching plan §15.1.
-- ☐ Backend registry that consumes `configs/backends.yaml` and exposes capability detection.
-- ☐ `packages/solver_backends/python_cpu/` is a real implementation (no longer planned).
-- ☐ `packages/solver_backends/numba_cpu/` Numba-accelerated kernels with benchmark vs. python_cpu.
-- ☐ `packages/solver_backends/cpp/` build pipeline (CMake-based) with kernel ABI wrappers.
-- ☐ `packages/solver_backends/cuda/` GPU adapter with explicit determinism warning.
-- ☐ `packages/solver_backends/external_pic/` adapter wrapping at least one external PIC code.
-- ☐ HPC orchestration scripts under `scripts/dev/` for Slurm and Ray submission, plus result import.
-- ☐ ADR on determinism policy (GPU bitwise-determinism limits, fp32 vs. fp64 defaults).
-- ☐ Cross-backend validation: the same ModelSpec produces results within tolerance across at least two backends for a given regime.
-- ☐ `configs/backends.yaml` — backend status fields transition `planned → in_progress → validated`.
-- ☐ Reality-test the determinism markers in `provenance.lock` per plan §11.3.
+- ☑ Stable backend interface in `packages/core/src/simworkbench/runtime/solver_backend.py` (`SolverBackend` ABC + `BackendCapabilities` descriptor).
+- ☑ Backend registry (`simworkbench.backends.BackendRegistry`) consumes `configs/backends.yaml`, refuses invalid entries (rule 20), exposes capability-aware `recommend()`. Lifecycle gate lives at the `set_status` mutation boundary (rule 18).
+- ☑ `packages/solver_backends/python_cpu/` is a real implementation; `validated`.
+- ☑ `packages/solver_backends/numba_cpu/` real Numba-JIT backend with NumPy fallback; cross-backend agreement vs python_cpu within 1e-6 relative; `validated`.
+- ☑ `packages/solver_backends/cpp/` CMake build pipeline with `axpy` reference kernel + ctypes ABI wrapper.
+- ☑ `packages/solver_backends/cuda/` GPU adapter with capability detection + memory estimator + determinism warning.
+- ☑ `packages/solver_backends/external_pic/` adapter contract + reference `StubPICAdapter`; concrete wrappers (WarpX/Smilei/EPOCH) land per-need.
+- ☑ HPC orchestration scripts under `scripts/dev/` (`submit_slurm.sh`, `import_hpc_result.sh`); `simworkbench.hpc` ships `SlurmJob`, `RayAdapter`, `import_remote_result`.
+- ☑ `ADR-0006-determinism-policy.md` — Accepted.
+- ☑ Cross-backend validation: `python_cpu` and `numba_cpu` agree within 1e-6 relative on the canonical 2-species conversion experiment.
+- ☑ `configs/backends.yaml` — `python_cpu` and `numba_cpu` validated; `cpp` in_progress; the rest planned.
+- ☑ `provenance.lock` carries the determinism marker, read from the live backend's `CAPABILITIES.deterministic` at save time per ADR-0006.
 
 ### Status sync at close
 

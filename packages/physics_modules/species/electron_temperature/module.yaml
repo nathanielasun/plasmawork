@@ -1,0 +1,30 @@
+name: electron_temperature
+version: 0.1.0
+domain: species
+status: candidate
+description: Convert between electron mean energy and effective temperature.
+inputs:
+  - name: mean_energy
+    units: joule
+  - name: temperature
+    units: kelvin
+outputs:
+  - name: electron_temperature
+    units: kelvin
+  - name: mean_energy
+    units: joule
+validity_domain:
+  notes:
+    - "Maxwellian-equivalent temperature from mean kinetic energy."
+    - "Does not assert the distribution is actually Maxwellian."
+references:
+  - title: "Ideal gas kinetic relation <E> = 3/2 k_B T."
+dependencies: []
+benchmarks: []
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0]
+tests:
+  unit:
+    - tests/test_electron_temperature.py

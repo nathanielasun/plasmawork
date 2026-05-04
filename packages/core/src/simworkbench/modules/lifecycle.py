@@ -71,9 +71,9 @@ def require_module_transition(
             f"{from_state.value}: "
             f"{sorted(s.value for s in ALLOWED_TRANSITIONS[from_state])}."
         )
-    if actor == "agent" and to_state not in AGENT_ALLOWED:
+    if to_state not in AGENT_ALLOWED and actor != "human":
         raise ModuleLifecycleError(
-            f"Agent may not promote a module to {to_state.value}; "
+            f"Actor {actor!r} may not promote a module to {to_state.value}; "
             "human approval required (plan §Phase 7 / 7A). The HTTP "
             "API consumes a single-use token written by "
             "simworkbench.modules.grant_module_approval."

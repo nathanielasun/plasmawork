@@ -4,6 +4,7 @@ Index of regression tests and the bugs they protect against. Every entry in `bug
 
 | Bug entry | Test path | What it asserts |
 |---|---|---|
+| 2026-05-04 — Phase 7 post-close audit | `tests/regression/test_module_registry_promotion_gates.py`; `tests/regression/test_phase7_module_metadata_integrity.py`; `scripts/dev/check_repo_conventions.sh` | Module lifecycle promotion cannot bypass approval/test gates, invalid module metadata fails discovery, Phase 7B plan-named modules/artifacts exist, stale test/benchmark metadata paths are caught, and validated modules win equal-score matching ties. |
 | 2026-05-02 — Open workstream TODOs broke the default test gate | `tests/regression/test_convention_checker_modes.py`; `scripts/dev/check_repo_conventions.sh`; `scripts/test/all.sh` | Default convention checking remains green for completed work, open Phase 1 backlog is opt-in, and missing 1C/1D TODO assertions stay visible. |
 | 2026-05-02 — Phase 1A/1B gate overstated implementation completeness | `tests/unit/test_modelspec.py`; `tests/unit/test_experiment.py`; `tests/integration/test_experiment_save_load.py`; `scripts/dev/check_repo_conventions.sh` | Workstream 1A has Experiment/config/save-load coverage; ModelSpec flexible dicts cannot bypass unit enforcement; test wrappers prefer the repo virtualenv. |
 | 2026-05-02 — Phase 0 gate false positive for missing skeleton files | `scripts/dev/check_repo_conventions.sh` | All Phase 0 skeleton/package/script files and Phase 0-10 milestone files exist, and documented scripts are executable. |

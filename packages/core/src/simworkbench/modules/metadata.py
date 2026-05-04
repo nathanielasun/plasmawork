@@ -25,6 +25,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .lifecycle import ModuleStatus
+
 
 class Dependency(BaseModel):
     """A module dependency reference."""
@@ -112,7 +114,7 @@ class ModuleMetadata(BaseModel):
     name: str
     version: str = "0.1.0"
     domain: str
-    status: str = "candidate"
+    status: ModuleStatus = ModuleStatus.CANDIDATE
     description: str = ""
 
     inputs: list[ModulePort] = Field(default_factory=list)
@@ -130,7 +132,7 @@ class ModuleMetadata(BaseModel):
 
     @model_validator(mode="after")
     def _validated_modules_have_benchmarks(self) -> ModuleMetadata:
-        if self.status == "validated" and not self.benchmarks:
+        if self.status in {ModuleStatus.VALIDATED, ModuleStatus.TRUSTED} and not self.benchmarks:
             raise ValueError(
                 f"Module {self.name!r} is validated but declares no "
                 "benchmarks. Plan §Phase 7 / 7A requires every "

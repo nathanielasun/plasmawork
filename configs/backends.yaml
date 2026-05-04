@@ -14,11 +14,11 @@
 backends:
 
   - name: python_cpu
-    status: planned                  # planned → in_progress → validated → trusted
+    status: validated                # planned → in_progress → validated → trusted
     phase: 1
-    description: NumPy/SciPy-based local CPU backend. Default for small models.
+    description: NumPy/SciPy-based local CPU backend. Default for small models. Phase 8 promotion 2026-05-04 — validated against Phase 7 module benchmarks (Lambert-Beer to 1e-12, rate_equation_0d first-order decay + mass conservation).
     supports:
-      domains: [laser_species, rate_equations, phase_transition, molecular_dynamics, pde]
+      domains: [species, laser_species, rate_equations, phase_transition, molecular_dynamics, pde]
       geometries: [0, 1, 2, 3]
       precision: [float64]
     dependencies:
@@ -26,11 +26,11 @@ backends:
     determinism: true
 
   - name: numba_cpu
-    status: planned
+    status: validated
     phase: 8
-    description: Numba-accelerated CPU kernels for hot loops in Python backends.
+    description: Numba-JIT-accelerated CPU backend; drop-in for python_cpu with NumPy fallback when Numba is missing. Cross-backend agreement vs python_cpu within 1e-6 relative on the canonical 2-species conversion experiment.
     supports:
-      domains: [molecular_dynamics, monte_carlo, rate_equations]
+      domains: [species, laser_species, rate_equations, phase_transition, molecular_dynamics, monte_carlo]
       geometries: [0, 1, 2, 3]
       precision: [float64]
     dependencies:
@@ -38,9 +38,9 @@ backends:
     determinism: true
 
   - name: cpp
-    status: planned
+    status: in_progress
     phase: 8
-    description: Compiled C++ kernel pathway for performance-critical numerics.
+    description: Compiled C++ kernel pathway for performance-critical numerics. Phase 8 ships the CMake build pipeline + ctypes ABI wrapper + axpy reference kernel; validated kernels per physics module land in Phase 9+.
     supports:
       domains: [pde, molecular_dynamics]
       geometries: [1, 2, 3]

@@ -1,0 +1,27 @@
+name: ionization
+version: 0.1.0
+domain: laser
+status: candidate
+description: First-order ionization source-term helper with explicit ionization rate.
+inputs:
+  - name: neutral_density
+    units: "1 / meter ** 3"
+  - name: ionization_rate_coefficient
+    units: "1 / second"
+outputs:
+  - name: ionization_rate
+    units: "1 / (meter ** 3 * second)"
+validity_domain:
+  notes:
+    - "First-order ionization only; coefficient supplied by reviewed data."
+references:
+  - title: "Single-channel ionization rate equation."
+dependencies: []
+benchmarks: []
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0]
+tests:
+  unit:
+    - tests/test_ionization.py

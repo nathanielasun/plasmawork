@@ -32,6 +32,31 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-04: Phase 7 post-close audit — lifecycle gate bypass and incomplete module family
+
+### Affected subsystem
+- `packages/core/src/simworkbench/modules/`
+- `packages/core/src/simworkbench/modeling/module_match.py`
+- `packages/physics_modules/laser/`
+- `packages/physics_modules/species/`
+
+### Symptoms
+`ModuleRegistry.set_status(..., actor="human")` could promote a module without an approval token or passing declared tests, and invalid validated metadata was hidden by `refresh()` because malformed `module.yaml` files were skipped. Phase 7B also collapsed the laser-species family into a small reference subset: plan-named modules such as `laser/absorption`, `laser/emission`, `laser/excitation`, `laser/ionization`, `laser/recombination`, `species/electron_temperature`, and `species/species_density` were missing or incomplete. Some existing module YAML files pointed at tests that did not exist. `ModuleMatcher` surfaced module lifecycle status but did not use it to prefer validated modules when scores tied.
+
+### Root cause
+The privileged gate lived partly in prose/API flow instead of the mutating registry method, and the public mutator still exposed bypass-style flags. Convention checks verified selected reference modules rather than every plan-named family member and did not assert metadata evidence paths. Registry discovery treated invalid metadata as ignorable, so a broken module could disappear from a fresh registry instead of failing the gate.
+
+### Fix
+`ModuleRegistry.set_status` now validates the target metadata before writing, consumes the single-use module approval token at the mutation boundary, requires benchmark artifacts and declared tests, and always runs those tests before `candidate → validated`. Public approval/test bypass flags were removed. Registry refresh now fails on invalid module metadata instead of skipping the file. Added `python -m simworkbench.modules.approve` to match the documented approval flow. Phase 7B plan-named laser/species modules now exist with module YAML, docs, source, tests, examples, and benchmark placeholders where validation is still pending. Stale test paths for validated and candidate modules were fixed with module-local tests. Module matching now ranks trusted/validated modules above candidates at equal scientific score.
+
+### Regression protection
+- `tests/regression/test_module_registry_promotion_gates.py`
+- `tests/regression/test_phase7_module_metadata_integrity.py`
+- `scripts/dev/check_repo_conventions.sh`
+
+### Agent warning
+Do not put lifecycle safety in an API wrapper while leaving the library mutator permissive. Do not add public "test fixture" flags that skip human approval or test execution on a production mutator. Do not mark a plan-named module family complete by shipping only a reference module; enumerate every name and make the convention checker assert the artifacts. Do not silently skip bad registry metadata during discovery.
+
 ## 2026-05-03: Phase 6 post-close audit (round 2) — UI typecheck broken; test gate skipped tsc
 
 ### Affected subsystem

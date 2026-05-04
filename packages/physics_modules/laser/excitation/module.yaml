@@ -1,0 +1,27 @@
+name: excitation
+version: 0.1.0
+domain: laser
+status: candidate
+description: First-order excitation source-term helper with explicit rate coefficient.
+inputs:
+  - name: ground_density
+    units: "1 / meter ** 3"
+  - name: rate_coefficient
+    units: "1 / second"
+outputs:
+  - name: excitation_rate
+    units: "1 / (meter ** 3 * second)"
+validity_domain:
+  notes:
+    - "First-order excitation only; coefficient supplied by reviewed data."
+references:
+  - title: "Two-level rate-equation source term."
+dependencies: []
+benchmarks: []
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0]
+tests:
+  unit:
+    - tests/test_excitation.py

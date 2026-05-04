@@ -38,6 +38,13 @@ dependencies = [
   # patterns.md "Shipping the structured error without shipping the success
   # path".)
   "pypdf>=4.0,<6.0",
+  # Phase 8 / 8B — Numba acceleration for the numba_cpu backend. The
+  # backend has a NumPy-only fallback that produces identical results
+  # if numba is unavailable, but pinning the dep here keeps the
+  # validated success path reachable (carries `agent_error_patterns.md`
+  # "Shipping the structured error without shipping the success path"
+  # forward into Phase 8).
+  "numba>=0.59,<1.0",
 ]
 
 [project.optional-dependencies]

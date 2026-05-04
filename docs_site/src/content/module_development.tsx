@@ -2,7 +2,10 @@ export default function ModuleDevelopment() {
   return (
     <article>
       <h1>Module Development</h1>
-      <p className="page-status">Phase 0 skeleton. Expand in Phase 7.</p>
+      <p className="page-status">
+        Phase 7 complete. Registry v1 modules declare lifecycle status,
+        dependencies, benchmark references, and backend compatibility.
+      </p>
 
       <h2>Where modules live</h2>
       <pre>
@@ -26,9 +29,14 @@ export default function ModuleDevelopment() {
       </pre>
       <p>
         Agents may create <code>draft</code> and <code>candidate</code>.
-        Promotion to <code>validated</code> requires the criteria below.
-        Promotion to <code>trusted</code> additionally requires a human
-        reviewer.
+        Promotion to <code>validated</code> requires the criteria below, a
+        passing declared test run, and a single-use human approval token.
+        Local reviewers create that token with
+        <code>python -m simworkbench.modules.approve</code>; the registry
+        consumes it inside <code>ModuleRegistry.set_status</code> before
+        rewriting <code>module.yaml</code>.
+        Promotion to <code>trusted</code> additionally requires reviewer
+        approval and repeated validation evidence.
       </p>
 
       <h2>Promotion criteria for <code>validated</code></h2>
@@ -37,7 +45,7 @@ export default function ModuleDevelopment() {
         <li>Documentation exists (purpose, inputs, outputs, units, examples, validity domain).</li>
         <li>Inputs and outputs are unit-specified.</li>
         <li>Validity domain is explicit.</li>
-        <li>At least one benchmark or limiting-case validation exists.</li>
+        <li>At least one benchmark or limiting-case validation exists and is listed in <code>module.yaml</code>.</li>
         <li>Known limitations are documented.</li>
         <li>Bug history has been checked (<code>bugs_and_fixes/</code>).</li>
         <li>Regression tests exist for any prior failures.</li>
@@ -51,15 +59,8 @@ export default function ModuleDevelopment() {
         <li>Add <code>tests/</code>: at minimum a unit test for the I/O contract and a validation test for a limiting / analytical case.</li>
         <li>Add documentation: <code>README.md</code>, <code>assumptions.md</code>, <code>validity_domain.md</code>, <code>equations.md</code>, <code>changelog.md</code>, <code>examples/</code>.</li>
         <li>Register: <code>./scripts/dev/refresh_registry.sh</code>.</li>
-        <li>Run validation: <code>./scripts/test/validation.sh</code>.</li>
+        <li>Run validation: <code>./scripts/test/validation.sh</code> and the module-local tests.</li>
       </ol>
-
-      <h2>What this page should cover when expanded</h2>
-      <ul>
-        <li>End-to-end walkthrough of authoring a new rate-equation module.</li>
-        <li>Reference for the module YAML schema.</li>
-        <li>Per-domain conventions (laser, plasma, MD, etc.).</li>
-      </ul>
     </article>
   );
 }

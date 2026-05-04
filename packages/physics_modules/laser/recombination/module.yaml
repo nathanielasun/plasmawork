@@ -1,0 +1,30 @@
+name: recombination
+version: 0.1.0
+domain: laser
+status: candidate
+description: Electron-ion recombination source-term helper with explicit recombination coefficient.
+inputs:
+  - name: electron_density
+    units: "1 / meter ** 3"
+  - name: ion_density
+    units: "1 / meter ** 3"
+  - name: recombination_coefficient
+    units: "meter ** 3 / second"
+outputs:
+  - name: recombination_rate
+    units: "1 / (meter ** 3 * second)"
+validity_domain:
+  notes:
+    - "Binary recombination with caller-supplied coefficient."
+    - "No three-body recombination or detailed balance model."
+references:
+  - title: "Rate-equation recombination source term."
+dependencies: []
+benchmarks: []
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0]
+tests:
+  unit:
+    - tests/test_recombination.py

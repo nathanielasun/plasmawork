@@ -71,8 +71,6 @@ compatibility:
 
 tests:
   unit:
-    - tests/unit/test_ising_2d.py
-  validation:
-    - tests/validation/test_ising_2d_critical_temperature.py
+    - tests/test_ising_2d.py
   benchmark:
     - tests/test_benchmarks.py

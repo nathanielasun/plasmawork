@@ -36,6 +36,11 @@ class ProvenanceLock(BaseModel):
     placeholders: list[str] = Field(default_factory=list)
     parent_capsule_hash: str = ""  # populated on forks
     created_at: str  # ISO-8601 UTC
+    # Phase 8 / 8D — determinism marker. Read from the backend's
+    # ``CAPABILITIES.deterministic`` at save time per ADR-0006. Default
+    # ``true`` for legacy capsules where the field wasn't yet written.
+    determinism: bool = True
+    determinism_warning: str = ""
 
 
 def write_lock(lock: ProvenanceLock, path: str | Path) -> None:

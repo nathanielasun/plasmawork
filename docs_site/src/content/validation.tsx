@@ -3,11 +3,12 @@ export default function Validation() {
     <article>
       <h1>Validation</h1>
       <p className="page-status">
-        Phase 1 complete. Three validation tests live under
-        <code>tests/validation/</code> covering rate-equation conservation,
-        Lennard-Jones energy drift, and 2D Ising critical-temperature
-        crossover. The validation surface expands in Phase 7 (validated
-        physics module registry).
+        Phase 7 complete. The workbench now has the core
+        <code>simworkbench.validation_library</code> helpers plus module-local
+        benchmarks for validated physics modules. Repository-level validation
+        tests still live under <code>tests/validation/</code>; module-specific
+        benchmark gates live beside each module under
+        <code>packages/physics_modules/&lt;domain&gt;/&lt;name&gt;/tests/</code>.
       </p>
 
       <h2>Validation categories</h2>
@@ -69,11 +70,11 @@ export default function Validation() {
         <li>Never change validated module behavior in place — fork into a new candidate.</li>
       </ul>
 
-      <h2>What this page should cover when expanded</h2>
+      <h2>Validated module registry</h2>
       <ul>
-        <li>How to author a benchmark case and link it to a module.</li>
-        <li>How convergence tests are set up and read.</li>
-        <li>The validation panel in the workbench UI.</li>
+        <li>Validated modules declare <code>benchmarks</code> in <code>module.yaml</code>.</li>
+        <li>Promotion to <code>validated</code> requires benchmark artifacts, declared tests, a passing test run, and a single-use human approval token.</li>
+        <li>Candidate modules may be reused for exploration, but they are not default trusted physics.</li>
       </ul>
     </article>
   );

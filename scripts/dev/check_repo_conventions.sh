@@ -662,6 +662,7 @@ check_file_exists packages/core/src/simworkbench/modules/metadata.py
 check_file_exists packages/core/src/simworkbench/modules/registry.py
 check_file_exists packages/core/src/simworkbench/modules/lifecycle.py
 check_file_exists packages/core/src/simworkbench/modules/approval.py
+check_file_exists packages/core/src/simworkbench/modules/approve.py
 check_grep_in_file 'class ModuleRegistry' \
   packages/core/src/simworkbench/modules/registry.py \
   "ModuleRegistry class defined"
@@ -679,6 +680,26 @@ check_grep_in_file 'compatibility' \
   "Registry v1 metadata declares compatibility"
 
 section "Phase 7B — Laser-species reference module"
+check_file_exists packages/physics_modules/laser/gaussian_pulse/module.yaml
+check_file_exists packages/physics_modules/laser/gaussian_pulse/src/__init__.py
+check_file_exists packages/physics_modules/laser/gaussian_pulse/README.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/assumptions.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/validity_domain.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/equations.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/changelog.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/benchmarks/README.md
+check_file_exists packages/physics_modules/laser/gaussian_pulse/examples/basic_usage.py
+check_file_exists packages/physics_modules/laser/gaussian_pulse/tests/unit/test_gaussian_pulse.py
+check_file_exists packages/physics_modules/laser/absorption/module.yaml
+check_file_exists packages/physics_modules/laser/absorption/src/__init__.py
+check_file_exists packages/physics_modules/laser/absorption/README.md
+check_file_exists packages/physics_modules/laser/absorption/assumptions.md
+check_file_exists packages/physics_modules/laser/absorption/validity_domain.md
+check_file_exists packages/physics_modules/laser/absorption/equations.md
+check_file_exists packages/physics_modules/laser/absorption/changelog.md
+check_file_exists packages/physics_modules/laser/absorption/benchmarks/README.md
+check_file_exists packages/physics_modules/laser/absorption/examples/basic_usage.py
+check_file_exists packages/physics_modules/laser/absorption/tests/test_absorption.py
 check_file_exists packages/physics_modules/laser/absorption_lambert_beer/module.yaml
 check_file_exists packages/physics_modules/laser/absorption_lambert_beer/src/__init__.py
 check_file_exists packages/physics_modules/laser/absorption_lambert_beer/README.md
@@ -688,7 +709,67 @@ check_file_exists packages/physics_modules/laser/absorption_lambert_beer/equatio
 check_file_exists packages/physics_modules/laser/absorption_lambert_beer/changelog.md
 check_dir_exists  packages/physics_modules/laser/absorption_lambert_beer/benchmarks
 check_dir_exists  packages/physics_modules/laser/absorption_lambert_beer/tests
+check_file_exists packages/physics_modules/laser/emission/module.yaml
+check_file_exists packages/physics_modules/laser/emission/src/__init__.py
+check_file_exists packages/physics_modules/laser/emission/README.md
+check_file_exists packages/physics_modules/laser/emission/assumptions.md
+check_file_exists packages/physics_modules/laser/emission/validity_domain.md
+check_file_exists packages/physics_modules/laser/emission/equations.md
+check_file_exists packages/physics_modules/laser/emission/changelog.md
+check_file_exists packages/physics_modules/laser/emission/benchmarks/README.md
+check_file_exists packages/physics_modules/laser/emission/examples/basic_usage.py
+check_file_exists packages/physics_modules/laser/emission/tests/test_emission.py
+check_file_exists packages/physics_modules/laser/excitation/module.yaml
+check_file_exists packages/physics_modules/laser/excitation/src/__init__.py
+check_file_exists packages/physics_modules/laser/excitation/README.md
+check_file_exists packages/physics_modules/laser/excitation/assumptions.md
+check_file_exists packages/physics_modules/laser/excitation/validity_domain.md
+check_file_exists packages/physics_modules/laser/excitation/equations.md
+check_file_exists packages/physics_modules/laser/excitation/changelog.md
+check_file_exists packages/physics_modules/laser/excitation/benchmarks/README.md
+check_file_exists packages/physics_modules/laser/excitation/examples/basic_usage.py
+check_file_exists packages/physics_modules/laser/excitation/tests/test_excitation.py
+check_file_exists packages/physics_modules/laser/ionization/module.yaml
+check_file_exists packages/physics_modules/laser/ionization/src/__init__.py
+check_file_exists packages/physics_modules/laser/ionization/README.md
+check_file_exists packages/physics_modules/laser/ionization/assumptions.md
+check_file_exists packages/physics_modules/laser/ionization/validity_domain.md
+check_file_exists packages/physics_modules/laser/ionization/equations.md
+check_file_exists packages/physics_modules/laser/ionization/changelog.md
+check_file_exists packages/physics_modules/laser/ionization/benchmarks/README.md
+check_file_exists packages/physics_modules/laser/ionization/examples/basic_usage.py
+check_file_exists packages/physics_modules/laser/ionization/tests/test_ionization.py
+check_file_exists packages/physics_modules/laser/recombination/module.yaml
+check_file_exists packages/physics_modules/laser/recombination/src/__init__.py
+check_file_exists packages/physics_modules/laser/recombination/README.md
+check_file_exists packages/physics_modules/laser/recombination/assumptions.md
+check_file_exists packages/physics_modules/laser/recombination/validity_domain.md
+check_file_exists packages/physics_modules/laser/recombination/equations.md
+check_file_exists packages/physics_modules/laser/recombination/changelog.md
+check_file_exists packages/physics_modules/laser/recombination/benchmarks/README.md
+check_file_exists packages/physics_modules/laser/recombination/examples/basic_usage.py
+check_file_exists packages/physics_modules/laser/recombination/tests/test_recombination.py
 
+check_file_exists packages/physics_modules/species/electron_temperature/module.yaml
+check_file_exists packages/physics_modules/species/electron_temperature/src/__init__.py
+check_file_exists packages/physics_modules/species/electron_temperature/README.md
+check_file_exists packages/physics_modules/species/electron_temperature/assumptions.md
+check_file_exists packages/physics_modules/species/electron_temperature/validity_domain.md
+check_file_exists packages/physics_modules/species/electron_temperature/equations.md
+check_file_exists packages/physics_modules/species/electron_temperature/changelog.md
+check_file_exists packages/physics_modules/species/electron_temperature/benchmarks/README.md
+check_file_exists packages/physics_modules/species/electron_temperature/examples/basic_usage.py
+check_file_exists packages/physics_modules/species/electron_temperature/tests/test_electron_temperature.py
+check_file_exists packages/physics_modules/species/species_density/module.yaml
+check_file_exists packages/physics_modules/species/species_density/src/__init__.py
+check_file_exists packages/physics_modules/species/species_density/README.md
+check_file_exists packages/physics_modules/species/species_density/assumptions.md
+check_file_exists packages/physics_modules/species/species_density/validity_domain.md
+check_file_exists packages/physics_modules/species/species_density/equations.md
+check_file_exists packages/physics_modules/species/species_density/changelog.md
+check_file_exists packages/physics_modules/species/species_density/benchmarks/README.md
+check_file_exists packages/physics_modules/species/species_density/examples/basic_usage.py
+check_file_exists packages/physics_modules/species/species_density/tests/test_species_density.py
 check_file_exists packages/physics_modules/species/rate_equation_0d/assumptions.md
 check_file_exists packages/physics_modules/species/rate_equation_0d/validity_domain.md
 check_file_exists packages/physics_modules/species/rate_equation_0d/equations.md
@@ -734,14 +815,94 @@ check_grep_in_file 'class CrossSolverComparison' \
 
 section "Phase 7 — Cross-cutting + gate walk"
 check_file_exists tests/integration/test_phase_7_gate_walk.py
+check_file_exists tests/regression/test_module_registry_promotion_gates.py
+check_file_exists tests/regression/test_phase7_module_metadata_integrity.py
 check_grep_in_file 'role: release' configs/agents.yaml \
   "agents.yaml lists release role"
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch. Currently empty — Phase 7 closed 2026-05-03.
+section "Phase 8A — Backend Abstraction"
+check_file_exists packages/core/src/simworkbench/runtime/solver_backend.py
+check_grep_in_file 'class SolverBackend' \
+  packages/core/src/simworkbench/runtime/solver_backend.py \
+  "SolverBackend ABC defined"
+check_file_exists packages/core/src/simworkbench/backends/__init__.py
+check_file_exists packages/core/src/simworkbench/backends/registry.py
+check_file_exists packages/core/src/simworkbench/backends/lifecycle.py
+check_file_exists packages/core/src/simworkbench/backends/metadata.py
+check_file_exists packages/core/src/simworkbench/backends/approval.py
+check_grep_in_file 'class BackendRegistry' \
+  packages/core/src/simworkbench/backends/registry.py \
+  "BackendRegistry class defined"
+check_grep_in_file 'def recommend' \
+  packages/core/src/simworkbench/backends/registry.py \
+  "BackendRegistry.recommend() exists"
+check_grep_in_file 'class BackendStatus' \
+  packages/core/src/simworkbench/backends/lifecycle.py \
+  "BackendStatus lifecycle defined"
+
+section "Phase 8B — Python/CPU backends"
+check_file_exists packages/solver_backends/python_cpu/__init__.py
+check_file_exists packages/solver_backends/python_cpu/README.md
+check_file_exists packages/solver_backends/numba_cpu/__init__.py
+check_file_exists packages/solver_backends/numba_cpu/README.md
+check_grep_in_file 'NumbaCpuBackend|numba' \
+  packages/solver_backends/numba_cpu/__init__.py \
+  "numba_cpu has a real implementation"
+
+section "Phase 8C — Compiled kernels"
+check_file_exists packages/solver_backends/cpp/CMakeLists.txt
+check_file_exists packages/solver_backends/cpp/README.md
+check_dir_exists  packages/solver_backends/cpp/src
+check_dir_exists  packages/solver_backends/cpp/include
+check_file_exists packages/solver_backends/cpp/__init__.py
+check_file_executable scripts/build/kernels.sh \
+  "kernels build script executable"
+check_file_exists packages/solver_backends/fortran/__init__.py
+check_file_exists packages/solver_backends/fortran/README.md
+
+section "Phase 8D — GPU backend skeleton + determinism ADR"
+check_file_exists packages/solver_backends/cuda/__init__.py
+check_file_exists packages/solver_backends/cuda/README.md
+check_grep_in_file 'memory_estimate|estimate_memory' \
+  packages/solver_backends/cuda/__init__.py \
+  "cuda backend exposes memory estimator"
+check_file_exists program_development/architectural_decisions/ADR-0006-determinism-policy.md
+
+section "Phase 8E — HPC orchestration"
+check_file_exists packages/core/src/simworkbench/hpc/__init__.py
+check_file_exists packages/core/src/simworkbench/hpc/slurm.py
+check_file_exists packages/core/src/simworkbench/hpc/ray_adapter.py
+check_file_exists packages/core/src/simworkbench/hpc/result_import.py
+check_grep_in_file 'class SlurmJob' \
+  packages/core/src/simworkbench/hpc/slurm.py \
+  "SlurmJob class defined"
+check_grep_in_file 'def import_remote_result' \
+  packages/core/src/simworkbench/hpc/result_import.py \
+  "import_remote_result function defined"
+check_file_executable scripts/dev/submit_slurm.sh \
+  "submit_slurm.sh executable"
+check_file_executable scripts/dev/import_hpc_result.sh \
+  "import_hpc_result.sh executable"
+
+section "Phase 8F — External simulator integration"
+check_file_exists packages/core/src/simworkbench/backends/external.py
+check_grep_in_file 'class ExternalSimulatorAdapter' \
+  packages/core/src/simworkbench/backends/external.py \
+  "ExternalSimulatorAdapter ABC defined"
+check_file_exists packages/solver_backends/external_pic/__init__.py
+check_file_exists packages/solver_backends/external_pic/README.md
+
+section "Phase 8 — Cross-cutting + gate walk"
+check_file_exists tests/integration/test_phase_8_gate_walk.py
+check_grep_in_file 'status: validated' configs/backends.yaml \
+  "configs/backends.yaml has at least one validated backend"
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch. Currently empty — Phase 8 closed 2026-05-04.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 7 closed 2026-05-03; Phase 8 not yet opened."
+  echo "  no open workstreams — Phase 8 closed 2026-05-04; Phase 9 not yet opened."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

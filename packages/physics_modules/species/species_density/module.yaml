@@ -1,0 +1,32 @@
+name: species_density
+version: 0.1.0
+domain: species
+status: candidate
+description: Unit-aware species-density and particle-count conversions.
+inputs:
+  - name: particle_count
+    units: dimensionless
+  - name: volume
+    units: "meter ** 3"
+  - name: density
+    units: "1 / meter ** 3"
+outputs:
+  - name: density
+    units: "1 / meter ** 3"
+  - name: particle_count
+    units: dimensionless
+validity_domain:
+  notes:
+    - "Uniform density in a caller-supplied control volume."
+    - "No spatial gradients or field coupling."
+references:
+  - title: "Number density definition n = N / V."
+dependencies: []
+benchmarks: []
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0]
+tests:
+  unit:
+    - tests/test_species_density.py

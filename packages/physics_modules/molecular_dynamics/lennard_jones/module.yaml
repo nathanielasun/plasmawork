@@ -59,8 +59,6 @@ compatibility:
 
 tests:
   unit:
-    - tests/unit/test_lennard_jones.py
-  validation:
-    - tests/validation/test_lennard_jones_energy_drift.py
+    - tests/test_lennard_jones.py
   benchmark:
     - tests/test_benchmarks.py

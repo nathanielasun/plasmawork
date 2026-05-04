@@ -65,6 +65,6 @@ compatibility:
 
 tests:
   unit:
-    - tests/unit/test_absorption_lambert_beer.py
+    - tests/test_absorption_lambert_beer.py
   benchmark:
     - tests/test_benchmarks.py

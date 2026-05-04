@@ -1,0 +1,35 @@
+name: absorption
+version: 0.1.0
+domain: laser
+status: candidate
+description: Unit-aware linear absorption helpers for alpha = sigma * n and Lambert-Beer transmission.
+inputs:
+  - name: incident_intensity
+    units: "watt / meter ** 2"
+  - name: absorber_density
+    units: "1 / meter ** 3"
+  - name: cross_section
+    units: "meter ** 2"
+  - name: path_length
+    units: meter
+outputs:
+  - name: absorption_coefficient
+    units: "1 / meter"
+  - name: transmitted_intensity
+    units: "watt / meter ** 2"
+validity_domain:
+  notes:
+    - "Linear, homogeneous absorption with caller-supplied cross-section."
+    - "No saturation, scattering, stimulated emission, or spectral averaging."
+references:
+  - title: "Beer-Lambert law, linear absorption limit."
+dependencies:
+  - name: absorption_lambert_beer
+benchmarks: []
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0, 1]
+tests:
+  unit:
+    - tests/test_absorption.py

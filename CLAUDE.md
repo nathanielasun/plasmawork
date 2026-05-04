@@ -44,6 +44,23 @@ If `AGENTS.md` and this file ever drift, `AGENTS.md` is the source of truth for 
 
 17. No `global` declarations on cached singletons. Use `@functools.lru_cache(maxsize=1)` on the factory function instead.
 
+18. Lifecycle promotion gates live at the mutation boundary. A registry method
+    that rewrites `tool.yaml` or `module.yaml` must enforce human approval,
+    scientific evidence, declared test existence, and test execution itself.
+    API/UI checks may call the registry gate, but they are not the gate. Public
+    lifecycle mutators do not expose `skip_approval`, `consume_approval=False`,
+    `run_tests=False`, or similar bypass flags.
+
+19. Plan-named module families are enumerated exactly. Before closing a
+    workstream such as Phase 7B, list every module named in the plan and make
+    the convention checker assert each completed deliverable. A single
+    "reference module" does not satisfy a family unless the deferral is explicit
+    and recorded as an opt-in TODO assertion.
+
+20. Registry discovery does not hide invalid metadata. If a `module.yaml` or
+    `tool.yaml` cannot load, the gate fails with the file path and parse error;
+    do not silently skip it and make a broken module look absent.
+
 ---
 
 ## How to Run the Program Locally
@@ -247,11 +264,12 @@ When in doubt, ask before editing. Prefer reversible additions over destructive 
 **Phase 4** (Agent-Assisted Paper Ingestion) — complete 2026-05-02 (with PDF + extracted-artifacts fixes 2026-05-03). All five workstreams 4A–4E shipped plus two post-close audits.
 **Phase 5** (ModelSpec Generation and Module Mapping) — complete 2026-05-03. All four workstreams 5A–5D shipped. `simworkbench.modeling.ModelSpecGenerator` transforms reviewed Phase-4 artifacts into a schema-valid ModelSpec (refuses unreviewed input per plan §Phase 4 hard rule); `ModuleMatcher` walks the physics-module registry with per-bullet sub-scores; `GapAnalyzer` covers all five §10.4 categories; `ExperimentProposer` writes `experiment_proposal.md` with all five §Phase 5 / 5D bullets; "Proposals" UI tab over `POST /api/proposals` runs the full pipeline. Gate-walk integration test was written BEFORE implementation per the ninth Phase Gate Procedure check.
 **Phase 6** (Sandboxed Agentic Code Generation) — complete 2026-05-03. All five workstreams 6A–6E shipped. `simworkbench.codegen.CodeGenerator` deterministically renders runnable Python `experiment.py`, configs, diagnostic helpers, generated tests (unit / dimensional / smoke / regression / convergence-when-applicable), and a README into `<capsule>/src/generated/`; `simworkbench.codegen.sandbox.sandboxed_write` is the single producer-side gate that refuses every write under `src/user_edits/`, `paper_sources/`, and `provenance/` with no opt-out at any layer; `simworkbench.codegen.TestGenerator` covers each plan-named pytest category as a real file; `simworkbench.codegen.ValidationRunner` runs the generated experiment on the Phase-1 `Runner` (LSODA, never a hand-rolled timestep loop per plan §15.2) and writes `validation/{validation_summary.md, status.yaml, plots/*.csv}`; new "Generated Code" UI tab over four new backend endpoints (`GET/POST /api/capsules/{name}/codegen`, `GET .../codegen/diff`, `POST .../validate-run`). Gate-walk integration test was written BEFORE implementation per the ninth Phase Gate Procedure check; ten gate-walk tests cover every gate verb plus the API hard-rule bypass guard.
-**Phase 7** (Validated Physics Module Registry) — complete 2026-05-03. All five workstreams 7A–7E shipped. `simworkbench.modules` ships `ModuleRegistry`, `ModuleMetadata` Pydantic (Registry v1: dependencies, benchmarks, compatibility), `ModuleStatus` lifecycle (draft→candidate→validated→trusted→deprecated) gated by single-use `grant_module_approval` tokens (mirrors Phase 6 tool flow). Six modules transition to `validated` against analytic benchmarks: `laser/absorption_lambert_beer`, `species/rate_equation_0d`, `molecular_dynamics/lennard_jones`, `phase_transition/ising_2d`, `pde/wave_equation_1d`, `pde/reaction_diffusion_1d`. Plasma module skeletons (`electromagnetic_field` / `particle_pusher` / `pic_adapter` / `collisional_model` / `boundary_condition_library`) ship as `candidate`; validated runs await Phase 8. `simworkbench.validation_library` exposes `ConservationCheck`, `ConvergenceCheck`, `PaperReproduction`, `CrossSolverComparison`. Gate-walk integration test was written BEFORE implementation; 28 parametric gate-walk tests cover every gate verb (reusable, documented, tested, validated for explicit regimes) plus the human-approval hard-rule guard.
+**Phase 7** (Validated Physics Module Registry) — complete 2026-05-03; post-close audit fixed 2026-05-04. All five workstreams 7A–7E shipped. `simworkbench.modules` ships `ModuleRegistry`, `ModuleMetadata` Pydantic (Registry v1: dependencies, benchmarks, compatibility), `ModuleStatus` lifecycle (draft→candidate→validated→trusted→deprecated) gated inside `ModuleRegistry.set_status` by single-use approval tokens, benchmark artifacts, declared tests, and mandatory test execution. Six modules transition to `validated` against analytic benchmarks: `laser/absorption_lambert_beer`, `species/rate_equation_0d`, `molecular_dynamics/lennard_jones`, `phase_transition/ising_2d`, `pde/wave_equation_1d`, `pde/reaction_diffusion_1d`. The full Phase 7B laser-species family exists as candidate/validated modules. Plasma module skeletons ship as `candidate`. `simworkbench.validation_library` exposes `ConservationCheck`, `ConvergenceCheck`, `PaperReproduction`, `CrossSolverComparison`.
+**Phase 8** (HPC and Hardware Backends) — complete 2026-05-04. All six workstreams 8A–8F shipped. `simworkbench.runtime.solver_backend` exposes the `SolverBackend` ABC + `BackendCapabilities` descriptor; `simworkbench.backends` ships `BackendRegistry`, `BackendStatus` lifecycle gated inside `set_status` by single-use approval tokens, Pydantic-validated metadata that refuses malformed entries (rule 20), and capability-aware `recommend(spec)`. `python_cpu` and `numba_cpu` are validated; cross-backend agreement asserted within 1e-6 relative on the canonical 2-species conversion experiment. `numba_cpu` JITs the rate-equation RHS through Numba and falls back to a NumPy implementation when Numba is missing. The C++ kernel pipeline ships a CMake build + ctypes ABI wrapper (axpy reference kernel); Fortran skeleton mirrors the contract. The CUDA adapter exposes a non-raising capability probe + memory estimator + determinism warning; ADR-0006 documents the determinism policy and the capsule writer reads each backend's `CAPABILITIES.deterministic` at save time. HPC orchestration ships `SlurmJob`, `RayAdapter`, `import_remote_result` plus `scripts/dev/{submit_slurm,import_hpc_result}.sh`. The external-PIC adapter contract + reference `StubPICAdapter` complete 8F. Gate-walk integration test was written BEFORE implementation; 15 parametric tests cover every gate verb (run-locally / run-remotely / same-interface / capability-detect / determinism-marked / lifecycle-gate).
 
 Current state:
-- Default convention checker covers every Phase 0/1/2/3/4/5/6/7 entity (~485 checks); the opt-in `--include-open-workstreams` mode is empty awaiting Phase 8.
-- Phase status synchronized across `README.md`, `program_development/milestones/{phase_00..phase_07}_*.md`, `program_development/timeline.md`, all `docs_site/src/content/*.tsx` pages that name the phase, and this file.
+- Default convention checker covers every Phase 0/1/2/3/4/5/6/7/8 entity (~609 checks); the opt-in `--include-open-workstreams` mode is empty awaiting Phase 9.
+- Phase status synchronized across `README.md`, `program_development/milestones/{phase_00..phase_08}_*.md`, `program_development/timeline.md`, all `docs_site/src/content/*.tsx` pages that name the phase, and this file.
 - Bugs logged in `bugs_and_fixes/bugfixes.md` with regression checks:
   - 2026-05-02 *Bare `build/` ignore rule swallowed `scripts/build/`*
   - 2026-05-02 *Phase 0 gate false positive for missing skeleton files*
@@ -264,7 +282,7 @@ Current state:
   - 2026-05-03 *Phase 4 post-close audit (round 2) — PDF success path + scope drift*
 - `bugs_and_fixes/agent_error_patterns.md` now carries 33 named patterns. Read them before changing convention-checker logic, gate-criterion behaviors, registry mutations, lifecycle gates, or scientific I/O boundaries.
 
-Phase 8 is next per plan §Phase 8. Open it via **Phase Gate Procedure → Starting a workstream** below: write the gate-walk test FIRST, then enumerate plan deliverables, add per-entity opt-in convention-checker assertions, then implement until everything is green.
+Phase 9 is next per plan §Phase 9. Open it via **Phase Gate Procedure → Starting a workstream** below: write the gate-walk test FIRST, then enumerate plan deliverables, add per-entity opt-in convention-checker assertions, then implement until everything is green.
 
 ---
 

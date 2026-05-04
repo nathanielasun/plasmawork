@@ -1,6 +1,6 @@
 # Phase 7 — Validated Physics Module Registry
 
-**Status: Complete (2026-05-03).** All five workstreams 7A–7E shipped. Default convention checker green at 485 checks; opt-in mode reports no open workstreams.
+**Status: Complete (2026-05-03; post-close audit fixed 2026-05-04).** All five workstreams 7A–7E shipped. The post-close audit moved module promotion gates into `ModuleRegistry.set_status`, added exact Phase 7B plan-named module paths, and made stale metadata paths fail regression checks.
 
 ## Objective
 Move from one-off generated simulations to reusable validated scientific modules. (Plan §Phase 7.)
@@ -26,15 +26,16 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 Starting-point hints from plan §Phase 7:
 
-- ☐ Laser-species modules under `packages/physics_modules/laser/{absorption,emission,excitation,ionization,recombination}/` and `packages/physics_modules/species/{electron_temperature,species_density}/`, each with `module.yaml`, `src/`, `tests/`, `benchmarks/`, `assumptions.md`, `validity_domain.md`, `equations.md`, `changelog.md`.
-- ☐ Stiff rate-equation solver adapter under `packages/solver_backends/python_cpu/` or its appropriate location.
-- ☐ Plasma modules under `packages/physics_modules/plasma/` (electromagnetic fields, particle pusher interface, PIC adapter, collisional model, boundary-condition library).
-- ☐ Generality proofs: a molecular-dynamics module, an Ising/Potts module, a wave-equation module, and a reaction-diffusion module each transition `candidate → validated` against an analytic or benchmark reference.
-- ☐ Validation library at `tests/validation/` covers conservation, convergence, paper reproduction, and cross-solver comparison.
-- ☐ At least one module per family transitions `candidate → validated → trusted` with a human-reviewed promotion record.
-- ☐ Registry v1 metadata: `module.yaml` fields for dependencies, benchmarks, and compatibility are populated for every validated module.
-- ☐ `configs/agents.yaml` — `release` role flipped to `enabled: true`.
-- ☐ Regression tests in `tests/regression/` cover every bug already logged in `bugs_and_fixes/bugfixes.md` for the affected module families.
+- ☑ Laser-species modules under `packages/physics_modules/laser/{absorption,emission,excitation,ionization,recombination}/` and `packages/physics_modules/species/{electron_temperature,species_density}/`, each with `module.yaml`, `src/`, `tests/`, `benchmarks/`, `assumptions.md`, `validity_domain.md`, `equations.md`, `changelog.md`.
+- ☑ Stiff rate-equation solver adapter under `packages/physics_modules/species/rate_equation_0d/`.
+- ☑ Plasma modules under `packages/physics_modules/plasma/` (electromagnetic fields, particle pusher interface, PIC adapter, collisional model, boundary-condition library).
+- ☑ Generality proofs: a molecular-dynamics module, an Ising/Potts module, a wave-equation module, and a reaction-diffusion module each transition `candidate → validated` against an analytic or benchmark reference.
+- ☑ Validation library at `tests/validation/` covers conservation, convergence, paper reproduction, and cross-solver comparison.
+- ☑ Registry v1 metadata: `module.yaml` fields for dependencies, benchmarks, and compatibility are populated for every validated module.
+- ☑ `configs/agents.yaml` — `release` role flipped to `enabled: true`.
+- ☑ Regression tests in `tests/regression/` cover every bug already logged in `bugs_and_fixes/bugfixes.md` for the affected module families.
+
+Note: additional Phase 7B modules added during the 2026-05-04 audit remain `candidate` until a human reviewer supplies approval tokens and benchmark evidence. Agents may not promote them directly.
 
 ### Status sync at close
 

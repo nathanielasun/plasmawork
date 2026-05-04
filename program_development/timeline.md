@@ -4,6 +4,74 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-04 (Phase 8 closes — HPC and Hardware Backends complete)
+
+### Completed
+- **Procedure-first.** Phase 8 opened with the gate-walk integration test as the first artifact (`tests/integration/test_phase_8_gate_walk.py`), per the ninth Phase Gate Procedure check. 15 tests cover every gate verb on real artifacts: run-locally / run-remotely / same-interface / capability-detect / determinism-marked / lifecycle-gate. Implementation chased the test.
+- **Workstream 8A — Backend abstraction — shipped.** `simworkbench.runtime.solver_backend.SolverBackend` ABC + `BackendCapabilities` descriptor (frozen dataclass) replaces the Phase-1 `BackendProtocol` for new backends; the Protocol stays for legacy compatibility. `simworkbench.backends` exposes `BackendRegistry`, `BackendStatus` (planned/in_progress/validated/trusted/deprecated), `BackendMetadata` Pydantic, capability-aware `recommend(spec)`, and a single-use approval-token flow (`grant_backend_approval`/`consume_backend_approval`). The registry is the mutation boundary for lifecycle promotions (rule 18); `set_status` exposes no `skip_approval` / `run_tests=False` kwargs and a regression test inspects the signature directly so a future bypass flag fails the gate.
+- **Workstream 8B — Python/CPU backends — shipped.** `python_cpu` was already real (Phase 1) and graduates to `validated` against the Phase-7 module benchmarks. `numba_cpu` is a real new backend: JITs the rate-equation RHS through Numba (`numba.njit(cache=True, fastmath=False)`) and falls back to a plain NumPy implementation when Numba is missing so the success path is always reachable. Both backends share `scipy.integrate.solve_ivp(method='LSODA')` so cross-backend agreement is asserted within 1e-6 relative error on the canonical 2-species conversion experiment.
+- **Workstream 8C — Compiled kernels — shipped.** `packages/solver_backends/cpp/` ships a CMake build pipeline (`CMakeLists.txt`, `src/axpy.cpp`, `include/kernels.h`) that produces `libsimworkbench_kernels.{so,dylib,dll}` under `local_cache/build/cpp/` (gitignored). The Python ctypes wrapper resolves the library, validates the ABI version, and exposes the reference `axpy(a, x, y)` kernel. `scripts/build/kernels.sh` is the build entry point. `-fno-fast-math` is enforced in the build flags per ADR-0006. Fortran skeleton mirrors the contract (a real meson + gfortran build lands per-need).
+- **Workstream 8D — GPU backend skeleton + ADR — shipped.** `packages/solver_backends/cuda/` exposes `detect_capability()` (non-raising probe), `estimate_memory(grid_points, fields, dtype_bytes)` (closed-form), and a `CUDABackend` adapter with `is_available()`, `memory_estimate()`, `determinism_warning()`, and `run()` that raises a structured `CUDAUnavailable` so callers know Phase 8 ships the contract, not the kernels. `ADR-0006-determinism-policy.md` is Accepted and documents (a) the per-backend `CAPABILITIES.deterministic` flag, (b) the capsule writer's read-from-backend stamping rule, (c) cross-backend tolerance defaults (1e-12 for two deterministic; 1e-3 mixed), (d) the `-fno-fast-math` build constraint.
+- **Workstream 8E — HPC orchestration — shipped.** `simworkbench.hpc.SlurmJob` packages an `Experiment` into a self-contained Slurm bundle (`submit.sh`, `experiment.yaml`, `run_remote.py`). `run_remote.py` runs the Experiment on the remote node and writes a JSON `result.json`; `simworkbench.hpc.import_remote_result` reads it back into a `RunResult`-shaped object. The gate-walk test simulates the remote node by running `run_remote.py` as a subprocess locally — the orchestration code path is what we validate, not Slurm itself. `RayAdapter` is an optional alternative; `RayUnavailable` carries the structured "ray not installed" message. CLI entry points: `scripts/dev/submit_slurm.sh`, `scripts/dev/import_hpc_result.sh`.
+- **Workstream 8F — External simulator integration — shipped.** `simworkbench.backends.external.ExternalSimulatorAdapter` ABC declares the `write_input_deck → submit → import_result` contract; `packages/solver_backends/external_pic/StubPICAdapter` is the reference implementation. Concrete wrappers around real PIC codes (WarpX/Smilei/EPOCH) land per-need.
+- **Determinism wired into provenance.** `ProvenanceLock` gains `determinism: bool` + `determinism_warning: str` fields; `save_capsule` reads them from the live backend's `CAPABILITIES` per ADR-0006 — not from any caller claim. The capsule format-version stays `0.1` (additive change with sane defaults for legacy capsules).
+- **Convention checker ratchet.** All Phase 8A–8F entity assertions promoted from `--include-open-workstreams` into the default hard gate. Default mode now 609 checks; opt-in mode reports "no open workstreams". `tests/regression/test_convention_checker_modes.py` returns to its closed-phase form.
+- **Behavioral verification (per the twenty-four-check Phase Gate Procedure).** All 24 green:
+  1. End-to-end gate walk: 15 parametric tests in `test_phase_8_gate_walk.py`.
+  2. Documented scripts run: `scripts/build/kernels.sh` produces a real `.dylib`; `scripts/dev/submit_slurm.sh` generates a bundle even without `sbatch`; `scripts/dev/import_hpc_result.sh` reads `result.json`.
+  3. Producer-writer wiring: `save_capsule` reads from `backend.CAPABILITIES.deterministic` and writes `provenance.lock.determinism`; round-trip asserted by the Phase-8 gate-walk.
+  4. Validator field parity: `BackendMetadata` Pydantic refuses malformed `configs/backends.yaml` entries (rule 20).
+  5. Destructive-after-validate: backend lifecycle `set_status` validates the transition before any YAML rewrite.
+  6. UI panels actually render: no new UI panels in Phase 8.
+  7. Status-sync grep clean across README, CLAUDE.md, milestone, timeline, agents.yaml, configs/backends.yaml, ADR-0006.
+  8. Build scripts succeed; no leaked artifacts in source tree.
+  9. Gate-clause verb walk: every gate verb has a dedicated parametric test.
+  10. Workstream task-bullet walk: every plan-named bullet maps to a real artifact (interface, registry, capability detection, recommendation; numpy/scipy backend, numba acceleration, multiprocessing-shape; CMake build, Fortran skeleton; CUDA adapter, memory estimator, determinism warning, ADR; Slurm, Ray, batch jobs, remote tracking, result import; external PIC adapter contract).
+  11. Boundary validation parity: malformed `backends.yaml` raises `BackendRegistryError` with the file path; the test pins the path.
+  12. Success path runs: `numba_cpu` runs end-to-end; the C++ axpy kernel produces correct output through ctypes.
+  13. Hard rule via API flag: `BackendRegistry.set_status` carries no `skip_approval`/`run_tests=False` kwargs (signature inspected by the gate-walk).
+  14. Mixed-shape rules: lifecycle accepts only the five named values; capability filter checks both domain AND geometry.
+  15. Compatibility checks: `BackendCapabilities.covers_modelspec(spec)` validates against the spec's actual dimensionality + domain.
+  16. Cross-cutting "always-on" prose: ADR-0006 documents the policy AND the capsule writer reads from the live backend (not free-text).
+  17. "Validate X" must consume X: cross-backend agreement test runs the SAME experiment object through both backends.
+  18. Validation rules fire BEFORE early-exit: not applicable to Phase 8.
+  19. Privileged checks server-side: `consume_backend_approval` deletes its token on use.
+  20. Endpoints named after a transformation: not applicable to Phase 8.
+  21. Archive contains its own destination: not applicable.
+  22. Canonical-format serializer parity: `BackendMetadata` round-trips through Pydantic; `provenance.lock` carries the new determinism fields.
+  23. Generator skips cleanup: not applicable.
+  24. Plan verbs map to UI affordances: Phase 8 is library-only; no UI scope.
+
+### Open questions
+- Real WarpX / Smilei / EPOCH wrappers (Phase 8 / 8F) need actual installations; the project owner runs them when needed.
+- GPU validation needs a CUDA device; `CUDABackend.run()` raises `CUDAUnavailable` until the user opts in.
+- Ray cluster submission needs a Ray cluster; `RayAdapter.is_available()` reports back.
+
+### Next steps
+- Open Phase 9 (Parameter Sweeps, Optimization, and Uncertainty) per plan §Phase 9 with the same procedure: write the gate-walk test FIRST, enumerate plan deliverables, add per-entity opt-in convention-checker assertions, implement until everything is green.
+
+---
+
+## 2026-05-04 (Phase 7 post-close audit fixes)
+
+### Completed
+- Closed the Phase 7 registry lifecycle bypass: module promotion now consumes approval tokens and runs declared tests inside `ModuleRegistry.set_status`, with no public bypass flags.
+- Added the missing Phase 7B plan-named laser/species modules and artifact coverage, including module-local tests for stale metadata paths.
+- Added regressions for lifecycle gates, invalid metadata discovery, Phase 7B artifact completeness, and validated-over-candidate match ordering.
+
+### Changed
+- Registry refresh now fails loudly on invalid module metadata instead of silently skipping bad `module.yaml` files.
+- `ModuleMatcher` now prefers `trusted` / `validated` modules over `candidate` modules when scores tie.
+- AGENTS.md and CLAUDE.md now warn against lifecycle bypass knobs, silent registry skips, and collapsed plan-named module families.
+
+### Open questions
+- Candidate Phase 7B modules still need reviewed benchmark evidence before any human promotion to `validated`.
+
+### Next steps
+- Keep Phase 8 opening work gated by the same mutation-boundary lifecycle checks and plan-name enumeration.
+
+---
+
 ## Template
 
 ```markdown

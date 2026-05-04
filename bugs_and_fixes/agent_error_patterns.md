@@ -1150,3 +1150,54 @@ The repo's hard-gate test runner runs the typechecker. Specifically:
 
 ### Bug log
 - 2026-05-03 *Phase 6 post-close audit (round 2)*: `GeneratedCodeView.tsx` referenced `diff.current_files.length` after the API + TS type were renamed to `diff.current_preview`. `vitest run` passed; `npm --prefix apps/workbench-ui run typecheck` failed with TS2339. The repo's `scripts/test/all.sh` ran lint + unit + integration + regression + validation + performance but not the TS typechecker. Fix: new `scripts/test/ui.sh` that runs `tsc --noEmit` + vitest, wired into `all.sh`.
+
+---
+
+## Error Pattern: Lifecycle gate has a public bypass knob
+
+### Why it is bad
+A lifecycle mutator can look safe because the default path consumes an approval token and runs tests, while an optional parameter such as `consume_approval=False`, `skip_approval=True`, or `run_tests=False` lets direct callers bypass the gate. This recreates the same failure as trusting `actor="human"`: the code path that rewrites `module.yaml` or `tool.yaml` can still be called unsafely.
+
+### Required behavior
+The public mutator that changes lifecycle state must always enforce the gate. Test fixtures should create valid evidence and approval tokens, not add production bypass flags. If a lower-level helper exists for serialization tests, keep it private and ensure it does not share the production mutator name.
+
+### Detection
+- Inspect public lifecycle methods with `inspect.signature`; no `skip`, `bypass`, `consume_approval`, or `run_tests` parameter should exist.
+- Negative regression: direct library call with `actor="human"` but no token must fail before any metadata write.
+
+### Bug log
+- 2026-05-04 *Phase 7 post-close audit*: `ModuleRegistry.set_status` initially moved approval/test enforcement into the library but still exposed `consume_approval` and `run_tests` flags. The fix removed both flags and added a regression that checks the public signature.
+
+---
+
+## Error Pattern: Registry discovery hides invalid metadata
+
+### Why it is bad
+If registry refresh catches every load error and skips the file, a malformed or invalid `module.yaml` disappears from the registry. A fresh registry then reports "module not found" instead of "module metadata invalid", which hides broken validated state and lets convention checks pass by absence.
+
+### Required behavior
+Registry discovery fails loudly on invalid `module.yaml` / `tool.yaml` and includes the file path in the error. Optional third-party quarantine can be added later, but first-party registry paths are part of the gate and must not be silently ignored.
+
+### Detection
+- Grep registry discovery for `except Exception: continue`.
+- Regression: write `status: validated` with no benchmarks, instantiate the registry, and assert an invalid-metadata error is raised.
+
+### Bug log
+- 2026-05-04 *Phase 7 post-close audit*: after direct promotion wrote invalid validated metadata, `ModuleRegistry.refresh()` skipped the bad file and made the module vanish. Refresh now raises `ModuleRegistryError` with the path.
+
+---
+
+## Error Pattern: Plan-named module family collapsed into a reference subset
+
+### Why it is bad
+A phase can claim a family is complete after shipping one validated reference module while the plan named several sibling modules. Downstream matching then cannot find plan-promised modules, and the missing artifacts are easy to miss if the convention checker asserts only the reference implementation.
+
+### Required behavior
+Before closing a workstream, enumerate every module name from the plan and make the milestone and convention checker assert each completed deliverable. If validation is deferred, the module remains `candidate` and the deferral is explicit; the path still exists with module metadata, docs, source, tests, and examples.
+
+### Detection
+- Compare the plan's workstream module-name list against `packages/physics_modules/**/module.yaml`.
+- Regression: exact plan-named paths must exist, and each declared test/benchmark path in module metadata must point at a real file.
+
+### Bug log
+- 2026-05-04 *Phase 7 post-close audit*: Phase 7B shipped `absorption_lambert_beer` and `rate_equation_0d` but lacked exact plan-named siblings including `laser/absorption`, `laser/emission`, `laser/excitation`, `laser/ionization`, `laser/recombination`, `species/electron_temperature`, and `species/species_density`.

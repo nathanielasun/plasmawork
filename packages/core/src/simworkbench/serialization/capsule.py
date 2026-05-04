@@ -224,6 +224,22 @@ def save_capsule(
         (target / empty / ".gitkeep").touch()
 
     model_spec_hash = SourceRegistry(target).aggregate_hash(subtrees=("model",))
+    # Phase 8 / 8D — determinism marker per ADR-0006: read from the
+    # registered backend's ``CAPABILITIES.deterministic`` field, NOT
+    # from any caller-supplied claim. The capsule format-version is
+    # unchanged because the field defaults to True for legacy capsules.
+    determinism = True
+    determinism_warning = ""
+    try:
+        from simworkbench.runtime import get_backend as _get_backend
+
+        _backend = _get_backend(experiment.backend_config.name)
+        _caps = getattr(_backend, "CAPABILITIES", None)
+        if _caps is not None:
+            determinism = bool(getattr(_caps, "deterministic", True))
+            determinism_warning = str(getattr(_caps, "determinism_warning", ""))
+    except Exception:  # noqa: BLE001 — defensive; default is the safer claim
+        pass
     lock = ProvenanceLock(
         workbench_version=workbench_version,
         python_version=_sys.version.split()[0],
@@ -236,6 +252,8 @@ def save_capsule(
         placeholders=list(result.placeholders),
         parent_capsule_hash="",
         created_at=_utc_now_iso(),
+        determinism=determinism,
+        determinism_warning=determinism_warning,
     )
     write_lock(lock, target / "provenance" / "provenance.lock")
     write_environment(target / "provenance" / "environment.yaml")

@@ -1,0 +1,32 @@
+name: emission
+version: 0.1.0
+domain: laser
+status: candidate
+description: Spontaneous-emission decay helpers for caller-supplied lifetime data.
+inputs:
+  - name: excited_density
+    units: "1 / meter ** 3"
+  - name: lifetime
+    units: second
+  - name: time
+    units: second
+outputs:
+  - name: emission_rate
+    units: "1 / (meter ** 3 * second)"
+  - name: excited_density
+    units: "1 / meter ** 3"
+validity_domain:
+  notes:
+    - "Single radiative decay channel with caller-supplied lifetime."
+    - "No pumping, quenching, or radiation trapping."
+references:
+  - title: "Two-level spontaneous-emission rate equation."
+dependencies: []
+benchmarks: []
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0]
+tests:
+  unit:
+    - tests/test_emission.py
