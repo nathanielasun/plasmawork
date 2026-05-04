@@ -116,6 +116,23 @@ class SweepEngine:
         coherent across kills.
         """
         path = Path(checkpoint_path)
+        # Phase-9 audit (round 2): enforce the locality guard BEFORE
+        # any read of the checkpoint. Loading parses JSON / opens the
+        # file; doing that first means a malformed file at /tmp raises
+        # JSONDecodeError instead of PermissionError, which leaks
+        # filesystem behavior across the trust boundary even though no
+        # write occurs. Construct a guard-only engine first so __init__
+        # validates the path, then load.
+        if require_workbench_target:
+            from simworkbench.paths import is_under_workbench
+
+            if not is_under_workbench(path):
+                raise PermissionError(
+                    f"Refusing to resume sweep from outside workbench-"
+                    f"managed roots: {path}. Pass "
+                    "require_workbench_target=False if the user "
+                    "explicitly chose an external destination."
+                )
         if not path.is_file():
             raise FileNotFoundError(
                 f"Cannot resume — no checkpoint at {path}"

@@ -181,6 +181,30 @@ def test_audit_sweep_engine_resume_refuses_non_workbench_checkpoint(tmp_path):
         )
 
 
+def test_audit_sweep_engine_resume_locality_guard_fires_before_load(tmp_path):
+    """Round-2 audit lesson: SweepEngine.resume must enforce the
+    locality guard BEFORE reading/parsing the checkpoint. A malformed
+    file at /tmp must raise PermissionError, not JSONDecodeError —
+    otherwise filesystem behavior leaks across the trust boundary
+    (the resume parses content from outside the workbench)."""
+    spec = SweepSpec(
+        name="locality_ordering_probe",
+        parameters={"x": [0.0, 1.0]},
+        sampler=GridSampler(),
+    )
+    # Write GARBAGE JSON outside the workbench. If the guard fires
+    # before load, we see PermissionError. If the guard fires after
+    # load, we see JSONDecodeError instead.
+    rogue = tmp_path / "malformed.json"
+    rogue.write_text("not valid json {{{", encoding="utf-8")
+    with pytest.raises(PermissionError, match="workbench-managed roots"):
+        SweepEngine.resume(
+            spec=spec,
+            objective=lambda p: {"loss": float(p["x"])},
+            checkpoint_path=rogue,
+        )
+
+
 def test_audit_comparison_report_refuses_non_workbench_target(tmp_path):
     """ComparisonReport.write refuses target outside workbench roots
     by default."""
