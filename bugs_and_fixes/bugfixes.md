@@ -32,6 +32,55 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-04: Phase 8 post-close audit — seven legitimate review findings
+
+### Affected subsystem
+- `simworkbench.backends.registry` (`BackendRegistry.set_status`, `recommend`)
+- `simworkbench.backends.metadata` (`BackendMetadata.status`)
+- `simworkbench.serialization.capsule` (`save_capsule` determinism stamp)
+- `simworkbench.hpc.slurm` (`SlurmJob.write` locality + docstring)
+- `packages/solver_backends/external_pic` (StubPICAdapter writers)
+- `packages/solver_backends/cpp` (axpy in-place contract)
+
+### Symptoms
+1. **Critical:** `BackendRegistry.set_status` rewrote `configs/backends.yaml` after `require_backend_transition` but never called `consume_backend_approval`. Direct probe: `actor="human"` promoted `python_cpu` to `validated` without any token. The Phase-6/7 audit lesson "Trusting a client-supplied actor identity for a privileged check" repeated, this time at the LIBRARY level (not just the API).
+2. **High:** `BackendMetadata.status: str` accepted any string. `status: totally_invalid` loaded silently and only failed when downstream code evaluated `BackendStatus(self.metadata.status)`. Contradicted the rule-20 claim "registry refuses invalid metadata".
+3. **High:** `save_capsule` defaulted `determinism = True` and silently fell back to that default when `simworkbench.runtime.get_backend("cuda")` failed. CUDA capsules saved with `determinism: true` and empty warning despite `configs/backends.yaml` declaring `determinism: false`.
+4. **Medium:** `BackendRegistry.recommend(spec)` returned every capability match including `planned` and `in_progress` rows, despite `selection_policy` documenting filter-to-validated/trusted. Direct probe for 2D PDE returned `cpp` (in_progress) plus `fortran`/`cuda`/`kokkos`/`petsc`/`amrex` (all planned).
+5. **Medium:** `SlurmJob.write` and `StubPICAdapter.{write_input_deck, import_result}` accepted arbitrary `target` paths and wrote there without `is_under_workbench` checks. Direct probe wrote bundles + result files to `/private/tmp`.
+6. **Low:** `cpp.axpy` advertised in-place mutation but called `np.ascontiguousarray(y)`, which silently copied non-contiguous `y`. The caller's strided base array was never updated; the function returned a stale buffer.
+7. **Low/coherency:** `simworkbench.hpc.slurm` module docstring claimed "self-contained" bundle, but the runner explicitly required `simworkbench-core` available on the remote node via `pip install` or PYTHONPATH.
+
+### Root cause
+The Phase 8 close commit verified that the approval-token machinery, status enum, BackendRegistry, recommend(), HPC writers, and axpy wrapper all *existed*; it didn't verify that each gate fired on the negative path. Five of the seven findings are gates that were built but not wired (or wired but not enforced); two are documentation / behavioral mismatches.
+
+### Fix
+1. `BackendRegistry.set_status` calls `consume_backend_approval(name, from_status=..., to_status=...)` whenever `new_status in {VALIDATED, TRUSTED}`, regardless of `actor=`. Token absence raises `BackendApprovalError`. The library exposes NO `skip_approval` kwarg; a regression test inspects the signature.
+2. `BackendMetadata.status` is now `Literal["planned", "in_progress", "validated", "trusted", "deprecated"]`. Pydantic refuses out-of-set values at load time; the registry surfaces the error with the file path.
+3. `_resolve_backend_determinism(backend_name)` consults the runtime registry first, then `BackendRegistry` metadata, raises `CapsuleSaveError` when both fail. `save_capsule` calls it; CUDA capsules now correctly stamp `determinism: false` + the policy warning string.
+4. `BackendRegistry.recommend(spec)` defaults `include_statuses={VALIDATED, TRUSTED}`. Callers passing `include_statuses=frozenset()` (empty) get every status; passing a custom subset works too.
+5. `SlurmJob.write(target, *, require_workbench_target=True)` and `StubPICAdapter(require_workbench_target=True)` enforce the `is_under_workbench` check by default. Explicit `require_workbench_target=False` is the documented opt-out for genuinely-external destinations.
+6. `cpp.axpy` raises `ValueError` for non-contiguous `x` or `y` with a clear remediation message. The `np.ascontiguousarray` call is removed; the contiguity check is the gate.
+7. `simworkbench.hpc.slurm` module docstring rewritten to describe the actual contract (payload + entrypoint self-contained; runtime dep must be installed on the remote node).
+
+### Regression protection
+Every finding has at least one regression test in `tests/regression/test_phase_8_audit_findings.py` (18 tests). Each test reproduces the audit's direct probe.
+
+### Agent error patterns added
+7 new patterns at the bottom of `bugs_and_fixes/agent_error_patterns.md`:
+- "Approval-token machinery built but not wired at the mutation boundary"
+- "Capsule writer reads single registry then silently defaults"
+- "Plain `str` field where a Literal/enum belongs"
+- "Recommendation ignores the configured selection policy"
+- "External-writer functions skip the locality guard exporters got right"
+- "Documented in-place mutation that silently copies on strided inputs"
+- "Documentation claims behavior the code can't deliver"
+
+### Warning to future agents
+The Phase 8 audit found seven gaps despite 15 gate-walk tests passing. The pattern across all seven: existence checks are necessary but not sufficient. For every gate the library declares, write a NEGATIVE probe — one that exercises the failure path the audit imagined. The library's mere ability to call `consume_backend_approval` doesn't mean `set_status` calls it; the test must exercise the bypass attempt.
+
+---
+
 ## 2026-05-04: Phase 7 post-close audit — lifecycle gate bypass and incomplete module family
 
 ### Affected subsystem

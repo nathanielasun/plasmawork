@@ -178,13 +178,43 @@ class BackendRegistry:
     # Capability-aware recommendation
     # ------------------------------------------------------------------
 
-    def recommend(self, spec: Any) -> list[RegisteredBackend]:
-        """Return the registered backends whose capabilities cover the
-        given ``ModelSpec``. The result is filtered (capability) but
-        unranked beyond the natural insertion order; callers apply the
-        ``selection_policy`` ranking layer themselves.
+    DEFAULT_RECOMMEND_STATUSES: frozenset[BackendStatus] = frozenset(
+        {BackendStatus.VALIDATED, BackendStatus.TRUSTED}
+    )
+
+    def recommend(
+        self,
+        spec: Any,
+        *,
+        include_statuses: frozenset[BackendStatus] | None = None,
+    ) -> list[RegisteredBackend]:
+        """Return registered backends whose capabilities cover the
+        given ``ModelSpec`` AND whose lifecycle status is in
+        ``include_statuses``.
+
+        Default: ``{validated, trusted}`` — matches the
+        ``selection_policy`` block in ``configs/backends.yaml`` which
+        documents auto-selection filtering. Callers that explicitly
+        want broader candidates pass ``include_statuses=frozenset()``
+        for every status, or a custom subset.
+
+        Earlier the recommender returned every capability match
+        regardless of status — Phase-8 audit found ``recommend(2D PDE)``
+        returned ``cpp`` (in_progress) plus planned ``fortran``,
+        ``cuda``, ``kokkos``, ``petsc``, ``amrex`` even though the
+        selection policy excludes them. Carries the new pattern
+        "Recommendation ignores the configured selection policy".
         """
-        return [b for b in self._entries.values() if b.covers_modelspec(spec)]
+        if include_statuses is None:
+            statuses = self.DEFAULT_RECOMMEND_STATUSES
+        elif not include_statuses:
+            statuses = frozenset(BackendStatus)  # all statuses
+        else:
+            statuses = include_statuses
+        return [
+            b for b in self._entries.values()
+            if b.status in statuses and b.covers_modelspec(spec)
+        ]
 
     # ------------------------------------------------------------------
     # Lifecycle (mutation boundary; rule 18)
@@ -199,14 +229,29 @@ class BackendRegistry:
     ) -> RegisteredBackend:
         """Promote / demote a backend. Rewrites ``configs/backends.yaml``.
 
-        Library callers cannot bypass approval — there is no
-        ``skip_approval`` kwarg. The HTTP API consumes a token (mirrors
-        the Phase 7 module flow). Carries
+        Library callers cannot bypass approval — the mutation boundary
+        consumes a single-use approval token for every transition into
+        ``validated`` or ``trusted`` (regardless of ``actor=``). There
+        is no ``skip_approval`` kwarg. Carries
         `agent_error_patterns.md` "Trusting a client-supplied actor
-        identity for a privileged check".
+        identity for a privileged check" and the new pattern
+        "Approval-token machinery built but not wired at the mutation
+        boundary" (Phase 8 audit).
         """
+        from .approval import consume_backend_approval
+
         entry = self.get(name)
         require_backend_transition(entry.status, new_status, actor=actor)
+        # Token consumption is the gate. Even ``actor="human"`` is
+        # not enough on its own — the caller must have written a
+        # single-use token via ``grant_backend_approval``. The token
+        # carries the reviewer identity that the registry trusts.
+        if new_status in {BackendStatus.VALIDATED, BackendStatus.TRUSTED}:
+            consume_backend_approval(
+                name,
+                from_status=entry.status.value,
+                to_status=new_status.value,
+            )
         # Rewrite the YAML.
         config_dict = self._read_yaml()
         for row in config_dict["backends"]:

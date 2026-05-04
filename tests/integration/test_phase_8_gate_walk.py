@@ -332,14 +332,24 @@ def test_phase_8_cuda_determinism_warning():
 # ---------------------------------------------------------------------------
 
 
-def test_phase_8_gate_walk_slurm_batch_script_generation(tmp_path):
+def test_phase_8_gate_walk_slurm_batch_script_generation():
     """Verb: RUN-REMOTELY. The Slurm orchestrator packages an
     Experiment into a batch script + payload that can be submitted
     on an HPC system. We don't talk to a real Slurm scheduler — the
     test asserts the produced batch script is well-formed and
     references the submitted Experiment payload.
+
+    Uses ``temp_runs/`` (a workbench-managed root) instead of
+    ``tmp_path`` because ``SlurmJob.write`` refuses non-workbench
+    targets without an explicit ``require_workbench_target=False``
+    flag (carries `agent_error_patterns.md` "External-writer
+    functions skip the locality guard that exporters got right").
     """
+    import shutil as _shutil
+    import uuid as _uuid
+
     from simworkbench.hpc import SlurmJob
+    from simworkbench.paths import temp_runs_root
 
     experiment = _build_experiment()
     job = SlurmJob(
@@ -350,25 +360,34 @@ def test_phase_8_gate_walk_slurm_batch_script_generation(tmp_path):
         ntasks=1,
         cpus_per_task=2,
     )
-    bundle = job.write(tmp_path / "slurm_bundle")
-    sbatch = bundle / "submit.sh"
-    assert sbatch.is_file()
-    body = sbatch.read_text(encoding="utf-8")
-    assert "#SBATCH --partition=batch" in body
-    assert "#SBATCH --time=00:10:00" in body
-    assert "#SBATCH --nodes=1" in body
-    assert (bundle / "experiment.yaml").is_file()
-    assert (bundle / "run_remote.py").is_file()
+    bundle_root = temp_runs_root() / f"_pytest_phase8_slurm_{_uuid.uuid4().hex[:8]}"
+    try:
+        bundle = job.write(bundle_root / "slurm_bundle")
+        sbatch = bundle / "submit.sh"
+        assert sbatch.is_file()
+        body = sbatch.read_text(encoding="utf-8")
+        assert "#SBATCH --partition=batch" in body
+        assert "#SBATCH --time=00:10:00" in body
+        assert "#SBATCH --nodes=1" in body
+        assert (bundle / "experiment.yaml").is_file()
+        assert (bundle / "run_remote.py").is_file()
+    finally:
+        _shutil.rmtree(bundle_root, ignore_errors=True)
 
 
-def test_phase_8_gate_walk_remote_result_round_trip(tmp_path):
+def test_phase_8_gate_walk_remote_result_round_trip():
     """Verb: RUN-REMOTELY (round trip). Generate a Slurm bundle, run
     the bundle's ``run_remote.py`` as a subprocess on this machine
     (simulating the remote node), then import the produced result
     artifact back through ``import_remote_result`` and assert the
-    diagnostics survive byte-for-byte.
+    diagnostics survive byte-for-byte. Uses ``temp_runs/`` because
+    ``SlurmJob.write`` enforces the locality check by default.
     """
+    import shutil as _shutil
+    import uuid as _uuid
+
     from simworkbench.hpc import SlurmJob, import_remote_result
+    from simworkbench.paths import temp_runs_root
 
     experiment = _build_experiment()
     job = SlurmJob(
@@ -379,29 +398,33 @@ def test_phase_8_gate_walk_remote_result_round_trip(tmp_path):
         ntasks=1,
         cpus_per_task=2,
     )
-    bundle = job.write(tmp_path / "slurm_bundle")
-    # Simulate the remote node by running the bundle's run_remote.py.
-    env = dict(os.environ)
-    env.setdefault("PYTHONPATH", str(REPO_ROOT / "packages" / "core" / "src"))
-    proc = subprocess.run(
-        [sys.executable, str(bundle / "run_remote.py")],
-        cwd=bundle,
-        capture_output=True,
-        text=True,
-        env=env,
-        check=False,
-    )
-    assert proc.returncode == 0, (
-        f"remote run failed:\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
-    )
-    result_path = bundle / "result.json"
-    assert result_path.is_file()
-    payload = json.loads(result_path.read_text(encoding="utf-8"))
-    assert "diagnostics" in payload
-    # Round trip: import_remote_result reconstitutes a RunResult-shaped object.
-    imported = import_remote_result(result_path)
-    assert imported.diagnostics
-    assert "A" in imported.diagnostics
+    bundle_root = temp_runs_root() / f"_pytest_phase8_remote_{_uuid.uuid4().hex[:8]}"
+    bundle = job.write(bundle_root / "slurm_bundle")
+    try:
+        # Simulate the remote node by running the bundle's run_remote.py.
+        env = dict(os.environ)
+        env.setdefault("PYTHONPATH", str(REPO_ROOT / "packages" / "core" / "src"))
+        proc = subprocess.run(
+            [sys.executable, str(bundle / "run_remote.py")],
+            cwd=bundle,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        assert proc.returncode == 0, (
+            f"remote run failed:\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
+        )
+        result_path = bundle / "result.json"
+        assert result_path.is_file()
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        assert "diagnostics" in payload
+        # Round trip: import_remote_result reconstitutes a RunResult-shaped object.
+        imported = import_remote_result(result_path)
+        assert imported.diagnostics
+        assert "A" in imported.diagnostics
+    finally:
+        _shutil.rmtree(bundle_root, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------

@@ -1,18 +1,32 @@
 """Phase 8 / 8E — Slurm batch-script generator.
 
-Packages an ``Experiment`` into a self-contained bundle that an HPC
-user can ``sbatch <bundle>/submit.sh`` from a login node. The bundle
-contains:
+Packages an ``Experiment`` into a deployable bundle an HPC user can
+``sbatch <bundle>/submit.sh`` from a login node. The bundle is
+self-contained for *the workbench's payload + entrypoint*; the
+**remote node must already have ``simworkbench-core`` available** —
+either installed (``pip install simworkbench-core``) or reachable via
+``PYTHONPATH`` / ``SIMWORKBENCH_CORE_PATH`` to a checkout. The
+generated ``run_remote.py`` walks both env vars and prepends them to
+``sys.path`` before importing the workbench. The bundle does NOT
+ship a wheel; that level of self-containment lands when an HPC
+"deploy" script is added.
+
+The bundle contains:
 
   - ``submit.sh`` — Slurm batch script with all directives.
-  - ``experiment.yaml`` — the experiment payload.
+  - ``experiment.yaml`` — the Experiment payload.
   - ``run_remote.py`` — the remote-node entry point. Reads the
-    experiment, runs it, writes ``result.json`` next to itself.
+    experiment, runs it on the local Phase-1 ``Runner``, writes
+    ``result.json`` next to itself.
 
 We don't talk to a real Slurm scheduler from this module — generating
 the bundle and having ``run_remote.py`` work in isolation is the
 contract. The Phase-8 gate-walk simulates the remote node by running
-``run_remote.py`` as a subprocess locally.
+``run_remote.py`` as a subprocess locally with PYTHONPATH set.
+
+Carries `agent_error_patterns.md` "Documentation claims behavior the
+code can't deliver" forward (Phase-8 audit): the earlier docstring
+called the bundle "self-contained" without qualification.
 """
 
 from __future__ import annotations
@@ -22,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from simworkbench.experiment import Experiment
+from simworkbench.paths import is_under_workbench
 
 _RUN_REMOTE_TEMPLATE = textwrap.dedent('''\
     #!/usr/bin/env python3
@@ -121,9 +136,37 @@ class SlurmJob:
     extra_setup: str = ""
     notes: str = ""
 
-    def write(self, target: str | Path) -> Path:
-        """Write the bundle to ``target`` (a directory). Returns its path."""
+    def write(
+        self,
+        target: str | Path,
+        *,
+        require_workbench_target: bool = True,
+    ) -> Path:
+        """Write the bundle to ``target`` (a directory). Returns its path.
+
+        Default: ``target`` must lie under one of the four workbench-
+        managed roots (``local_cache/``, ``temp_imports/``,
+        ``temp_runs/``, ``simulation_capsules/``). The check mirrors
+        the export pipeline so HPC bundles can't accidentally write
+        to ``/private/tmp`` or arbitrary user directories. Pass
+        ``require_workbench_target=False`` only when the user
+        explicitly chose an external destination via the orchestrator
+        UI / CLI flag.
+
+        Carries `agent_error_patterns.md` "External-writer functions
+        skip the locality guard that exporters got right" (Phase-8
+        audit). Validates BEFORE creating the directory so a refused
+        target leaves no trace on disk.
+        """
         out = Path(target)
+        if require_workbench_target and not is_under_workbench(out):
+            raise PermissionError(
+                f"Refusing to write Slurm bundle outside workbench-managed "
+                f"roots: {out}. Allowed roots: local_cache/, temp_imports/, "
+                "temp_runs/, simulation_capsules/. Pass "
+                "require_workbench_target=False if the user explicitly "
+                "chose an external destination."
+            )
         out.mkdir(parents=True, exist_ok=True)
 
         # Experiment payload.

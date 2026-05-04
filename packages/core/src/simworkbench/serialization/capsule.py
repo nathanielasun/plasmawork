@@ -224,22 +224,25 @@ def save_capsule(
         (target / empty / ".gitkeep").touch()
 
     model_spec_hash = SourceRegistry(target).aggregate_hash(subtrees=("model",))
-    # Phase 8 / 8D — determinism marker per ADR-0006: read from the
-    # registered backend's ``CAPABILITIES.deterministic`` field, NOT
-    # from any caller-supplied claim. The capsule format-version is
-    # unchanged because the field defaults to True for legacy capsules.
-    determinism = True
-    determinism_warning = ""
-    try:
-        from simworkbench.runtime import get_backend as _get_backend
-
-        _backend = _get_backend(experiment.backend_config.name)
-        _caps = getattr(_backend, "CAPABILITIES", None)
-        if _caps is not None:
-            determinism = bool(getattr(_caps, "deterministic", True))
-            determinism_warning = str(getattr(_caps, "determinism_warning", ""))
-    except Exception:  # noqa: BLE001 — defensive; default is the safer claim
-        pass
+    # Phase 8 / 8D — determinism marker per ADR-0006. Look up the
+    # backend in two places, in priority order:
+    #   1. The runtime's live ``CAPABILITIES`` (covers backends auto-
+    #      registered with the ``Runner`` like ``python_cpu`` /
+    #      ``numba_cpu``).
+    #   2. ``BackendRegistry`` metadata loaded from
+    #      ``configs/backends.yaml`` (covers backends declared in the
+    #      registry but not auto-registered with the runtime —
+    #      e.g. ``cuda``, ``external_pic``).
+    #
+    # If neither knows the backend, refuse to save the capsule rather
+    # than silently stamp ``determinism=true``. The Phase-8 audit
+    # found that ``cuda`` capsules were saved with the wrong flag
+    # because the runtime fallback defaulted to True; carries the new
+    # pattern "Capsule writer reads single registry then silently
+    # defaults" forward.
+    determinism, determinism_warning = _resolve_backend_determinism(
+        experiment.backend_config.name
+    )
     lock = ProvenanceLock(
         workbench_version=workbench_version,
         python_version=_sys.version.split()[0],
@@ -396,6 +399,66 @@ def load_capsule(path: str | Path) -> LoadedCapsule:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class CapsuleSaveError(RuntimeError):
+    """Raised when ``save_capsule`` cannot determine an authoritative
+    determinism class for the backend the experiment used."""
+
+
+def _resolve_backend_determinism(backend_name: str) -> tuple[bool, str]:
+    """Resolve a backend's determinism flag from authoritative sources.
+
+    Priority order:
+      1. Runtime-registered backend's ``CAPABILITIES`` (live).
+      2. ``BackendRegistry`` metadata loaded from
+         ``configs/backends.yaml``.
+
+    Both sources include the determinism warning string. If neither
+    knows the backend, raises ``CapsuleSaveError`` rather than
+    silently stamping the safer-looking ``True`` claim.
+    """
+    # 1. Runtime registry.
+    try:
+        from simworkbench.runtime import get_backend as _get_backend
+
+        backend = _get_backend(backend_name)
+    except Exception:  # noqa: BLE001 — runtime didn't auto-register this backend
+        backend = None
+    if backend is not None:
+        caps = getattr(backend, "CAPABILITIES", None)
+        if caps is not None:
+            return (
+                bool(getattr(caps, "deterministic", True)),
+                str(getattr(caps, "determinism_warning", "")),
+            )
+
+    # 2. BackendRegistry metadata fallback.
+    try:
+        from simworkbench.backends import BackendRegistry
+
+        registry = BackendRegistry()
+        entry = registry.get(backend_name)
+    except Exception as exc:  # noqa: BLE001 — registry not loadable
+        raise CapsuleSaveError(
+            f"Cannot resolve determinism class for backend "
+            f"{backend_name!r}: not in runtime, registry load failed "
+            f"({exc})."
+        ) from exc
+
+    md = entry.metadata
+    determinism = bool(getattr(md, "determinism", True))
+    # Synthesize the same warning string the runtime would have
+    # surfaced. The actual text is documented in ADR-0006.
+    if determinism:
+        warning = ""
+    else:
+        warning = (
+            f"Backend {backend_name!r} declares determinism=false in "
+            "configs/backends.yaml. Bitwise reproducibility is not "
+            "guaranteed; see ADR-0006-determinism-policy.md."
+        )
+    return determinism, warning
 
 
 def _default_capsule_name(experiment: Experiment, result: RunResult) -> str:

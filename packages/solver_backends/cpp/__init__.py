@@ -98,7 +98,6 @@ def _load() -> ctypes.CDLL:
     ]
     lib.simworkbench_kernels_abi_version.restype = ctypes.c_int
     lib.simworkbench_kernels_abi_version.argtypes = []
-    _LIB = lib
     return lib
 
 
@@ -108,8 +107,17 @@ def abi_version() -> int:
 
 
 def axpy(a: float, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """y[i] = a * x[i] + y[i] computed in C++. Mutates ``y`` in place
-    and returns it.
+    """``y[i] = a * x[i] + y[i]`` computed in C++. Mutates ``y`` in
+    place and returns the same buffer.
+
+    Both ``x`` and ``y`` MUST be C-contiguous float64 arrays. The
+    earlier implementation called ``np.ascontiguousarray(y)`` which
+    silently returned a copy when ``y`` was a strided view, so the
+    caller's original base array was NOT updated. Carries the new
+    pattern "Documented in-place mutation that silently copies on
+    strided inputs" — the contract is now strict: non-contiguous
+    inputs raise. Make ``y`` contiguous on the caller's side
+    (``y.copy()`` then re-assign) if you started with a view.
     """
     if x.shape != y.shape:
         raise ValueError(f"x and y shape mismatch: {x.shape} vs {y.shape}")
@@ -117,8 +125,20 @@ def axpy(a: float, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         raise TypeError(
             f"x and y must be float64; got {x.dtype} / {y.dtype}"
         )
-    x = np.ascontiguousarray(x)
-    y = np.ascontiguousarray(y)
+    if not x.flags.c_contiguous:
+        raise ValueError(
+            "axpy requires x to be C-contiguous; got a strided view. "
+            "Call np.ascontiguousarray(x) on the caller side and re-assign."
+        )
+    if not y.flags.c_contiguous:
+        raise ValueError(
+            "axpy mutates y in place and refuses non-contiguous y. "
+            "If y is a strided view, copy it first (y_copy = y.copy()), "
+            "pass y_copy, then re-assign the slice if you need the "
+            "original buffer updated. (The earlier implementation "
+            "silently copied non-contiguous y, which broke the in-place "
+            "contract.)"
+        )
     rc = _load().simworkbench_axpy(
         ctypes.c_double(float(a)),
         x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),

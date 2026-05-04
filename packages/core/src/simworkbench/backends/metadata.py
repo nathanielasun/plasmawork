@@ -8,7 +8,7 @@ loudly (rule 20: "Registry discovery does not hide invalid metadata").
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -36,12 +36,27 @@ class BackendDependencies(BaseModel):
 
 
 class BackendMetadata(BaseModel):
-    """Phase 8 / 8A — one ``configs/backends.yaml`` entry."""
+    """Phase 8 / 8A — one ``configs/backends.yaml`` entry.
+
+    ``status`` is a Pydantic ``Literal`` of the five valid lifecycle
+    values; arbitrary strings are refused at load time. Phase-8 audit
+    found a plain ``str`` field accepted ``status: totally_invalid``
+    silently, and the failure only surfaced when ``.status`` was
+    accessed downstream (carries the new pattern "Plain str field
+    where a Literal/enum belongs" — see
+    `agent_error_patterns.md`).
+    """
 
     model_config = ConfigDict(extra="allow")
 
     name: str
-    status: str = "planned"
+    status: Literal[
+        "planned",
+        "in_progress",
+        "validated",
+        "trusted",
+        "deprecated",
+    ] = "planned"
     phase: int = 8
     description: str = ""
     supports: BackendSupports = Field(default_factory=BackendSupports)

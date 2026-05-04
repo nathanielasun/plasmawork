@@ -1201,3 +1201,170 @@ Before closing a workstream, enumerate every module name from the plan and make 
 
 ### Bug log
 - 2026-05-04 *Phase 7 post-close audit*: Phase 7B shipped `absorption_lambert_beer` and `rate_equation_0d` but lacked exact plan-named siblings including `laser/absorption`, `laser/emission`, `laser/excitation`, `laser/ionization`, `laser/recombination`, `species/electron_temperature`, and `species/species_density`.
+
+---
+
+## Error Pattern: Approval-token machinery built but not wired at the mutation boundary
+
+### Why it is bad
+Phase 6 / 7 / 8 each introduced a single-use approval-token flow (`grant_*_approval` + `consume_*_approval`) to gate human-only privileges (tool / module / backend promotions). The token reader is the actual gate; the writer is the user-facing CLI / Python helper.
+
+The Phase-8 audit found `BackendRegistry.set_status` calling `require_backend_transition(actor=actor)` and rewriting the YAML — but **never calling `consume_backend_approval`**. The lifecycle module's actor check only refused `actor == "agent"`; passing `actor="human"` from any caller promoted the backend without a token. The token machinery existed; it just wasn't wired into the mutation point.
+
+This is a sub-pattern of "Trusting a client-supplied actor identity for a privileged check": the bypass exists at the LIBRARY level (not just the API), because the library trusts an actor string instead of the token file.
+
+### Required behavior
+At every mutation boundary (`set_status`, `register_validated`, etc.) that promotes into a human-only state, **the library function consumes the approval token before any side-effect**. The lifecycle module's actor-string check is a defense-in-depth signal; the token consumption is the actual gate.
+
+Concretely:
+1. The mutation method takes `actor: str = "agent"` like before.
+2. For human-only target states (validated / trusted), the method calls `consume_*_approval(name, from_status=..., to_status=...)`.
+3. Token absence raises a structured `*ApprovalError`. The exception type is part of the public API so callers handle it explicitly.
+4. The library exposes NO `skip_approval=True` / `skip_token=True` kwarg. A regression test inspects the function signature and fails if such a kwarg appears.
+
+The token consumption is unconditional — even `actor="human"` doesn't bypass it. The lifecycle's actor check still fires (an agent cannot even *attempt* the promotion), but the token is what authorizes it.
+
+### Detection
+- Grep every `set_status` / lifecycle promotion method body for a `consume_*_approval` call. If the method writes the new status to disk without consuming a token first, the gate is missing.
+- Negative regression test: write a token, call the mutation, verify the token file is gone afterwards (single-use).
+- Negative regression test: do NOT write a token, call the mutation with `actor="human"`, assert it raises.
+
+### Bug log
+- 2026-05-04 *Phase 8 post-close audit*: `BackendRegistry.set_status` rewrote `configs/backends.yaml` after `require_backend_transition` but never called `consume_backend_approval`. Direct probe: `actor="human"` promoted `python_cpu` to `validated` without any token. Fix: `set_status` consumes the approval token whenever `new_status in {VALIDATED, TRUSTED}`.
+
+---
+
+## Error Pattern: Capsule writer reads single registry then silently defaults
+
+### Why it is bad
+A capsule writer needs to stamp metadata it cannot derive locally — for example, the determinism flag of the backend that produced the run. Phase 8 / 8D made `provenance.lock` carry a `determinism` field. The `save_capsule` writer read the flag from the runtime registry (auto-registered Python backends) and **silently defaulted to `True`** when the runtime didn't know the backend.
+
+Backends that live in `configs/backends.yaml` but aren't auto-registered with the runtime — e.g. `cuda`, `external_pic` — never set the flag. A run on `cuda` saved the capsule with `determinism: true` and an empty warning, even though `configs/backends.yaml` declared `determinism: false` and ADR-0006 documents the policy.
+
+The pattern: a writer consults ONE source of truth and silently defaults when that source doesn't know. When a different source DOES know (a YAML registry, a metadata file), the writer ignores it and stamps a comfortable lie.
+
+### Required behavior
+1. The writer consults sources in priority order until ONE returns an authoritative answer.
+2. If NO source knows the value, the writer FAILS rather than stamping the safe-looking default. A failed save is recoverable; a wrong stamp on a saved capsule is not.
+3. Each source is independent — runtime registry AND on-disk registry, not just one. The on-disk source survives across processes, agent restarts, and removed runtime imports.
+
+For the determinism stamp specifically:
+1. `simworkbench.runtime.get_backend(name)` — live `CAPABILITIES`.
+2. `simworkbench.backends.BackendRegistry().get(name).metadata.determinism` — YAML-declared.
+3. Else: `CapsuleSaveError`.
+
+### Detection
+- Grep `save_*` / `write_*` writers for `try: ... except: pass` blocks that hand-default a metadata value. Each is a flag.
+- Round-trip test: save a capsule using a non-auto-registered backend, reload, assert the metadata field reflects the YAML declaration (not the comfortable default).
+
+### Bug log
+- 2026-05-04 *Phase 8 post-close audit*: `save_capsule` defaulted `determinism = True` and only read from the runtime registry. CUDA capsules saved with `determinism: true` despite `configs/backends.yaml` declaring `false`. Fix: `_resolve_backend_determinism` consults the runtime registry first, then `BackendRegistry`, and raises `CapsuleSaveError` when both fail.
+
+---
+
+## Error Pattern: Plain `str` field where a Literal/enum belongs
+
+### Why it is bad
+Pydantic `str` fields accept any string. When the field's *meaning* is one of a closed set of values (statuses, kinds, modes), the lack of enum / `Literal` typing means malformed values load silently and only fail later — usually deep in a downstream consumer that expected one of the closed values.
+
+Phase 8 audit found `BackendMetadata.status: str` accepted `status: totally_invalid` from `configs/backends.yaml`. The failure surfaced only when `RegisteredBackend.status` evaluated `BackendStatus(self.metadata.status)`, hundreds of milliseconds and several call frames removed from the load.
+
+This contradicts the "registry refuses invalid metadata" rule (rule 20).
+
+### Required behavior
+- Closed-set fields use `Literal[...]` typing or a Pydantic `Enum`. Pydantic refuses out-of-set values at validation time.
+- The closed set is defined in ONE place — usually the matching enum (`BackendStatus`, `ToolStatus`, `ModuleStatus`, etc.). The metadata model imports from there or duplicates the literal tuple.
+- Adding a new value happens in TWO places (the enum + the metadata literal). A mismatch is itself a bug; tests verify they agree.
+
+### Detection
+- Grep Pydantic models for fields whose *meaning* is a closed set but whose type is `str`. Each is a flag.
+- Negative regression test: load a config with an unknown status / kind / mode value; assert the load raises.
+
+### Bug log
+- 2026-05-04 *Phase 8 post-close audit*: `BackendMetadata.status: str = "planned"` accepted any string. Fix: typed as `Literal["planned", "in_progress", "validated", "trusted", "deprecated"]`.
+
+---
+
+## Error Pattern: Recommendation ignores the configured selection policy
+
+### Why it is bad
+When a registry exposes a `recommend(spec)` method AND the corresponding YAML carries a `selection_policy` block, the two must agree. If the YAML says "auto selection filters to validated/trusted" and `recommend` returns every capability match (including `planned` and `in_progress` rows), the policy is documentation, not enforcement.
+
+Phase 8 audit: `BackendRegistry.recommend(2D PDE)` returned `cpp (in_progress)`, `fortran (planned)`, `cuda (planned)`, `kokkos (planned)`, `petsc (planned)`, `amrex (planned)` even though `configs/backends.yaml`'s `selection_policy.ranking` documented filtering to validated/trusted. Auto-selection callers silently picked planned backends.
+
+### Required behavior
+- `recommend()` defaults to the policy the YAML documents. For backends, that's `{validated, trusted}`.
+- An explicit override kwarg (e.g. `include_statuses=`) lets advanced callers widen the selection deliberately. The default keeps the safe behavior.
+- A regression test compares the YAML's documented selection policy against the actual `recommend()` filter for the canonical spec.
+
+### Detection
+- Read the YAML's `selection_policy` block. Translate it into an assertion on `recommend()`'s default behavior. If the assertion doesn't fire today, the recommender is bypassing the policy.
+
+### Bug log
+- 2026-05-04 *Phase 8 post-close audit*: `BackendRegistry.recommend(spec)` returned every capability match regardless of status. Fix: default `include_statuses={VALIDATED, TRUSTED}`; explicit `frozenset()` widens the search.
+
+---
+
+## Error Pattern: External-writer functions skip the locality guard exporters got right
+
+### Why it is bad
+The workbench has documented locality rules: program artifacts go under `local_cache/`, `temp_imports/`, `temp_runs/`, or `simulation_capsules/` (the four allowed roots). External writes only happen via explicit export. The exporter pipeline (`export_capsule`, `export_archive`, etc.) enforces this with `is_under_workbench(target)` checks that refuse any other path.
+
+Phase 8 added two new writer surfaces — `simworkbench.hpc.SlurmJob.write` and the `external_pic.StubPICAdapter` writers — that accept an arbitrary `target` argument and **don't apply the locality check**. The audit's direct probe wrote bundles + result files to `/private/tmp` by default.
+
+The pattern: every writer function that accepts a path argument inherits the workbench's locality contract. New writers added in later phases re-introduce the leak unless the contract is enforced consistently.
+
+### Required behavior
+- Every writer that accepts a `target: str | Path` argument validates the resolved path with `is_under_workbench(target)` before any side-effect.
+- An explicit `require_workbench_target: bool = True` kwarg lets callers opt out (mirrors `export_capsule`'s shape) for genuinely-external destinations chosen via the export menu.
+- A regression test exercises the refusal path: pass `/tmp/...` as the target; assert `PermissionError("workbench-managed roots")`.
+
+### Detection
+- Grep new code for `target.mkdir(parents=True, exist_ok=True)` or `Path(target).write_text(...)` without a preceding `is_under_workbench` check. Each is a flag.
+
+### Bug log
+- 2026-05-04 *Phase 8 post-close audit*: `SlurmJob.write` and `StubPICAdapter.{write_input_deck, import_result}` wrote arbitrary paths. Fix: each gained a `require_workbench_target=True` default + the matching locality check.
+
+---
+
+## Error Pattern: Documented in-place mutation that silently copies on strided inputs
+
+### Why it is bad
+A function's docstring says "Mutates ``y`` in place and returns it." The implementation calls `np.ascontiguousarray(y)` to satisfy the C ABI requirement that `y` be a packed buffer. But `np.ascontiguousarray` returns a COPY when `y` is non-contiguous — and the function then mutates the copy, returns the copy, and the caller's original strided view is unchanged.
+
+The Phase 8 axpy wrapper had this shape. The contiguous case worked correctly; the strided case silently produced a stale base array. Callers reading the docstring trusted the in-place claim; the failure mode only showed up when a caller passed a slice / view.
+
+The pattern is broader than C ABI wrappers — anywhere a function "normalizes" an input through a copy-or-pass-through helper but the caller expects mutation, the contract leaks. NumPy's `np.ascontiguousarray`, pandas's `pd.to_numeric`, etc. all behave this way.
+
+### Required behavior
+- Functions advertising in-place mutation REFUSE non-contiguous (or otherwise non-mutable-friendly) inputs with a structured error. The error explains the contract: "make ``y`` contiguous on the caller side and re-assign". This makes the contract visible at call time.
+- Alternatively, the docstring is rewritten to remove the in-place claim and describe the actual return semantics. Either way, the docstring and the runtime behavior agree.
+
+### Detection
+- Grep ctypes / C-ABI wrappers for `np.ascontiguousarray(<inout>)` patterns. Each is a flag if the wrapper documents in-place mutation.
+- Negative regression test: pass a strided view as the in-place argument, assert ValueError ("contiguous").
+
+### Bug log
+- 2026-05-04 *Phase 8 post-close audit*: `cpp.axpy` advertised in-place mutation, normalized `y` through `np.ascontiguousarray`, silently copied non-contiguous `y`. Fix: explicit `flags.c_contiguous` check that raises ValueError with a clear remediation message.
+
+---
+
+## Error Pattern: Documentation claims behavior the code can't deliver
+
+### Why it is bad
+A docstring describes a behavior the implementation only partially achieves. The reader trusts the doc. The reader is misled.
+
+Phase 8's Slurm bundle module described its output as "self-contained": the implication was a remote node could `sbatch <bundle>/submit.sh` and run, period. The actual implementation needs the workbench installed on the remote (via `pip install simworkbench-core` or `PYTHONPATH=...`); the bundle does not ship a wheel. The "self-contained" claim was true for *the workbench's payload + entrypoint* but false for *the runtime dependency*.
+
+This is a sibling of "UI calls itself an editor while shipping a viewer" — but for module-level docstrings rather than UI deliverables.
+
+### Required behavior
+- Docstrings describe what the code actually does. Strong claims ("self-contained", "always reproducible", "atomic") get qualified or rephrased.
+- A docstring lint pass at close time: read every module's top-level docstring and verify each claim is exercised by a test or carries a qualifier.
+
+### Detection
+- Look for adjectives like "self-contained", "atomic", "always", "guaranteed" in docstrings. Each carries a verification burden.
+- A reviewer reading the module's top docstring should not be surprised by what they find inside.
+
+### Bug log
+- 2026-05-04 *Phase 8 post-close audit*: `simworkbench.hpc.slurm` claimed the bundle was "self-contained"; the runner explicitly required PYTHONPATH or installed package. Fix: docstring rewritten to describe the actual contract (payload + entrypoint self-contained; runtime dep must be installed on the remote node).

@@ -29,6 +29,27 @@ from simworkbench.backends.external import (
     ExternalJobSpec,
     ExternalSimulatorAdapter,
 )
+from simworkbench.paths import is_under_workbench
+
+
+def _refuse_external_target(target: Path, *, require_workbench: bool) -> None:
+    """Refuse a write target that lies outside the workbench-managed
+    roots, unless ``require_workbench`` is False.
+
+    Mirrors the export pipeline (`is_under_workbench`) so external
+    adapters can't silently write to ``/tmp`` or arbitrary user
+    directories. Carries `agent_error_patterns.md` "External-writer
+    functions skip the locality guard that exporters got right".
+    """
+    if require_workbench and not is_under_workbench(target):
+        raise PermissionError(
+            f"Refusing to write external-simulator artifact outside "
+            f"workbench-managed roots: {target}. Allowed roots: "
+            "local_cache/, temp_imports/, temp_runs/, "
+            "simulation_capsules/. Pass require_workbench_target=False "
+            "if the user explicitly chose an external destination via "
+            "the export menu."
+        )
 
 
 class StubPICAdapter(ExternalSimulatorAdapter):
@@ -36,13 +57,20 @@ class StubPICAdapter(ExternalSimulatorAdapter):
 
     Writes a JSON input deck containing the experiment's payload, and
     reads back a JSON result file the external code (or a test
-    fixture) is expected to produce.
+    fixture) is expected to produce. Both writers default to
+    refusing destinations outside the workbench-managed roots.
     """
 
     name: str = "external_pic_stub"
 
+    def __init__(self, *, require_workbench_target: bool = True) -> None:
+        self.require_workbench_target = require_workbench_target
+
     def write_input_deck(self, experiment: Any, target: str | Path) -> Path:
         out = Path(target)
+        _refuse_external_target(
+            out, require_workbench=self.require_workbench_target
+        )
         out.mkdir(parents=True, exist_ok=True)
         deck_path = out / "input_deck.json"
         deck_path.write_text(
@@ -71,6 +99,9 @@ class StubPICAdapter(ExternalSimulatorAdapter):
         # Look for an external_result.json next to the job handle's
         # bundle. Phase 8 just exposes the contract.
         capsule_dir = Path(target_capsule)
+        _refuse_external_target(
+            capsule_dir, require_workbench=self.require_workbench_target
+        )
         capsule_dir.mkdir(parents=True, exist_ok=True)
         result_path = capsule_dir / "external_result.json"
         result_path.write_text(

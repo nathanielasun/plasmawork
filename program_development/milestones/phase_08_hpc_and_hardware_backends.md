@@ -1,6 +1,6 @@
 # Phase 8 — HPC and Hardware Backends
 
-**Status: Complete (2026-05-04).** All six workstreams 8A–8F shipped. Default convention checker green at 609 checks; opt-in mode reports no open workstreams.
+**Status: Complete (2026-05-04; post-close audit fixed 2026-05-04).** All six workstreams 8A–8F shipped. The post-close audit caught seven negative-path gaps (lifecycle approval bypass, status enum validation, capsule determinism fallback, lifecycle-aware `recommend`, HPC/external locality checks, axpy contiguity contract, Slurm docstring accuracy); each is fixed with a matching regression test under `tests/regression/test_phase_8_audit_findings.py`. Default convention checker green at 609 checks.
 
 ## Objective
 Scale from local interactive experiments to high-performance parameter sweeps and large simulations. (Plan §Phase 8.)
