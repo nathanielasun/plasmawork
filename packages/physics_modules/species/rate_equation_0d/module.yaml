@@ -1,12 +1,14 @@
 name: rate_equation_0d
 version: 0.1.0
 domain: species
-status: candidate
+status: validated
 
 description: |
   0D rate-equation driver. Wraps the simworkbench.runtime.Runner +
-  python_cpu backend to integrate a coupled set of dn/dt = K @ n equations
-  built from a ModelSpec's species + interactions.
+  python_cpu backend (scipy LSODA) to integrate a coupled set of
+  dn/dt = K @ n equations built from a ModelSpec's species and
+  interactions. The decay-only validated regime is verified against
+  the closed-form first-order solution to 1e-4 relative error.
 
 inputs:
   - name: experiment
@@ -24,13 +26,42 @@ outputs:
 validity_domain:
   notes:
     - "Spatially homogeneous (0D)."
-    - "First-order rate constants."
+    - "First-order rate constants (decay or 2-participant conversion)."
     - "Mass-action kinetics."
     - "Uses scipy.integrate.solve_ivp (LSODA) — never a hand-rolled timestep loop."
+    - "Phase 7 validated regime: 1- and 2-participant interactions only. Higher-order kinetics await Phase 7+."
 
 references:
   - title: "scipy.integrate.solve_ivp documentation."
+    url: "https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html"
+  - title: "Hindmarsh, *ODEPACK, A Systematized Collection of ODE Solvers*, IMACS 1983."
+
+dependencies: []
+
+benchmarks:
+  - id: first_order_decay
+    description: |
+      Single species N(t) = N0 * exp(-k t). With placeholder k=1.0 and
+      N0=1.0e18 1/m^3, the integrator's t=10s value must agree with the
+      analytic value to within 1e-4 relative error.
+    reference: "First-order decay closed-form solution"
+    tolerance: "1e-4 relative"
+    artifact: "benchmarks/first_order_decay.py"
+  - id: two_species_conversion
+    description: |
+      A -> B at rate k. Total density N_A + N_B is conserved to within
+      1e-6 relative drift over the run.
+    reference: "Mass conservation invariant"
+    tolerance: "1e-6 relative"
+    artifact: "benchmarks/two_species_conversion.py"
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0]
 
 tests:
   unit:
-    - tests/unit/test_rate_equation_0d.py
+    - tests/test_rate_equation_0d.py
+  benchmark:
+    - tests/test_benchmarks.py

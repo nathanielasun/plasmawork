@@ -24,6 +24,52 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-03 (Phase 7 closes — Validated Physics Module Registry complete)
+
+### Completed
+- **Procedure-first.** Phase 7 opened with the gate-walk test as the first artifact (`tests/integration/test_phase_7_gate_walk.py`), per the ninth Phase Gate Procedure check. 28 parametric tests cover each gate verb on every required validated module: reusable / documented / tested / validated for explicit regimes, plus the human-approval hard-rule guard (mirrors the Phase 6 tool-promotion flow). Implementation chased the test.
+- **Workstream 7A — Registry v1 — shipped.** `simworkbench.modules` exposes `ModuleRegistry` + `RegisteredModule`, `ModuleMetadata` Pydantic with the Registry v1 fields (`dependencies`, `benchmarks`, `compatibility`), and the `draft → candidate → validated → trusted → deprecated` lifecycle. Promotions to validated / trusted are gated server-side by single-use approval tokens written via `simworkbench.modules.grant_module_approval`; the API never trusts an `actor` body field. `ModuleMatch` carries `module_status` so consumers (Phase-5 `ExperimentProposer`) can prefer validated over candidate at equal score.
+- **Workstream 7B — Laser-species reference module — shipped.** `packages/physics_modules/laser/absorption_lambert_beer/` ships at `validated` with full Phase-7 docs (assumptions, validity_domain, equations, changelog), a benchmark (`closed_form_transmission`) that matches the Lambert-Beer closed form to 1e-12 relative error, and 9 unit + benchmark tests. `species/rate_equation_0d` upgraded from candidate to validated with two new benchmarks (`first_order_decay`, `two_species_conversion`) and the matching docs.
+- **Workstream 7C — Plasma module skeletons — shipped.** Five candidate-level interface modules under `packages/physics_modules/plasma/`: `electromagnetic_field` (E/B grid data structure + unit contract), `particle_pusher` (Boris algorithm reference), `pic_adapter` (configuration shape), `collisional_model` (NRL Plasma Formulary collision frequency), `boundary_condition_library` (catalog of supported boundary kinds). Each has `module.yaml` + `src/__init__.py` + a unit test. Validated runs await Phase 8 HPC backends.
+- **Workstream 7D — Generality examples — shipped.** Four validated examples: `molecular_dynamics/lennard_jones` (Velocity-Verlet energy conservation < 1% drift over 200 steps), `phase_transition/ising_2d` (low-T ferromagnetic |m|>0.95 + high-T paramagnetic |m|<0.3), `pde/wave_equation_1d` (standing-wave one-period closed form, 5% L2), `pde/reaction_diffusion_1d` (Crank-Nicolson Fourier-mode decay, 1% L2 after one diffusion time). Every module ships full Phase-7 docs and at least one analytic benchmark.
+- **Workstream 7E — Validation library — shipped.** `simworkbench.validation_library` is offline-safe and exposes four helpers with a shared `ValidationReport` return type: `ConservationCheck` (constant-quantity drift), `ConvergenceCheck` (log-log slope vs expected order), `PaperReproduction` (relative agreement with a published value), `CrossSolverComparison` (max relative error between two series). 12 unit tests cover the helpers; benchmarks across Phase 7B/D modules consume them.
+- **Cross-cutting.** `configs/agents.yaml` flips the `release` role to `enabled: true`. The Phase 5 `ModuleMatch.is_compatible` predicate continues to fire — module retrieval still rejects dimensionally-incompatible modules. Root `pyproject.toml` adds `addopts = "-ra --import-mode=importlib"` so per-module test trees don't collide on `tests/` package names (the Phase-7 lesson "package-name collisions in sibling test trees").
+- **Convention checker ratchet.** All Phase 7A–7E entity assertions promoted from `--include-open-workstreams` into the default hard gate. Default mode now 485/485 ok (was 436; +49). Closed-phase regression flipped back: opt-in mode reports "no open workstreams".
+- **Behavioral verification (per the twenty-four-check Phase Gate Procedure).** All 24 green:
+  1. End-to-end gate walk: 28 parametric tests in `test_phase_7_gate_walk.py`.
+  2. Documented scripts: no new doc references.
+  3. Producer-writer wiring: `ModuleRegistry.set_status` round-trips through `write_module_yaml` ⇒ `load_module_yaml`.
+  4. Validator field parity: `ModuleMetadata` Pydantic validator refuses `status="validated"` without a populated `benchmarks` list.
+  5. Destructive-after-validate: no destructive ops introduced.
+  6. UI panels actually render: no new UI panels in Phase 7.
+  7. Status-sync grep clean across README, CLAUDE.md, milestone, timeline, agents.yaml.
+  8. Build scripts succeed; no leaked .js.
+  9. Gate-clause verb walk: every gate verb (reusable, documented, tested, validated for explicit regimes) has a dedicated parametric test.
+  10. Workstream task-bullet walk: every plan-named bullet maps to a real artifact (Registry v1 fields, six validated modules, five plasma skeletons, four generality examples, four validation library helpers).
+  11. Boundary validation parity: `ModuleMetadata.model_validate` rejects malformed YAML; library-side `set_status` rejects agent promotions.
+  12. Success path runs: gate-walk runs every benchmark to passing.
+  13. Hard rule via API flag: regression test confirms `consume_module_approval` raises without a token.
+  14. Mixed-shape rules: lifecycle enum accepts only the five named values; benchmarks require at least one when status=validated.
+  15. Compatibility checks: `compatibility.backends` field declares structured backend list.
+  16. Cross-cutting "always-on" prose: `release` role flip asserted in the gate-walk.
+  17. "Validate X" must consume X: each module benchmark loads + runs the module's `src/`.
+  18. Validation rules fire BEFORE early-exit: not applicable to Phase 7.
+  19. Privileged checks server-side: `consume_module_approval` deletes its token on use.
+  20. Endpoints named after a transformation: not applicable.
+  21. Archive contains its own destination: not applicable.
+  22. Canonical-format serializer parity: `write_module_yaml` ⇒ `load_module_yaml` round-trips every Registry v1 field.
+  23. Generator skips cleanup: not applicable.
+  24. Plan verbs map to UI affordances: Phase 7 is library-only; no UI scope.
+
+### Open questions
+- The 9 plan-named laser-species modules other than `absorption_lambert_beer` (laser_pulse, emission, excitation, ionization, recombination, electron_temperature, species_density, stiff rate adapter) ship as candidate today; `gaussian_pulse` / `simple_emission` / `simple_absorption` from Phase 1 remain candidate. Promoting them is Phase 7+ scientific work — each needs its own analytic benchmark or paper reproduction.
+- The plasma module family is candidate-only; validated promotions need the Phase 8 HPC field solver before they have a real numerical core to validate.
+
+### Next steps
+- Open Phase 8 (HPC and hardware backends) per plan §Phase 8 with the same procedure: write the gate-walk test FIRST, enumerate plan deliverables, add per-entity opt-in convention-checker assertions, implement until everything is green.
+
+---
+
 ## 2026-05-03 (Phase 6 closes — Sandboxed Agentic Code Generation complete)
 
 ### Completed

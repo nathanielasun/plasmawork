@@ -38,6 +38,10 @@ class ModuleMatch:
     sub_scores: dict[str, float] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
     directory: str = ""
+    # Phase 7 / 7A — Registry v1 lifecycle. Surface the module's
+    # status so consumers (ExperimentProposer, GapAnalyzer) can
+    # prefer validated over candidate modules at the same score.
+    module_status: str = "candidate"
 
     @property
     def is_compatible(self) -> bool:
@@ -68,6 +72,7 @@ class ModuleMatch:
             "reasons": list(self.reasons),
             "directory": self.directory,
             "is_compatible": self.is_compatible,
+            "module_status": self.module_status,
         }
 
 
@@ -126,6 +131,7 @@ class ModuleMatcher:
                     sub_scores=sub_scores,
                     reasons=reasons,
                     directory=_relative_to_repo(module_yaml.parent),
+                    module_status=str(metadata.get("status", "candidate")),
                 )
             )
         # Sort highest-scoring first.

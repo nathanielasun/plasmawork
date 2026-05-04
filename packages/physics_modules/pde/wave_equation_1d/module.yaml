@@ -1,0 +1,62 @@
+name: wave_equation_1d
+version: 0.1.0
+domain: pde
+status: validated
+
+description: |
+  1D linear wave equation u_tt = c^2 u_xx solved with the explicit
+  centered-difference scheme (leapfrog in time, central in space) on a
+  uniform grid with Dirichlet boundary conditions. The CFL number
+  c * dt / dx must satisfy r <= 1 for stability; the validated
+  benchmark uses r = 0.9.
+
+inputs:
+  - name: domain_length
+    units: meter
+  - name: wave_speed
+    units: "meter / second"
+  - name: grid_resolution
+    units: meter
+  - name: dt
+    units: second
+  - name: n_steps
+    units: dimensionless
+
+outputs:
+  - name: trajectory
+    units: dimensionless
+  - name: time_seconds
+    units: second
+
+validity_domain:
+  notes:
+    - "Uniform grid; Dirichlet BCs (u = 0 at boundaries)."
+    - "CFL number r = c * dt / dx <= 1 — required for stability."
+    - "Linear wave equation only; nonlinear / dispersive terms out of scope."
+
+references:
+  - title: "LeVeque, *Finite Difference Methods for Ordinary and Partial Differential Equations*, ch. 9."
+
+dependencies: []
+
+benchmarks:
+  - id: standing_wave_period
+    description: |
+      A standing wave u(x,t) = sin(pi x / L) cos(c pi t / L) has
+      period T = 2L/c. Run with c=1 m/s, L=1 m, integrate one period;
+      the L2 norm of u(x, T) - u(x, 0) divided by ||u(x, 0)||_2 must
+      be < 5%.
+    reference: "Closed-form standing-wave solution"
+    tolerance: "5% relative L2"
+    artifact: "benchmarks/standing_wave_period.py"
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [1]
+
+tests:
+  unit:
+    - tests/test_wave_equation_1d.py
+  benchmark:
+    - tests/test_benchmarks.py

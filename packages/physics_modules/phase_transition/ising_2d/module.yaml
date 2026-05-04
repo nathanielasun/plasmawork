@@ -1,7 +1,7 @@
 name: ising_2d
 version: 0.1.0
 domain: phase_transition
-status: candidate
+status: validated
 
 description: |
   2D Ising model on a square lattice with periodic boundary conditions and
@@ -40,10 +40,39 @@ validity_domain:
 
 references:
   - title: "Onsager, Phys. Rev. 65, 117 (1944)."
+    doi: "10.1103/PhysRev.65.117"
   - title: "Newman & Barkema, *Monte Carlo Methods in Statistical Physics*."
+
+dependencies: []
+
+benchmarks:
+  - id: low_temperature_ferromagnetic
+    description: |
+      Far below T_c (T* = 1.0), the equilibrium magnetization per
+      spin must be near unity (|m| > 0.95) on an L=8 lattice after
+      adequate equilibration.
+    reference: "Ising 2D ferromagnetic phase"
+    tolerance: "|m| > 0.95"
+    artifact: "benchmarks/low_temperature_ferromagnetic.py"
+  - id: high_temperature_paramagnetic
+    description: |
+      Far above T_c (T* = 4.0), the equilibrium magnetization per
+      spin must be small (|m| < 0.3) on an L=8 lattice after adequate
+      equilibration. Finite-size fluctuations at L=8 push <|m|> up
+      from the thermodynamic-limit value, so the bound stays loose.
+    reference: "Ising 2D paramagnetic phase"
+    tolerance: "|m| < 0.3"
+    artifact: "benchmarks/high_temperature_paramagnetic.py"
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [2]
 
 tests:
   unit:
     - tests/unit/test_ising_2d.py
   validation:
     - tests/validation/test_ising_2d_critical_temperature.py
+  benchmark:
+    - tests/test_benchmarks.py

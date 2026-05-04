@@ -1,0 +1,40 @@
+name: plasma_collisional_model
+version: 0.1.0
+domain: plasma
+status: candidate
+
+description: |
+  Phase 7C interface for elastic Coulomb collisions among charged species.
+  Skeleton only; the validated implementation (e.g. Nanbu's binary
+  collision model) lands in Phase 8.
+
+inputs:
+  - name: species_density
+    units: "1 / meter ** 3"
+  - name: species_temperature
+    units: kelvin
+
+outputs:
+  - name: collision_frequency
+    units: "1 / second"
+
+validity_domain:
+  notes:
+    - "Coulomb logarithm > 5 (weakly coupled plasma)."
+    - "Maxwellian velocity distributions."
+
+references:
+  - title: "Nanbu (1997), *Theory of cumulative small-angle collisions in plasmas*."
+
+dependencies: []
+
+benchmarks: []
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0, 1, 2, 3]
+
+tests:
+  unit:
+    - tests/test_collisional_model.py

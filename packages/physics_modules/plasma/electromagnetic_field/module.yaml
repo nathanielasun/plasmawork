@@ -1,0 +1,45 @@
+name: plasma_electromagnetic_field
+version: 0.1.0
+domain: plasma
+status: candidate
+
+description: |
+  Phase 7C interface stub for an electromagnetic-field representation
+  used by particle pushers and PIC adapters. Carries a 3-component E/B
+  field on a structured grid; the physical solver lives in Phase 8 (HPC
+  backends bring vectorized FDTD). This module's job at Phase 7 is the
+  data shape + unit contract.
+
+inputs:
+  - name: domain_extent
+    units: "meter"
+  - name: grid_resolution
+    units: "meter"
+
+outputs:
+  - name: E_field
+    units: "volt / meter"
+  - name: B_field
+    units: "tesla"
+
+validity_domain:
+  notes:
+    - "Structured Cartesian grid only; unstructured / AMR awaits Phase 8."
+    - "Uniform spacing along each axis."
+    - "Phase 7 ships the data structure + boundary marshalling. Numerical evolution lands in Phase 8."
+
+references:
+  - title: "Birdsall & Langdon, *Plasma Physics via Computer Simulation*, ch. 4."
+
+dependencies: []
+
+benchmarks: []
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [1, 2, 3]
+
+tests:
+  unit:
+    - tests/test_electromagnetic_field.py

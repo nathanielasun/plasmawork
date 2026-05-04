@@ -1,0 +1,38 @@
+name: plasma_boundary_condition_library
+version: 0.1.0
+domain: plasma
+status: candidate
+
+description: |
+  Phase 7C — small library of named boundary-condition kinds the plasma
+  solvers can declare in module.yaml. Phase 7 ships the catalog +
+  validation (every kind named here is supported by exactly one
+  validator); Phase 8 wires the kinds into the field solver.
+
+inputs:
+  - name: kind_name
+    units: dimensionless
+
+outputs:
+  - name: kind_descriptor
+    units: dimensionless
+
+validity_domain:
+  notes:
+    - "Catalog of supported boundary kinds — periodic, conducting, absorbing, reflecting, mirror."
+
+references:
+  - title: "Birdsall & Langdon, *Plasma Physics via Computer Simulation*, ch. 6 (boundary handling)."
+
+dependencies: []
+
+benchmarks: []
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [1, 2, 3]
+
+tests:
+  unit:
+    - tests/test_boundary_condition_library.py

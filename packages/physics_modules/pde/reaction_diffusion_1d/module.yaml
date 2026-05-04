@@ -1,0 +1,64 @@
+name: reaction_diffusion_1d
+version: 0.1.0
+domain: pde
+status: validated
+
+description: |
+  1D linear reaction-diffusion equation u_t = D u_xx - k u solved with
+  the Crank-Nicolson scheme on a uniform grid with Dirichlet boundary
+  conditions. Crank-Nicolson is unconditionally stable, second-order
+  accurate in time and space.
+
+inputs:
+  - name: domain_length
+    units: meter
+  - name: diffusion_coefficient
+    units: "meter ** 2 / second"
+  - name: reaction_rate
+    units: "1 / second"
+  - name: grid_resolution
+    units: meter
+  - name: dt
+    units: second
+  - name: n_steps
+    units: dimensionless
+
+outputs:
+  - name: trajectory
+    units: dimensionless
+  - name: time_seconds
+    units: second
+
+validity_domain:
+  notes:
+    - "Uniform 1D grid; Dirichlet BCs."
+    - "Linear reaction term -k u (decay or growth as k > 0 or < 0)."
+    - "Crank-Nicolson: unconditionally stable; accuracy degrades with very large dt."
+
+references:
+  - title: "Crank & Nicolson, *A practical method for numerical evaluation*… Proc. Camb. Philos. Soc. (1947)."
+  - title: "LeVeque, *Finite Difference Methods*, ch. 9."
+
+dependencies: []
+
+benchmarks:
+  - id: pure_diffusion_decay
+    description: |
+      With reaction_rate = 0 and a sin(pi x / L) initial condition,
+      the closed-form solution is u(x, t) = sin(pi x / L) *
+      exp(-D pi^2 t / L^2). After one diffusion time L^2/D the
+      L2 relative error must be < 1%.
+    reference: "Closed-form decay of a single Fourier mode"
+    tolerance: "1% relative L2"
+    artifact: "benchmarks/pure_diffusion_decay.py"
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [1]
+
+tests:
+  unit:
+    - tests/test_reaction_diffusion_1d.py
+  benchmark:
+    - tests/test_benchmarks.py

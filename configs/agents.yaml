@@ -108,7 +108,7 @@ agents:
 
   - role: release
     description: Packages stable builds and examples.
-    enabled: false
+    enabled: true
     phase: 7
 
 human_approval_gates:

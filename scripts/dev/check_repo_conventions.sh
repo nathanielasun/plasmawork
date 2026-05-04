@@ -656,10 +656,92 @@ check_grep_in_file 'role: numerical_methods' configs/agents.yaml \
   "agents.yaml lists numerical_methods role"
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch. Currently empty — Phase 6 closed 2026-05-03.
+section "Phase 7A — Registry v1"
+check_file_exists packages/core/src/simworkbench/modules/__init__.py
+check_file_exists packages/core/src/simworkbench/modules/metadata.py
+check_file_exists packages/core/src/simworkbench/modules/registry.py
+check_file_exists packages/core/src/simworkbench/modules/lifecycle.py
+check_file_exists packages/core/src/simworkbench/modules/approval.py
+check_grep_in_file 'class ModuleRegistry' \
+  packages/core/src/simworkbench/modules/registry.py \
+  "ModuleRegistry class defined"
+check_grep_in_file 'class ModuleMetadata' \
+  packages/core/src/simworkbench/modules/metadata.py \
+  "ModuleMetadata Pydantic model defined"
+check_grep_in_file 'dependencies' \
+  packages/core/src/simworkbench/modules/metadata.py \
+  "Registry v1 metadata declares dependencies"
+check_grep_in_file 'benchmarks' \
+  packages/core/src/simworkbench/modules/metadata.py \
+  "Registry v1 metadata declares benchmarks"
+check_grep_in_file 'compatibility' \
+  packages/core/src/simworkbench/modules/metadata.py \
+  "Registry v1 metadata declares compatibility"
+
+section "Phase 7B — Laser-species reference module"
+check_file_exists packages/physics_modules/laser/absorption_lambert_beer/module.yaml
+check_file_exists packages/physics_modules/laser/absorption_lambert_beer/src/__init__.py
+check_file_exists packages/physics_modules/laser/absorption_lambert_beer/README.md
+check_file_exists packages/physics_modules/laser/absorption_lambert_beer/assumptions.md
+check_file_exists packages/physics_modules/laser/absorption_lambert_beer/validity_domain.md
+check_file_exists packages/physics_modules/laser/absorption_lambert_beer/equations.md
+check_file_exists packages/physics_modules/laser/absorption_lambert_beer/changelog.md
+check_dir_exists  packages/physics_modules/laser/absorption_lambert_beer/benchmarks
+check_dir_exists  packages/physics_modules/laser/absorption_lambert_beer/tests
+
+check_file_exists packages/physics_modules/species/rate_equation_0d/assumptions.md
+check_file_exists packages/physics_modules/species/rate_equation_0d/validity_domain.md
+check_file_exists packages/physics_modules/species/rate_equation_0d/equations.md
+check_file_exists packages/physics_modules/species/rate_equation_0d/changelog.md
+check_dir_exists  packages/physics_modules/species/rate_equation_0d/benchmarks
+check_dir_exists  packages/physics_modules/species/rate_equation_0d/tests
+
+section "Phase 7C — Plasma module skeletons"
+check_file_exists packages/physics_modules/plasma/electromagnetic_field/module.yaml
+check_file_exists packages/physics_modules/plasma/particle_pusher/module.yaml
+check_file_exists packages/physics_modules/plasma/pic_adapter/module.yaml
+check_file_exists packages/physics_modules/plasma/collisional_model/module.yaml
+check_file_exists packages/physics_modules/plasma/boundary_condition_library/module.yaml
+
+section "Phase 7D — Generality examples"
+check_file_exists packages/physics_modules/molecular_dynamics/lennard_jones/equations.md
+check_dir_exists  packages/physics_modules/molecular_dynamics/lennard_jones/benchmarks
+check_file_exists packages/physics_modules/phase_transition/ising_2d/equations.md
+check_dir_exists  packages/physics_modules/phase_transition/ising_2d/benchmarks
+check_file_exists packages/physics_modules/pde/wave_equation_1d/module.yaml
+check_file_exists packages/physics_modules/pde/wave_equation_1d/src/__init__.py
+check_file_exists packages/physics_modules/pde/wave_equation_1d/equations.md
+check_dir_exists  packages/physics_modules/pde/wave_equation_1d/benchmarks
+check_file_exists packages/physics_modules/pde/reaction_diffusion_1d/module.yaml
+check_file_exists packages/physics_modules/pde/reaction_diffusion_1d/src/__init__.py
+check_file_exists packages/physics_modules/pde/reaction_diffusion_1d/equations.md
+check_dir_exists  packages/physics_modules/pde/reaction_diffusion_1d/benchmarks
+
+section "Phase 7E — Validation library"
+check_file_exists packages/core/src/simworkbench/validation_library/__init__.py
+check_grep_in_file 'class ConservationCheck' \
+  packages/core/src/simworkbench/validation_library/__init__.py \
+  "ConservationCheck class defined"
+check_grep_in_file 'class ConvergenceCheck' \
+  packages/core/src/simworkbench/validation_library/__init__.py \
+  "ConvergenceCheck class defined"
+check_grep_in_file 'class PaperReproduction' \
+  packages/core/src/simworkbench/validation_library/__init__.py \
+  "PaperReproduction class defined"
+check_grep_in_file 'class CrossSolverComparison' \
+  packages/core/src/simworkbench/validation_library/__init__.py \
+  "CrossSolverComparison class defined"
+
+section "Phase 7 — Cross-cutting + gate walk"
+check_file_exists tests/integration/test_phase_7_gate_walk.py
+check_grep_in_file 'role: release' configs/agents.yaml \
+  "agents.yaml lists release role"
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch. Currently empty — Phase 7 closed 2026-05-03.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 6 closed 2026-05-03; Phase 7 not yet opened."
+  echo "  no open workstreams — Phase 7 closed 2026-05-03; Phase 8 not yet opened."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

@@ -1,0 +1,41 @@
+name: plasma_pic_adapter
+version: 0.1.0
+domain: plasma
+status: candidate
+
+description: |
+  Phase 7C adapter that composes electromagnetic_field + particle_pusher
+  into a PIC step. The skeleton enforces the wire-up contract; the
+  numerical Yee-grid field update and current deposition land in Phase 8.
+
+inputs:
+  - name: particles
+    units: kilogram
+  - name: fields
+    units: dimensionless
+
+outputs:
+  - name: trajectories
+    units: meter
+
+validity_domain:
+  notes:
+    - "Skeleton-only at Phase 7. Phase 8 binds a real Yee solver and current deposition."
+
+references:
+  - title: "Birdsall & Langdon, *Plasma Physics via Computer Simulation*, ch. 1–4."
+
+dependencies:
+  - name: plasma_electromagnetic_field
+  - name: plasma_particle_pusher
+
+benchmarks: []
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [1, 2, 3]
+
+tests:
+  unit:
+    - tests/test_pic_adapter.py

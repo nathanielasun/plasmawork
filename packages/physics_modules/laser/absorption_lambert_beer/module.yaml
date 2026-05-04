@@ -1,0 +1,70 @@
+name: absorption_lambert_beer
+version: 0.1.0
+domain: laser
+status: validated
+
+description: |
+  Lambert-Beer absorption: I(z) = I0 * exp(-alpha z) for a homogeneous
+  medium of absorption coefficient alpha. Returns the transmitted
+  intensity for a given path length, or the path length for a target
+  transmission.
+
+inputs:
+  - name: incident_intensity
+    units: "watt / meter ** 2"
+    description: Intensity at z = 0.
+  - name: absorption_coefficient
+    units: "1 / meter"
+    description: alpha — material absorption coefficient.
+  - name: path_length
+    units: "meter"
+    description: Distance through the absorbing medium.
+
+outputs:
+  - name: transmitted_intensity
+    units: "watt / meter ** 2"
+    description: I(z) — intensity after path length z.
+  - name: transmission
+    units: "dimensionless"
+    description: I(z) / I0.
+
+validity_domain:
+  notes:
+    - "Homogeneous absorbing medium (constant alpha along the path)."
+    - "Linear absorption — no saturation, no nonlinear effects."
+    - "Single wavelength; no dispersion or wavelength averaging."
+    - "alpha and path_length both non-negative."
+
+references:
+  - title: Bouguer (1729) / Lambert (1760) / Beer (1852) — historical
+    url: https://en.wikipedia.org/wiki/Beer-Lambert_law
+  - title: "Born & Wolf, *Principles of Optics*, §1.6 (absorbing media)."
+
+dependencies: []
+
+benchmarks:
+  - id: closed_form_transmission
+    description: |
+      Verify I(z) = I0 exp(-alpha z) at three (alpha, z) pairs against
+      the closed-form value to within 1e-12 relative error.
+    reference: "closed-form analytic solution"
+    tolerance: "1e-12 relative"
+    artifact: "benchmarks/closed_form_transmission.py"
+  - id: optical_depth_unity
+    description: |
+      At alpha * z = 1 (optical depth tau = 1), transmission must equal
+      1/e to within 1e-12.
+    reference: "closed-form analytic solution"
+    tolerance: "1e-12 relative"
+    artifact: "benchmarks/closed_form_transmission.py"
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [0, 1]
+
+tests:
+  unit:
+    - tests/unit/test_absorption_lambert_beer.py
+  benchmark:
+    - tests/test_benchmarks.py

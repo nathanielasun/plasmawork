@@ -1,6 +1,6 @@
 # Phase 7 — Validated Physics Module Registry
 
-**Status: Not started**
+**Status: Complete (2026-05-03).** All five workstreams 7A–7E shipped. Default convention checker green at 485 checks; opt-in mode reports no open workstreams.
 
 ## Objective
 Move from one-off generated simulations to reusable validated scientific modules. (Plan §Phase 7.)

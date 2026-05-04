@@ -1,0 +1,15 @@
+# Repo-root pytest config.
+#
+# Default test invocations (`pytest packages/physics_modules/...`,
+# `scripts/test/all.sh`, etc.) need importlib import mode so multiple
+# physics modules with sibling `tests/` directories don't collide on
+# package names. Carries the Phase-6/7 lesson "Test gate runs unit
+# tests but not the typechecker" forward into Python: the test runner
+# enforces consistent import semantics, not the developer.
+#
+# Note: the per-package `packages/core/pyproject.toml` carries its own
+# `[tool.pytest.ini_options]` for `cd packages/core && pytest` flows.
+
+[tool.pytest.ini_options]
+addopts = "-ra --import-mode=importlib"
+python_files = ["test_*.py"]

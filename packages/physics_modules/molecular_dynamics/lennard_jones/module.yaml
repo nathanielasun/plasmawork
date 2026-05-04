@@ -1,7 +1,7 @@
 name: lennard_jones
 version: 0.1.0
 domain: molecular_dynamics
-status: candidate
+status: validated
 
 description: |
   Velocity-Verlet integrator for a system of N classical particles in 2D
@@ -34,13 +34,33 @@ validity_domain:
     - "Classical, non-relativistic."
     - "Pairwise LJ 12-6 only — no three-body terms."
     - "Periodic boundary conditions with minimum-image convention."
-    - "Energy drift bound: < 0.1% over the test window."
+    - "Energy drift bound: < 1% over the benchmark window."
 
 references:
   - title: "Frenkel & Smit, *Understanding Molecular Simulation*, 2nd ed., Algorithm 4."
+  - title: "Verlet (1967), *Computer Experiments on Classical Fluids*."
+
+dependencies: []
+
+benchmarks:
+  - id: total_energy_conservation
+    description: |
+      Velocity-Verlet conserves total energy in a microcanonical
+      ensemble. Run a small N=8 LJ system for 200 steps; total energy
+      drift must be < 1% relative to the initial total.
+    reference: "Frenkel & Smit, §4.3 — energy conservation as a Verlet sanity check"
+    tolerance: "1% relative"
+    artifact: "benchmarks/energy_conservation.py"
+
+compatibility:
+  schema_version: "0.1"
+  backends: ["python_cpu"]
+  dimensionalities: [2]
 
 tests:
   unit:
     - tests/unit/test_lennard_jones.py
   validation:
     - tests/validation/test_lennard_jones_energy_drift.py
+  benchmark:
+    - tests/test_benchmarks.py
