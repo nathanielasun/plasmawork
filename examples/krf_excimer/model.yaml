@@ -1,0 +1,162 @@
+# examples/krf_excimer/model.yaml
+#
+# Simplified KrF excimer kinetics — exploratory ModelSpec.
+#
+# Demonstrates a 4-species 0D rate-equation network driven by a 248 nm
+# KrF laser pulse. Phase 1's `python_cpu` backend supports decay (1
+# species) and conversion (2 species) interactions, so multi-body
+# kinetics (Kr* + F2 + buffer → KrF* + F) are decomposed into pairwise
+# steps. Every rate is a placeholder per the LIMITATIONS.md framing —
+# real KrF coefficients land via Phase 4 paper ingestion. The capsule
+# this run produces is therefore `exploratory`, never `validated`.
+#
+# Plan §18.1 names KrF as the canonical autonomous-pipeline target;
+# this example exercises the spec / runner / capsule path without
+# pretending to be a calibrated model.
+
+schema_version: "0.1"
+
+model:
+  name: krf_excimer
+  version: "0.1.0"
+  domain: laser_species
+  description: |
+    Simplified KrF excimer 0D kinetics. Photoexcites Kr to Kr*,
+    forms a placeholder KrF excimer from F, and tracks excimer decay
+    back to ground state. Real rate coefficients pending paper
+    ingestion; see `coefficient_sources` on each interaction.
+
+sources:
+  papers: []
+
+geometry:
+  dimensionality: 0
+  coordinate_system: cartesian
+  boundary_conditions: []
+
+species:
+  - name: Kr
+    type: atom
+    charge: 0.0
+    initial_density: "2.5e25 1/m^3"     # ~10 bar partial pressure
+  - name: Kr_star
+    type: atom
+    charge: 0.0
+    initial_density: "0.0 1/m^3"
+  - name: F
+    type: atom
+    charge: 0.0
+    initial_density: "5.0e24 1/m^3"     # F2 dissociated → 2x F
+  - name: KrF
+    type: molecule
+    charge: 0.0
+    initial_density: "0.0 1/m^3"
+
+fields:
+  - name: laser_pulse
+    type: laser
+    initialization:
+      wavelength: "248 nm"
+      pulse_duration: "20 ns"
+      peak_intensity: "1.0e10 W/m^2"
+    evolution_equation: null
+
+interactions:
+  - name: kr_photoexcitation
+    participants: [Kr, Kr_star, laser_pulse]
+    equation_refs: [eq_kr_excite]
+    coefficient_sources:
+      - "placeholder: cross-section sigma_Kr(248nm) pending Phase-4 ingestion"
+    valid_regime:
+      density_max: "1.0e27 1/m^3"
+      intensity_max: "1.0e13 W/m^2"
+  - name: kr_star_quench
+    participants: [Kr_star, Kr]
+    equation_refs: [eq_kr_quench]
+    coefficient_sources:
+      - "placeholder: collisional + radiative quench rate pending"
+    valid_regime:
+      density_max: "1.0e27 1/m^3"
+  - name: krf_formation
+    participants: [F, KrF]
+    equation_refs: [eq_krf_form]
+    coefficient_sources:
+      - "placeholder: harpooning rate Kr* + F2 -> KrF* + F (decomposed pairwise)"
+    valid_regime:
+      density_max: "1.0e27 1/m^3"
+  - name: krf_relaxation
+    participants: [KrF, Kr]
+    equation_refs: [eq_krf_decay]
+    coefficient_sources:
+      - "placeholder: KrF spontaneous emission lifetime ~6.7 ns"
+    valid_regime:
+      density_max: "1.0e27 1/m^3"
+
+equations:
+  - id: eq_kr_excite
+    latex: "dN_{Kr*}/dt = +\\sigma N_{Kr} I_{laser}"
+    description: |
+      Single-photon excitation of Kr into the metastable Kr*.
+    assumptions:
+      - "Single-photon absorption (intensity well below saturation)."
+      - "No back-stimulated emission."
+    units_checked: false
+  - id: eq_kr_quench
+    latex: "dN_{Kr*}/dt = -k_q N_{Kr*}"
+    description: |
+      Lumped collisional + radiative relaxation of Kr* back to ground.
+    assumptions:
+      - "Quenching is first-order in Kr* density at this buffer pressure."
+    units_checked: false
+  - id: eq_krf_form
+    latex: "dN_{KrF}/dt = +k_f N_{F}"
+    description: |
+      Placeholder for F + Kr* + buffer harpooning; the real reaction
+      is three-body but we decompose pairwise to fit Phase 1's runtime
+      constraint (max 2 species participants per interaction).
+    assumptions:
+      - "Buffer gas (Kr/Ne) is in vast excess; treat as constant."
+      - "Kr* is approximately steady-state during the pulse."
+    units_checked: false
+  - id: eq_krf_decay
+    latex: "dN_{KrF}/dt = -N_{KrF} / tau_{KrF}"
+    description: |
+      KrF excimer spontaneous emission at 248 nm.
+    assumptions:
+      - "Single radiative channel (B -> X transition)."
+    units_checked: false
+
+solvers:
+  recommended:
+    - name: scipy_ivp_lsoda
+      reason: "Stiff-tolerant LSODA; handles the disparate Kr/F/KrF timescales cheaply at 0D."
+      backend_compatibility: [python_cpu]
+
+diagnostics:
+  - name: species_density_Kr
+    quantity: Kr
+    output_format: parquet
+    visualization: line_plot
+  - name: species_density_Kr_star
+    quantity: Kr_star
+    output_format: parquet
+    visualization: line_plot
+  - name: species_density_F
+    quantity: F
+    output_format: parquet
+    visualization: line_plot
+  - name: species_density_KrF
+    quantity: KrF
+    output_format: parquet
+    visualization: line_plot
+
+validation:
+  expected_limits:
+    - "Total particle count Kr + Kr* + F + KrF stays positive throughout."
+    - "Kr_star peaks during the pulse, decays after."
+    - "KrF density rises from 0 then falls (formation + decay competing)."
+  conservation_laws:
+    - "Kr atoms (in Kr + Kr*): not strictly conserved here because F → KrF formally consumes a Kr atom, but the placeholder pairwise approximation drops that coupling."
+  paper_figures_to_reproduce: []
+  convergence_requirements:
+    - "Halving the timestep changes peak Kr_star density by less than 1e-4 relative."

@@ -1122,7 +1122,15 @@ for f in unit integration regression validation performance; do
 done
 for d in laser_species krf_excimer simple_rate_equations molecular_dynamics ising_phase_transition pde_wave_equation; do
   check_dir_exists "examples/$d" "examples/$d"
+  # Each example directory ships at least a runnable script + README so
+  # the dir isn't a stub. simple_rate_equations + krf_excimer also ship
+  # a model.yaml because they exercise the ModelSpec loader; the others
+  # exercise validated physics modules directly.
+  check_file_exists "examples/$d/run.py"
+  check_file_exists "examples/$d/README.md"
 done
+check_file_exists examples/simple_rate_equations/model.yaml
+check_file_exists examples/krf_excimer/model.yaml
 check_file_exists configs/default.yaml
 check_file_exists configs/local.yaml.example
 check_file_exists configs/backends.yaml

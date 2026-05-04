@@ -1,6 +1,6 @@
 # Capabilities and Limitations
 
-**Last updated: 2026-05-04 (Phase 10 closed; round-2 audit fixes landed)**
+**Last updated: 2026-05-04 (Phase 10 closed; round-2 audit fixes landed; examples backfill — `krf_excimer`, `laser_species`, `pde_wave_equation` replaced empty stubs with real working examples)**
 
 This document is the honest, non-aspirational map of what the Scientific Simulation Workbench can and cannot do today. The convention checker verifies *structural* completeness — files exist, classes define the right fields, tests cover the named verbs. It does **not** verify scientific capability. A green gate plus a passing test suite means the wiring works and regressions don't sneak back in. It does NOT mean the system can take a real laser-physics paper and produce a publishable simulation autonomously.
 
