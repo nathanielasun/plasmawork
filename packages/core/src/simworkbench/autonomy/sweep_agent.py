@@ -71,21 +71,48 @@ class ControlledSweepAgent:
         spec: SweepSpec,
         objective: Objective,
     ) -> SweepReport:
-        """Launch a budget-bounded sweep and return the raw report."""
+        """Launch a budget-bounded sweep and return the raw report.
+
+        Phase-10 round-2 audit: when the failure ratio crosses the
+        configured threshold AFTER at least four runs have happened,
+        the engine is asked to stop cleanly via the per-row observer
+        hook. The earlier implementation ran the full capped sweep
+        and only RELABELED the result; that defeated the agent's
+        purpose (saving budget on a sweep that's already failing).
+        """
         capped_spec = self._cap_spec(spec)
+        # Mutable container so the per-row closure can record the
+        # specific stop cause without reaching into engine internals.
+        stop_reason: dict[str, str] = {}
+        seen = {"completed": 0, "failed": 0}
+
+        def _observer(row) -> bool:  # noqa: ANN001 — engine API shape
+            if row.error:
+                seen["failed"] += 1
+            else:
+                seen["completed"] += 1
+            total = seen["completed"] + seen["failed"]
+            # Defer the failure-rate check until after at least four
+            # runs; small samples produce spurious abort signals.
+            if total < 4:
+                return False
+            ratio = seen["failed"] / max(total, 1)
+            if ratio >= self.failure_ratio_threshold:
+                stop_reason["reason"] = "high_failure_rate"
+                return True
+            return False
+
         engine = SweepEngine(
             spec=capped_spec,
             objective=objective,
             require_workbench_target=False,
+            on_row=_observer,
         )
         report = engine.run()
-        if self._failure_ratio(report) >= self.failure_ratio_threshold and len(
-            report.runs
-        ) >= 4:
-            # Phase 9 SweepEngine already runs to completion of the
-            # spec; we tag the report so callers see why we'd recommend
-            # halting follow-ups.
-            report.stopped_reason = "high_failure_rate"
+        if "reason" in stop_reason:
+            # Engine set stopped_reason="stopped_by_observer"; replace
+            # with the agent's specific cause for auditability.
+            report.stopped_reason = stop_reason["reason"]
         return report
 
     def launch_with_summary(

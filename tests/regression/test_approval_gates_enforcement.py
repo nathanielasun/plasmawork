@@ -25,7 +25,7 @@ from simworkbench.paths import repo_root
 
 
 def test_consume_without_grant_refuses(tmp_path):
-    gate = ApprovalGate(state_dir=tmp_path / "approvals")
+    gate = ApprovalGate(state_dir=tmp_path / "approvals", require_workbench_target=False)
     with pytest.raises(ApprovalRequiredError, match="No human-approval token"):
         gate.consume(action="trusted_promotion", subject="some_module")
 
@@ -37,8 +37,9 @@ def test_grant_then_single_use_consume(tmp_path):
         subject="capsule_42",
         reviewer="pytest",
         state_dir=state_dir,
+        require_workbench_target=False,
     )
-    gate = ApprovalGate(state_dir=state_dir)
+    gate = ApprovalGate(state_dir=state_dir, require_workbench_target=False)
     record = gate.consume(action="expensive_run", subject="capsule_42")
     assert record.reviewer == "pytest"
     with pytest.raises(ApprovalRequiredError):
@@ -52,8 +53,9 @@ def test_token_is_subject_scoped(tmp_path):
         subject="capsule_a",
         reviewer="pytest",
         state_dir=state_dir,
+        require_workbench_target=False,
     )
-    gate = ApprovalGate(state_dir=state_dir)
+    gate = ApprovalGate(state_dir=state_dir, require_workbench_target=False)
     with pytest.raises(ApprovalRequiredError):
         gate.consume(action="external_export", subject="capsule_b")
 
@@ -65,8 +67,9 @@ def test_token_is_action_scoped(tmp_path):
         subject="capsule_a",
         reviewer="pytest",
         state_dir=state_dir,
+        require_workbench_target=False,
     )
-    gate = ApprovalGate(state_dir=state_dir)
+    gate = ApprovalGate(state_dir=state_dir, require_workbench_target=False)
     with pytest.raises(ApprovalRequiredError):
         gate.consume(action="destructive_edits", subject="capsule_a")
 

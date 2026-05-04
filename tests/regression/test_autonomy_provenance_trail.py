@@ -80,7 +80,7 @@ def test_scientific_reviewer_only_writes_review_subtree(tmp_path):
     (paper_sources / "paper.pdf").write_bytes(b"%PDF")
     (provenance / "provenance.lock").write_text("a", encoding="utf-8")
 
-    written = ScientificReviewer().write(capsule_path)
+    written = ScientificReviewer().write(capsule_path, require_workbench_target=False)
     assert written.is_file()
     # Nothing else changed.
     assert (user_edits / "user_file.py").read_text(encoding="utf-8") == "# user"

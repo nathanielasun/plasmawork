@@ -1194,7 +1194,58 @@ def create_app() -> FastAPI:
     # (trusted-promotion, expensive-runs, external-export, destructive-edits)
     # require an out-of-band token (`grant_autonomy_approval`) — the API
     # never reads `actor` / `role` from the body.
+    #
+    # Phase-10 round-2 audit: every endpoint here APPENDS one entry to the
+    # capsule's ``provenance/agent_trace.md`` so an autonomous decision is
+    # auditable post hoc. The earlier implementation returned 200 without
+    # any provenance write — that defeated plan §Phase 10's "preserve
+    # inspectability" requirement.
     # -----------------------------------------------------------------------
+
+    def _trace_autonomy(
+        capsule_path: Path,
+        *,
+        agent: str,
+        action: str,
+        files_touched: tuple[str, ...] = (),
+        notes: str = "",
+    ) -> None:
+        from simworkbench.provenance import AgentTraceWriter
+
+        target = capsule_path / "provenance" / "agent_trace.md"
+        AgentTraceWriter(target).append(
+            agent=agent,
+            action=action,
+            files_touched=files_touched,
+            notes=notes,
+        )
+
+    def _autonomy_sweep_budget(default: int = 32) -> int:
+        """Read the controlled-sweep budget from configs/agents.yaml.
+
+        Phase-10 round-2 audit: previously hard-coded 8, ignoring the
+        ``max_evaluations_per_launch`` documented in the YAML. The
+        config is now the source of truth; bad / missing values fall
+        back to the default with a server log entry but never silently
+        promote past the YAML's documented cap.
+        """
+        import yaml
+
+        from simworkbench.paths import repo_root
+
+        config_path = repo_root() / "configs" / "agents.yaml"
+        try:
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        except OSError:
+            return default
+        for entry in config.get("agents", []) or []:
+            if entry.get("role") == "controlled_sweep":
+                budget_block = entry.get("budget") or {}
+                cap = budget_block.get("max_evaluations_per_launch")
+                if isinstance(cap, int) and cap > 0:
+                    return cap
+                break
+        return default
 
     @app.post("/api/autonomy/design/{name}")
     def autonomy_design(name: str) -> dict[str, Any]:
@@ -1226,6 +1277,17 @@ def create_app() -> FastAPI:
             plan = ExperimentDesigner().design(spec)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        status = capsule_status_for_plan(plan)
+        _trace_autonomy(
+            capsule_path,
+            agent="experiment_design",
+            action="autonomy_design",
+            files_touched=("model/model_spec.yaml",),
+            notes=(
+                f"plan_status={status}; placeholders="
+                f"{','.join(plan.placeholders) if plan.placeholders else 'none'}"
+            ),
+        )
         return {
             "capsule": name,
             "minimum_viable_model": plan.minimum_viable_model,
@@ -1245,7 +1307,74 @@ def create_app() -> FastAPI:
             "diagnostics": list(plan.diagnostics),
             "validation_path": list(plan.validation_path),
             "placeholders": list(plan.placeholders),
-            "capsule_status": capsule_status_for_plan(plan),
+            "capsule_status": status,
+        }
+
+    @app.post("/api/autonomy/smoke/{name}")
+    def autonomy_smoke(name: str) -> dict[str, Any]:
+        """Run a SmokeRunner pass against the capsule's ModelSpec.
+
+        Phase-10 round-2 audit added this endpoint: 10B was implemented
+        as a library but not surfaced through the API. The UI panel
+        advertises four endpoints (design / smoke / sweep / review);
+        this completes the set.
+        """
+        from simworkbench.autonomy import SmokeRunner
+        from simworkbench.experiment import (
+            BackendConfig,
+            Experiment,
+            RunConfig,
+        )
+        from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
+
+        capsule_path = _resolve_capsule(name)
+        spec_path = capsule_path / "model" / "model_spec.yaml"
+        if not spec_path.is_file():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Capsule {name!r} has no model/model_spec.yaml; "
+                    "design first."
+                ),
+            )
+        try:
+            spec = _load_modelspec_yaml(spec_path)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to load ModelSpec: {exc}",
+            ) from exc
+        try:
+            experiment = Experiment.from_model_spec(
+                spec,
+                run_config=RunConfig(
+                    start_time="0 s", end_time="1 ns", max_steps=10
+                ),
+                backend_config=BackendConfig(name="python_cpu"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot build Experiment from spec: {exc}",
+            ) from exc
+        report = SmokeRunner().run(experiment)
+        _trace_autonomy(
+            capsule_path,
+            agent="autonomous_runs",
+            action="autonomy_smoke",
+            notes=(
+                f"instability_flags={len(report.instability_flags)}; "
+                f"adjustments_suggested={len(report.suggested_param_adjustments)}"
+            ),
+        )
+        return {
+            "capsule": name,
+            "diagnostics_interpretation": dict(report.diagnostics_interpretation),
+            "instability_flags": list(report.instability_flags),
+            "suggested_param_adjustments": list(
+                report.suggested_param_adjustments
+            ),
+            "review_markdown": report.review_markdown,
         }
 
     @app.post("/api/autonomy/review/{name}")
@@ -1260,9 +1389,16 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        rel = written.relative_to(capsule_path)
+        _trace_autonomy(
+            capsule_path,
+            agent="scientific_review",
+            action="autonomy_review",
+            files_touched=(str(rel),),
+        )
         return {
             "capsule": name,
-            "review_path": str(written.relative_to(capsule_path)),
+            "review_path": str(rel),
         }
 
     @app.post("/api/autonomy/sweep/{name}")
@@ -1278,11 +1414,7 @@ def create_app() -> FastAPI:
         from simworkbench.autonomy import ControlledSweepAgent
         from simworkbench.sweep import GridSampler, SweepSpec
 
-        # _resolve_capsule validates the name + path-traversal guard.
-        # The result is unused beyond that — the autonomy sweep does
-        # not touch the capsule's filesystem, only its metadata via
-        # the capsule name.
-        _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name)
         if not body.parameters:
             raise HTTPException(
                 status_code=400,
@@ -1293,14 +1425,28 @@ def create_app() -> FastAPI:
             parameters=body.parameters,  # type: ignore[arg-type]
             sampler=GridSampler(),
         )
-        # Server-side budget — the body never carries it.
-        agent = ControlledSweepAgent(budget=8, summary_metric=body.metric)
+        # Phase-10 round-2 audit: budget comes from configs/agents.yaml
+        # (controlled_sweep.budget.max_evaluations_per_launch). The body
+        # never carries a budget — passing one would be a Phase-6
+        # bypass-kwarg replay.
+        budget = _autonomy_sweep_budget()
+        agent = ControlledSweepAgent(budget=budget, summary_metric=body.metric)
         first_axis = next(iter(body.parameters))
 
         def objective(p: dict[str, float]) -> dict[str, float]:
             return {body.metric: float(p[first_axis]) ** 2}
 
         result = agent.launch_with_summary(spec, objective)
+        _trace_autonomy(
+            capsule_path,
+            agent="controlled_sweep",
+            action="autonomy_sweep",
+            notes=(
+                f"budget={budget}; completed={len(result.report.completed)}; "
+                f"failed={len(result.report.failed)}; "
+                f"stopped_reason={result.report.stopped_reason}"
+            ),
+        )
         return {
             "capsule": name,
             "trend_summary": result.trend_summary,
@@ -1309,6 +1455,7 @@ def create_app() -> FastAPI:
             "completed": len(result.report.completed),
             "failed": len(result.report.failed),
             "stopped_reason": result.report.stopped_reason,
+            "budget": budget,
         }
 
     return app

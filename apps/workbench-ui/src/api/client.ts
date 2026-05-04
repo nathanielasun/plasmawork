@@ -253,6 +253,14 @@ export interface ApiClient {
   designExperiment(capsule: string): Promise<AutonomyDesignResponse>;
 
   /**
+   * Phase 10 / 10B — run a smoke pass against the capsule. Returns the
+   * agent's diagnostics interpretation + instability flags +
+   * suggested adjustments. The server logs the action to the capsule's
+   * provenance/agent_trace.md.
+   */
+  smokeExperiment(capsule: string): Promise<AutonomySmokeResponse>;
+
+  /**
    * Phase 10 / 10D — run ScientificReviewer on the capsule. Writes
    * `<capsule>/review/scientific_review.md` and returns the path.
    * (`scientific_review` agent role.)
@@ -292,6 +300,14 @@ export interface AutonomyDesignResponse {
 export interface AutonomyReviewResponse {
   capsule: string;
   review_path: string;
+}
+
+export interface AutonomySmokeResponse {
+  capsule: string;
+  diagnostics_interpretation: Record<string, string>;
+  instability_flags: string[];
+  suggested_param_adjustments: string[];
+  review_markdown: string;
 }
 
 export interface AutonomySweepBody {
@@ -651,6 +667,16 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
     reviewExperiment: (capsule) =>
       fetchJson(
         `/autonomy/review/${encodeURIComponent(capsule)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+        baseUrl,
+      ),
+    smokeExperiment: (capsule) =>
+      fetchJson(
+        `/autonomy/smoke/${encodeURIComponent(capsule)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

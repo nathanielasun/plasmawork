@@ -71,6 +71,7 @@ class SweepEngine:
         checkpoint_path: str | Path | None = None,
         sweep_id: str | None = None,
         require_workbench_target: bool = True,
+        on_row: Callable[[SweepRow], bool | None] | None = None,
     ) -> None:
         self.spec = spec
         self.objective = objective
@@ -79,6 +80,12 @@ class SweepEngine:
         )
         self.sweep_id = sweep_id or uuid.uuid4().hex
         self.require_workbench_target = require_workbench_target
+        # Per-row observer hook. Returning True asks the engine to
+        # stop cleanly (Phase-10 round-2 audit: ControlledSweepAgent
+        # needs to abort mid-sweep when failure ratio crosses the
+        # threshold; running the full capped sweep before labeling
+        # "high_failure_rate" defeats the agent's purpose).
+        self.on_row = on_row
         self._completed_keys: set[tuple] = set()
         self._completed_rows: list[SweepRow] = []
         # Validate the checkpoint path BEFORE any work runs (Phase-8
@@ -237,6 +244,14 @@ class SweepEngine:
                 if budget_remaining == 0:
                     report.stopped_reason = "budget_cap"
                     break
+            # Phase-10 round-2 audit: per-row observer can request a
+            # clean stop. Reason is set by the observer via
+            # ``report.stopped_reason`` (the engine reads it after
+            # break) so the abort cause is auditable.
+            if self.on_row is not None and self.on_row(row):
+                if not report.stopped_reason:
+                    report.stopped_reason = "stopped_by_observer"
+                break
 
         if not report.stopped_reason:
             report.stopped_reason = "completed"

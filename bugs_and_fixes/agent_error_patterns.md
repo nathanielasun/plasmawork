@@ -1518,3 +1518,128 @@ The drift happens because the tag is a hard-coded literal in JSX rather than a v
 
 ### Bug log
 - 2026-05-04 *Phase 9 post-close audit*: `apps/workbench-ui/src/App.tsx` rendered `<p className="phase-tag">Phase 1F</p>` after Phase 9 closed. Fix: bumped to `Phase 9`; updated docstrings in adjacent components to remove "Phase 1F" from the headline; added regression test that parses the rendered tag.
+
+---
+
+## Error Pattern: Spec-level placeholder data not propagated through derived plan objects
+
+### Why it is bad
+A spec carries an explicit "this is exploratory / fabricated / TBD" marker on one of its fields (e.g. `interactions[*].coefficient_sources` entries prefixed with `"placeholder:"`). The runtime honors the marker — it refuses to silently use the placeholder rate. But a derived object — a plan, a summary, a manifest — that's supposed to surface "any placeholders present?" to a downstream caller never walks the spec's structure to extract them. The derived object is constructed with `placeholders=[]` by default; only an explicit setter (or test fixture) populates it. Real-world specs flow through with `placeholders=[]` and downstream "is this validated?" decisions return `validated`.
+
+The pattern is a propagation gap: the marker exists in the source, the runtime respects it, but a sibling consumer that should also respect it doesn't. The test suite passes because the test fixtures use the explicit setter (`with_placeholder_coefficient(...)`), which DOES populate the field. The real-world callers that go through the spec → plan path never trigger the fixture.
+
+### Required behavior
+- For every flagged-data convention (placeholder markers, "needs human review" banners, units-missing flags), the producer of derived objects walks the spec's data structure and extracts the flag. The walk is in code, not behind a manual setter.
+- Tests cover BOTH paths: the explicit setter (for ergonomics) AND the spec-level data path (for real-world fidelity). A test fixture that manually flags placeholders does not prove the spec-level path works.
+
+### Detection
+- Grep derived objects (plans, reports, manifests) for `placeholders=[]` / `flagged=set()` / `missing=()`. Each is a default that may never be populated by the real-world code path.
+- Round-trip test: load a spec with a flag in the data; assert the derived object also carries the flag. If the test only flags via a setter, it's incomplete.
+
+### Bug log
+- 2026-05-04 *Phase 10 round-2 audit*: `ExperimentDesigner.design(spec)` returned `ExperimentPlan(placeholders=[])` even when `spec.interactions[*].coefficient_sources` carried `"placeholder:..."` entries. `capsule_status_for_plan(plan)` returned `validated` for every placeholder-backed real-world spec. Fix: `ExperimentDesigner._collect_placeholders` walks `spec.interactions` and surfaces every flagged interaction by name.
+
+---
+
+## Error Pattern: API endpoint claims provenance/inspectability but writes no trace
+
+### Why it is bad
+The plan's milestone Pre-gate lists "every autonomous decision is logged in `<capsule>/provenance/agent_trace.md`". The API endpoint that runs the autonomous decision returns 200 with the result, but never imports the trace writer. The trace silently doesn't get written. Any positive verification ("did the trace land?") was deferred to "later" and never wired in.
+
+The accompanying regression test was a NEGATIVE assertion ("the reviewer doesn't touch off-limits trees") rather than a POSITIVE assertion ("the trace file exists with the right entry"). The negative test passed because the reviewer indeed didn't touch off-limits trees — the test's assertion didn't actually verify the positive plan-named requirement. The test name and docstring suggested coverage that the assertion didn't deliver.
+
+### Required behavior
+- Every endpoint that the plan declares "auditable" appends a structured row to the capsule's `provenance/agent_trace.md` with the agent role, action, files touched, and a notes field summarising the result.
+- The regression test for the endpoint asserts the trace file EXISTS and CONTAINS the expected action name. Negative-assertion tests don't satisfy positive-claim plan items.
+- A shared helper inside the API server is the canonical writer; endpoints can't accidentally emit a 200 without a trace because the helper IS the success path.
+
+### Detection
+- Grep the API server for endpoint handlers; for each, confirm a call to the trace writer in the success path.
+- Read every regression test whose name promises a positive assertion; verify the assertion actually CHECKS the positive thing, not just that the negative didn't happen.
+
+### Bug log
+- 2026-05-04 *Phase 10 round-2 audit*: `POST /api/autonomy/{design,review,sweep}` returned 200 without writing any provenance trace. `tests/regression/test_autonomy_provenance_trail.py` only asserted negatives. Fix: new `_trace_autonomy()` helper wraps `AgentTraceWriter`; every endpoint calls it in the success path; new round-2 tests assert the trace file exists with the expected action name.
+
+---
+
+## Error Pattern: Mid-loop abort labeled but not enforced
+
+### Why it is bad
+An agent wraps a long-running loop (sweep engine, optimization, batch import) and is supposed to abort the loop early when some condition crosses a threshold (failure rate, cost ceiling, time budget). The implementation runs the FULL loop, then post-processes the report and sets `stopped_reason="aborted"` if the threshold was crossed. The user sees the label but the work was already done.
+
+This is the same shape as the Phase 9 audit's `BayesianOptimizerHook` finding: callback-driven early-stop that only labeled the result, never terminated. The pattern keeps recurring because the wrapper treats the inner engine as a black box without a per-row hook.
+
+### Required behavior
+- The inner engine exposes a per-row / per-iteration observer hook whose return value (e.g. `True` to abort) actually stops the loop.
+- The wrapper agent installs the observer in its `launch` / `run` and returns the (potentially partial) report with a specific `stopped_reason` distinguishing "abort cause" from "completion".
+- Regression test: synthetic input that triggers the abort condition mid-loop; assert `len(report.runs) < spec.budget` AND `report.stopped_reason` is the specific abort cause.
+
+### Detection
+- Grep agent / wrapper classes for `engine.run()` followed by post-processing of `report.stopped_reason`. If the post-processing OVERWRITES the reason without proving the inner engine was stopped, that's a label.
+- Look for `engine.run()` calls that finish before the wrapper's threshold is checked.
+
+### Bug log
+- 2026-05-04 *Phase 10 round-2 audit*: `ControlledSweepAgent.launch` ran the full capped sweep then relabeled `stopped_reason="high_failure_rate"`. Fix: `SweepEngine.__init__` gained an `on_row` callback; agent installs a per-row observer that actually aborts when failure ratio crosses the threshold (after a 4-run warm-up).
+
+---
+
+## Error Pattern: Each new phase re-introduces the locality leak on new writers
+
+### Why it is bad
+The workbench has a load-bearing locality contract: program artifacts under `local_cache/`, `temp_imports/`, `temp_runs/`, or `simulation_capsules/`. Phase 8 audit added the contract to `SlurmJob.write` and `StubPICAdapter`. Phase 9 audit added it to `SweepEngine`, `SweepCheckpoint.save`, `ComparisonReport.write`. Phase 10 introduced two new writers — `ScientificReviewer.write` and `ApprovalGate(state_dir=...)` — and BOTH shipped without the guard.
+
+This is the third consecutive audit catching the same pattern on different writer surfaces. Each phase adds new writers; without a shared guard helper, the rule lives in `agent_error_patterns.md` prose and gets re-forgotten.
+
+### Required behavior
+- Every writer that accepts a `target | path | state_dir | output_dir` argument calls `is_under_workbench(target)` BEFORE creating the destination, with a `require_workbench_target: bool = True` opt-out kwarg.
+- New writers ship with both the guard AND a regression test in the same commit that introduces them.
+- Long-term: a shared helper (`require_workbench_target_or_raise(path)`) removes the per-writer copy/paste; the convention checker forbids new writer signatures that don't import it.
+
+### Detection
+- For every new writer surface (functions that take a `path` and write to disk), grep the file for `is_under_workbench`. Each that doesn't call it is a flag.
+- A pre-commit pattern check: list every writer surface in the diff; each must appear in the corresponding regression test.
+
+### Bug log
+- 2026-05-04 *Phase 10 round-2 audit*: `ScientificReviewer.write(/private/tmp/...)` and `ApprovalGate(state_dir=/private/tmp/...)` accepted off-workbench targets. Fix: each gained `require_workbench_target=True` + `is_under_workbench` check; tests using `tmp_path` pass the explicit opt-out.
+
+---
+
+## Error Pattern: Hard-coded budget while YAML carries the documented cap
+
+### Why it is bad
+The repo has a config file (`configs/agents.yaml`, `configs/backends.yaml`, etc.) declaring a documented cap — e.g. `controlled_sweep.budget.max_evaluations_per_launch: 32`. The corresponding API endpoint hard-codes a different number (`budget=8`) inline. The YAML is documentation; the code is the actual enforcement. The two drift because nothing reads the YAML.
+
+The risk is two-fold: (1) the YAML lies to anyone who reads it expecting it to govern the system; (2) bumping the YAML cap doesn't change the system's behavior, so an operator's intuitive "loosen the cap" workflow silently does nothing.
+
+### Required behavior
+- Every YAML config block that declares a numeric cap is READ by the code that enforces it. The code falls back to a documented default if the config is malformed / missing, but never silently promotes past the YAML.
+- A regression test loads the YAML, extracts the cap, and asserts the API endpoint reports the same number (e.g. through a `"budget"` field in the response).
+
+### Detection
+- Grep API handlers + library entry points for numeric literals matching `budget=` / `max_=` / `cap=` / `limit=`. Each is a flag if the surrounding subsystem has a YAML config block declaring the same concept.
+- Round-trip test: bump the YAML to a sentinel value; rerun the test; assert the response reflects the sentinel.
+
+### Bug log
+- 2026-05-04 *Phase 10 round-2 audit*: `POST /api/autonomy/sweep` hard-coded `budget=8` while `configs/agents.yaml` set `controlled_sweep.budget.max_evaluations_per_launch: 32`. Fix: new `_autonomy_sweep_budget()` helper reads the YAML; sweep response includes `budget` so callers can verify the cap.
+
+---
+
+## Error Pattern: Library/UI/docs claim N affordances while API ships fewer
+
+### Why it is bad
+The plan's deliverable list (or a docstring, or a UI panel comment) names N user-facing affordances — e.g. "drives the four autonomy endpoints (design / smoke / sweep / review)". The library has all N. The API ships fewer (only three handlers). The UI calls the missing endpoint and gets 404. The mismatch is hidden because:
+  - Library tests exercise the agents directly, bypassing the API.
+  - UI tests only verify the panel renders, not that buttons hit live endpoints.
+  - Documentation describes the intended state, not the shipped state.
+
+### Required behavior
+- The plan's deliverable count == library agents == API handlers == UI buttons. A regression test enumerates each affordance and asserts every layer carries it.
+- Word-by-word audit of plan deliverable descriptions: every named verb maps to a real API handler AND a real UI affordance AND an end-to-end test that exercises the full path.
+- Docstrings that say "drives N endpoints" are accompanied by a test that loads N endpoints and asserts each returns a non-error status.
+
+### Detection
+- Grep UI components for "endpoints" / "actions" claims. For each claim, count the wired calls. Mismatches are flags.
+- Diff API server handler list against library agent list. Misalignments are flags.
+
+### Bug log
+- 2026-05-04 *Phase 10 round-2 audit*: `AutonomyPanel.tsx` docstring claimed "drives the four autonomy endpoints (design / smoke / sweep / review)"; only three were wired. Fix: added `POST /api/autonomy/smoke/{name}` + `apiClient.smokeExperiment` + a "Smoke run" button in the panel with results section.

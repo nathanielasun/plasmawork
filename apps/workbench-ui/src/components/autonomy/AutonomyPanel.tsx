@@ -5,22 +5,28 @@
  * Every action emits DATA only — no mutation runs without an explicit
  * approval token granted via `simworkbench.autonomy.grant_autonomy_approval`
  * (a CLI / human-in-the-loop helper, intentionally absent from the UI).
+ *
+ * Phase-10 round-2 audit: every endpoint also writes one line to the
+ * capsule's `provenance/agent_trace.md` so an autonomous decision is
+ * auditable post hoc.
  */
 import { useState } from "react";
 import {
   apiClient,
   type AutonomyDesignResponse,
   type AutonomyReviewResponse,
+  type AutonomySmokeResponse,
   type AutonomySweepResponse,
 } from "../../api/client";
 
 export default function AutonomyPanel() {
   const [capsule, setCapsule] = useState("");
   const [design, setDesign] = useState<AutonomyDesignResponse | null>(null);
+  const [smoke, setSmoke] = useState<AutonomySmokeResponse | null>(null);
   const [review, setReview] = useState<AutonomyReviewResponse | null>(null);
   const [sweep, setSweep] = useState<AutonomySweepResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [running, setRunning] = useState<"none" | "design" | "review" | "sweep">("none");
+  const [running, setRunning] = useState<"none" | "design" | "smoke" | "review" | "sweep">("none");
 
   const handleDesign = async () => {
     setError(null);
@@ -28,6 +34,19 @@ export default function AutonomyPanel() {
     try {
       const result = await apiClient.designExperiment(capsule.trim());
       setDesign(result);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning("none");
+    }
+  };
+
+  const handleSmoke = async () => {
+    setError(null);
+    setRunning("smoke");
+    try {
+      const result = await apiClient.smokeExperiment(capsule.trim());
+      setSmoke(result);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -100,6 +119,14 @@ export default function AutonomyPanel() {
         &nbsp;
         <button
           type="button"
+          onClick={handleSmoke}
+          disabled={!capsule.trim() || running !== "none"}
+        >
+          {running === "smoke" ? "Running smoke…" : "Smoke run"}
+        </button>
+        &nbsp;
+        <button
+          type="button"
           onClick={handleSweep}
           disabled={!capsule.trim() || running !== "none"}
         >
@@ -165,6 +192,38 @@ export default function AutonomyPanel() {
               <li key={v}>{v}</li>
             ))}
           </ol>
+        </section>
+      )}
+
+      {smoke && (
+        <section>
+          <h3>Smoke run</h3>
+          {smoke.instability_flags.length === 0 ? (
+            <p>Healthy run — no instability detected.</p>
+          ) : (
+            <>
+              <p>
+                <strong>Instability flags ({smoke.instability_flags.length}):</strong>
+              </p>
+              <ul>
+                {smoke.instability_flags.map((flag) => (
+                  <li key={flag}>{flag}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {smoke.suggested_param_adjustments.length > 0 && (
+            <>
+              <p>
+                <strong>Suggested adjustments (review before applying):</strong>
+              </p>
+              <ul>
+                {smoke.suggested_param_adjustments.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </>
+          )}
         </section>
       )}
 

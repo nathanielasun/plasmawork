@@ -78,11 +78,33 @@ class ApprovalGate:
     ``local_cache/autonomy_approvals/`` in production.
     """
 
-    def __init__(self, state_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        state_dir: str | Path | None = None,
+        *,
+        require_workbench_target: bool = True,
+    ) -> None:
         self.state_dir = (
             Path(state_dir) if state_dir is not None
             else local_cache_root() / APPROVAL_SUBDIR
         )
+        # Phase-10 round-2 audit: approval state must live under the
+        # workbench's managed roots. The earlier implementation
+        # accepted ``state_dir=/private/tmp/...`` which let an
+        # autonomy probe drop tokens (and audit trails) outside the
+        # repo. The opt-out kwarg matches the pattern used by every
+        # other Phase-8/9/10 writer.
+        self.require_workbench_target = require_workbench_target
+        if require_workbench_target:
+            from simworkbench.paths import is_under_workbench
+
+            if not is_under_workbench(self.state_dir):
+                raise PermissionError(
+                    f"Refusing to use approval state_dir outside "
+                    f"workbench-managed roots: {self.state_dir}. "
+                    "Pass require_workbench_target=False if the user "
+                    "explicitly chose an external destination."
+                )
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
     def _token_path(self, *, action: str, subject: str) -> Path:
@@ -133,12 +155,14 @@ def grant_autonomy_approval(
     subject: str,
     reviewer: str = "local",
     state_dir: str | Path | None = None,
+    require_workbench_target: bool = True,
 ) -> Path:
     """Write a single-use approval token to disk.
 
     The HTTP API never invokes this — it's a CLI / human-in-the-loop
     helper. The file at the returned path exists exactly until
-    ``ApprovalGate.consume`` deletes it.
+    ``ApprovalGate.consume`` deletes it. ``require_workbench_target``
+    matches the gate's own locality guard.
     """
     _validate_action(action)
     if not subject:
@@ -150,7 +174,10 @@ def grant_autonomy_approval(
             "Reviewer name required so the approval is auditable; "
             "the agent's own identity is not a valid reviewer."
         )
-    gate = ApprovalGate(state_dir=state_dir)
+    gate = ApprovalGate(
+        state_dir=state_dir,
+        require_workbench_target=require_workbench_target,
+    )
     target = gate._token_path(action=action, subject=subject)
     payload = (
         f"reviewer: {reviewer}\n"

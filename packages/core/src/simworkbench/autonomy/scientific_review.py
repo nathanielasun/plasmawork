@@ -76,16 +76,40 @@ class ScientificReviewer:
         review.recommended_validation = self._recommended_validation(spec)
         return review
 
-    def write(self, capsule_path: str | Path) -> Path:
+    def write(
+        self,
+        capsule_path: str | Path,
+        *,
+        require_workbench_target: bool = True,
+    ) -> Path:
         """Run the review and write
         ``<capsule>/review/scientific_review.md``.
 
-        Refuses to write anywhere outside the ``review/`` subtree.
+        Refuses to write anywhere outside the ``review/`` subtree, and
+        — when ``require_workbench_target=True`` (the default) —
+        refuses to land outside the four workbench-managed roots
+        (Phase-8/9 audit lesson, repeated for the autonomy writer).
         """
         capsule_path = Path(capsule_path)
         review = self.review(capsule_path)
         review_dir = capsule_path / "review"
         target = review_dir / "scientific_review.md"
+        # Phase-10 round-2 audit: enforce the workbench-managed-roots
+        # locality guard BEFORE the in-capsule subtree check, so that
+        # `/private/tmp/<anything>` is rejected up front. The earlier
+        # implementation only validated the in-capsule subtree, which
+        # silently accepted writes anywhere on disk if the caller
+        # passed an off-workbench capsule path.
+        if require_workbench_target:
+            from simworkbench.paths import is_under_workbench
+
+            if not is_under_workbench(target):
+                raise PermissionError(
+                    f"Refusing to write review outside workbench-"
+                    f"managed roots: {target}. Pass "
+                    "require_workbench_target=False if the user "
+                    "explicitly chose an external destination."
+                )
         # Defense-in-depth: refuse if the resolved target tries to
         # land inside a forbidden subtree. Path traversal would have
         # to be deliberate, but we still verify.

@@ -290,7 +290,7 @@ def test_phase_10_gate_walk_scientific_reviewer_writes_markdown(tmp_path):
         "solvers: {recommended: [{name: rate_equation_0d, backend_compatibility: [python_cpu]}]}\n",
         encoding="utf-8",
     )
-    written = ScientificReviewer().write(capsule_path)
+    written = ScientificReviewer().write(capsule_path, require_workbench_target=False)
     assert written.is_file()
     assert written.relative_to(capsule_path).parts[:2] == ("review", "scientific_review.md")
 
@@ -310,7 +310,7 @@ def test_phase_10_gate_walk_scientific_reviewer_never_writes_user_edits(tmp_path
     user_edits = capsule_path / "src" / "user_edits"
     user_edits.mkdir(parents=True)
     (user_edits / "user_file.py").write_text("# user", encoding="utf-8")
-    ScientificReviewer().write(capsule_path)
+    ScientificReviewer().write(capsule_path, require_workbench_target=False)
     assert (user_edits / "user_file.py").read_text(encoding="utf-8") == "# user"
 
 
@@ -322,7 +322,7 @@ def test_phase_10_gate_walk_scientific_reviewer_never_writes_user_edits(tmp_path
 def test_phase_10_gate_walk_approval_gate_refuses_without_token(tmp_path):
     """ApprovalGate refuses a privileged action when no token has
     been granted out-of-band."""
-    gate = ApprovalGate(state_dir=tmp_path / "approvals")
+    gate = ApprovalGate(state_dir=tmp_path / "approvals", require_workbench_target=False)
     with pytest.raises(ApprovalRequiredError):
         gate.consume(action="trusted_promotion", subject="some_module")
 
@@ -336,8 +336,9 @@ def test_phase_10_gate_walk_approval_gate_grants_then_consumes(tmp_path):
         subject="capsule_42",
         reviewer="pytest",
         state_dir=state_dir,
+        require_workbench_target=False,
     )
-    gate = ApprovalGate(state_dir=state_dir)
+    gate = ApprovalGate(state_dir=state_dir, require_workbench_target=False)
     record = gate.consume(action="expensive_run", subject="capsule_42")
     assert record.action == "expensive_run"
     # Second consume of the same action+subject must refuse.
@@ -354,8 +355,9 @@ def test_phase_10_gate_walk_approval_gate_action_token_isolation(tmp_path):
         subject="capsule_x",
         reviewer="pytest",
         state_dir=state_dir,
+        require_workbench_target=False,
     )
-    gate = ApprovalGate(state_dir=state_dir)
+    gate = ApprovalGate(state_dir=state_dir, require_workbench_target=False)
     with pytest.raises(ApprovalRequiredError):
         gate.consume(action="destructive_edits", subject="capsule_x")
 
@@ -377,8 +379,9 @@ def test_phase_10_gate_walk_approval_gate_action_set_complete(tmp_path):
             subject=f"subj_{action}",
             reviewer="pytest",
             state_dir=state_dir,
+            require_workbench_target=False,
         )
-    gate = ApprovalGate(state_dir=state_dir)
+    gate = ApprovalGate(state_dir=state_dir, require_workbench_target=False)
     for action in actions:
         record = gate.consume(action=action, subject=f"subj_{action}")
         assert record.action == action

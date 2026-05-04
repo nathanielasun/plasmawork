@@ -32,6 +32,61 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-04: Phase 10 round-2 audit — six legitimate review findings
+
+### Affected subsystem
+- `simworkbench.autonomy.experiment_design` (placeholder propagation)
+- `simworkbench.api.server` (autonomy endpoints — provenance trace, budget config, missing smoke endpoint)
+- `simworkbench.autonomy.sweep_agent` (early-stop on failure ratio)
+- `simworkbench.autonomy.scientific_review` (locality guard)
+- `simworkbench.autonomy.approval_gates` (locality guard)
+- `simworkbench.sweep.engine` (per-row observer hook, new infrastructure)
+- `apps/workbench-ui/src/components/autonomy/AutonomyPanel.tsx` (smoke button)
+
+### Symptoms
+1. **Critical** — Placeholder coefficients in `ModelSpec.interactions[*].coefficient_sources` were not propagated into `ExperimentPlan.placeholders`. A placeholder-backed spec produced `capsule_status_for_plan(plan) == "validated"`, exactly the failure plan §22 (Scientific Accuracy Policy) exists to prevent. Direct probe: `PLACEHOLDER_PROBE [] validated`.
+2. **High** — Phase 10 inspectability/provenance was not actually written. The autonomy API endpoints returned 200 but no `<capsule>/provenance/agent_trace.md` entry appeared. The misleading regression test in `tests/regression/test_autonomy_provenance_trail.py` only asserted "the reviewer doesn't write into off-limits subtrees", not "an agent_trace entry was actually appended". Direct probe: `TRACE_EXISTS False`.
+3. **High** — `ControlledSweepAgent` did not stop failed runs early. The agent ran the full capped sweep, then RELABELED the result `high_failure_rate` at the end. The plan-named "stop failed runs" verb (Workstream 10C) was a label, not an actual mid-sweep abort. Direct probe: 20 grid points → 20 attempted → 20 failed before any stop signal.
+4. **High** — Phase 10 writers wrote outside workbench-managed roots when given arbitrary paths. `ScientificReviewer.write(/private/tmp/...)` and `ApprovalGate(state_dir=/private/tmp/...)` both accepted off-workbench targets, even though the same Phase-8/9 audit pattern had locked down `SweepEngine`, `SweepCheckpoint`, `ComparisonReport`, `SlurmJob`, `StubPICAdapter`. The review writer had a partial in-capsule subtree check; that check fired only AFTER `relative_to(capsule)`, which silently accepted any capsule path on disk.
+5. **Medium** — API sweep ignored configured server policy. `configs/agents.yaml` set `controlled_sweep.budget.max_evaluations_per_launch: 32`, but the autonomy sweep endpoint hard-coded `budget=8`. Direct probe: `BUDGET_PROBE 32 200 8 budget_cap` (config 32, request 200, executed 8, stopped at hard-coded cap).
+6. **Medium** — Workstream 10B had no user-facing smoke endpoint or UI. The plan's deliverable list named four autonomy verbs (design / smoke / sweep / review); the API and UI shipped only three. The UI panel docstring claimed "drives the four autonomy endpoints" but the smoke handler was missing.
+
+### Root cause
+- **Finding 1:** `ExperimentDesigner.design` constructed `ExperimentPlan(placeholders=[])` unconditionally. The walk over `spec.interactions` was added by hand for tests in `test_autonomy_no_validated_without_evidence.py` via `with_placeholder_coefficient(...)`, but the real-world path (a spec on disk with a `placeholder:`-prefixed `coefficient_sources` entry) never wired through.
+- **Finding 2:** Plan §Phase 10 milestone Pre-gate listed "every autonomous decision is logged in the capsule's `provenance/agent_trace.md`" but the API endpoints just returned the agent's data. The `AgentTraceWriter` from Phase 2B was not imported anywhere in `simworkbench.api.server`. The provenance regression test passed because it asserted a NEGATIVE (the reviewer doesn't touch off-limits trees), not a POSITIVE (the trace gets written).
+- **Finding 3:** `SweepEngine` had no per-row observer hook, so the agent had no way to interrupt the engine mid-sweep. The agent's `launch` post-processed the report after `engine.run()` returned. The pattern is the same shape as the Phase 9 audit's "label vs. actually stop" finding for `BayesianOptimizerHook`.
+- **Finding 4:** The review/approval writers were added without the standard `require_workbench_target=True` + `is_under_workbench` check. Each new Phase introduces new writers; without a shared helper, agents forget the rule. Caught the same way for `SweepEngine` / `SweepCheckpoint` / `ComparisonReport` (Phase 9 audit) — Phase 10 re-introduced the leak on a different surface.
+- **Finding 5:** `ControlledSweepAgent(budget=8, ...)` was a Python literal in the API endpoint, not a read from `configs/agents.yaml`. The YAML's `controlled_sweep.budget.max_evaluations_per_launch: 32` was prose, not enforced.
+- **Finding 6:** The Phase 10 close shipped `simworkbench.autonomy.SmokeRunner` as a library and had three (not four) API endpoints. The mismatch between "the library has four agents" and "the API has three handlers" was hidden by the gate-walk test, which exercised the LIBRARY agents directly rather than going through the API.
+
+### Fix
+1. `ExperimentDesigner.design` now walks `spec.interactions` and appends every interaction whose `coefficient_sources` carries an entry starting with `"placeholder"` (matches the runtime's convention in `simworkbench.runtime.python_cpu`). Two regression tests cover the placeholder-flagged case (`exploratory`) and the clean case (`validated`).
+2. New `_trace_autonomy()` helper in `simworkbench.api.server` wraps `AgentTraceWriter`. Every autonomy endpoint (`design`, `smoke`, `sweep`, `review`) now appends one row to `<capsule>/provenance/agent_trace.md` carrying the agent role, action name, files touched, and a notes field summarising the result. Three regression tests pin the trace's existence.
+3. `SweepEngine.__init__` gained a new `on_row` callback parameter; returning `True` stops the engine cleanly. `ControlledSweepAgent.launch` wires this to a per-row failure-rate check (defers the abort signal until at least four rows are seen, then stops once `failed / total >= failure_ratio_threshold`). The engine sets `stopped_reason="stopped_by_observer"` and the agent overwrites with the specific cause `"high_failure_rate"`. Regression: 20 grid points + always-failing objective stops at <20 runs with the right cause.
+4. `ScientificReviewer.write` and `ApprovalGate.__init__` (and `grant_autonomy_approval`) gained `require_workbench_target=True` + `is_under_workbench` checks. The opt-out kwarg matches the pattern used by every other Phase-8/9/10 writer; tests using `tmp_path` pass `require_workbench_target=False`.
+5. New `_autonomy_sweep_budget()` helper in `simworkbench.api.server` reads `configs/agents.yaml::controlled_sweep.budget.max_evaluations_per_launch` and falls back to a documented default. The sweep response now includes `budget` so callers can verify the server-side cap.
+6. New `POST /api/autonomy/smoke/{name}` endpoint plus `apiClient.smokeExperiment` and a "Smoke run" button + result section in `AutonomyPanel.tsx`. The endpoint runs `SmokeRunner` against the capsule's spec and writes the matching provenance trace.
+
+### Regression protection
+- 13 new tests in `tests/regression/test_phase_10_round2_audit.py` covering all six findings (one or more tests per finding, with both positive + negative paths where applicable).
+- Six new error patterns added to `bugs_and_fixes/agent_error_patterns.md`:
+  1. Spec-level placeholder data not propagated through derived plan objects.
+  2. API endpoint claims provenance/inspectability but writes no trace.
+  3. Mid-loop abort labeled but not enforced (sibling of Phase-9 BayesianOptimizerHook finding).
+  4. New writer surfaces miss the locality guard (sibling of Phase-9 finding, repeated for Phase-10 surfaces).
+  5. Hard-coded server-side budget while YAML carries a documented cap.
+  6. UI/library claim N affordances while API ships fewer.
+
+### Agent warning
+- When the spec's data structure carries a placeholder-marker convention (e.g. `"placeholder:"` prefix on `coefficient_sources`), every derived plan / report / capsule that asks "is this fabricated?" must walk the original structure, not just the explicit setter the test fixtures use. A library helper that's only callable manually is not a propagator.
+- "Provenance trail exists" is a positive claim; a regression test that only asserts "the reviewer doesn't touch user_edits/" doesn't verify the positive. Add an explicit existence + content check.
+- Agents that wrap a long-running engine for early-stop semantics need a per-row callback. Post-call relabeling is not stopping.
+- Each new writer surface in a new phase needs the locality guard; this is the third audit (Phase 8, Phase 9, Phase 10) where a writer slipped through. A shared wrapper helper would prevent recurrence.
+- YAML config blocks documenting a cap need to be read by code; otherwise they're prose. Cross-cutting "always-on" rules from `configs/agents.yaml` are tested for code/YAML lockstep.
+- Plan's deliverable list defines an N-item set; the API and UI must both ship N items. The gate-walk test exercising library agents directly hides UI/API gaps — write at least one end-to-end test that goes through the user-facing surface.
+
+---
+
 ## 2026-05-04: Phase 9 post-close audit — eight legitimate review findings
 
 ### Affected subsystem

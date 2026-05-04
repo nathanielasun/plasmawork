@@ -131,13 +131,38 @@ class ExperimentDesigner:
                 "validation strategy."
             )
 
+        # Phase-10 audit (round 2): walk the spec's interactions and
+        # surface any `coefficient_sources` entries prefixed with
+        # `"placeholder:"`. Without this propagation, a spec built
+        # entirely from placeholder rates was reported as `validated`
+        # by capsule_status_for_plan() — exactly the failure plan §22
+        # exists to prevent.
+        placeholders = self._collect_placeholders(spec)
+
         return ExperimentPlan(
             minimum_viable_model=mvp,
             fidelity_ladder=ladder,
             cost_estimate=cost,
             diagnostics=diagnostics,
             validation_path=validation_path,
+            placeholders=placeholders,
         )
+
+    @staticmethod
+    def _collect_placeholders(spec: ModelSpec) -> list[str]:
+        """Extract every interaction whose coefficient_sources flag a
+        placeholder rate (matches the runtime's convention in
+        ``simworkbench.runtime.python_cpu``: any source string whose
+        lowercased form starts with ``placeholder``).
+        """
+        flagged: list[str] = []
+        for ix in getattr(spec, "interactions", []) or []:
+            sources = getattr(ix, "coefficient_sources", []) or []
+            for src in sources:
+                if str(src).lower().startswith("placeholder"):
+                    flagged.append(ix.name)
+                    break
+        return flagged
 
     @staticmethod
     def _build_fidelity_ladder(spec: ModelSpec) -> list[FidelityStep]:
