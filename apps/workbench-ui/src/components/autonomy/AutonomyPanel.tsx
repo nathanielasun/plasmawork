@@ -9,6 +9,11 @@
  * Phase-10 round-2 audit: every endpoint also writes one line to the
  * capsule's `provenance/agent_trace.md` so an autonomous decision is
  * auditable post hoc.
+ *
+ * Styling: uses the shared `Card` / `Pill` / `Kpi` primitives from
+ * `components/ui/`. The `capsule_status` field is rendered as a Pill so
+ * the Plan §22 invariant (placeholders → exploratory) is visible at a
+ * glance instead of buried in JSON.
  */
 import { useState } from "react";
 import {
@@ -18,6 +23,7 @@ import {
   type AutonomySmokeResponse,
   type AutonomySweepResponse,
 } from "../../api/client";
+import { Card, Kpi, Pill } from "../ui";
 
 export default function AutonomyPanel() {
   const [capsule, setCapsule] = useState("");
@@ -84,173 +90,235 @@ export default function AutonomyPanel() {
     }
   };
 
+  const disableActions = !capsule.trim() || running !== "none";
+
   return (
     <article>
-      <h2>Autonomy</h2>
-      <p>
-        Phase 10 — autonomous experiment design loop. Every action below
-        emits data; nothing mutates the capsule's lifecycle status.
-        Privileged actions (trusted-promotion, expensive-runs,
-        external-export, destructive-edits) require an out-of-band
-        approval token (see <code>simworkbench.autonomy.grant_autonomy_approval</code>).
-      </p>
+      <header className="hero">
+        <div className="hero-row">
+          <div>
+            <p className="hero-eyebrow">Phase 10 · Autonomy</p>
+            <h1 className="hero-title">Autonomous experiment design loop</h1>
+            <p className="hero-subtitle">
+              Every action below emits data; nothing mutates the capsule's
+              lifecycle status. Privileged actions (trusted-promotion,
+              expensive-runs, external-export, destructive-edits) require an
+              out-of-band approval token via{" "}
+              <code>simworkbench.autonomy.grant_autonomy_approval</code>.
+            </p>
+          </div>
+        </div>
+      </header>
 
-      <p>
-        <label>
-          Capsule:&nbsp;
-          <input
-            aria-label="autonomy-capsule"
-            value={capsule}
-            onChange={(e) => setCapsule(e.target.value)}
-            size={40}
-            placeholder="autonomous_experiment_kr_demo.lxp"
-          />
-        </label>
-      </p>
-
-      <p>
-        <button
-          type="button"
-          onClick={handleDesign}
-          disabled={!capsule.trim() || running !== "none"}
-        >
-          {running === "design" ? "Designing…" : "Design experiment"}
-        </button>
-        &nbsp;
-        <button
-          type="button"
-          onClick={handleSmoke}
-          disabled={!capsule.trim() || running !== "none"}
-        >
-          {running === "smoke" ? "Running smoke…" : "Smoke run"}
-        </button>
-        &nbsp;
-        <button
-          type="button"
-          onClick={handleSweep}
-          disabled={!capsule.trim() || running !== "none"}
-        >
-          {running === "sweep" ? "Sweeping…" : "Bounded sweep"}
-        </button>
-        &nbsp;
-        <button
-          type="button"
-          onClick={handleReview}
-          disabled={!capsule.trim() || running !== "none"}
-        >
-          {running === "review" ? "Reviewing…" : "Scientific review"}
-        </button>
-      </p>
+      <Card
+        title="Capsule"
+        subtitle="Pick a capsule under simulation_capsules/. The four actions below run against its model_spec.yaml and append to provenance/agent_trace.md."
+      >
+        <div className="row" style={{ marginBottom: "0.75rem" }}>
+          <label>
+            <span className="eyebrow" style={{ marginRight: "0.5rem" }}>Capsule</span>
+            <input
+              aria-label="autonomy-capsule"
+              value={capsule}
+              onChange={(e) => setCapsule(e.target.value)}
+              size={40}
+              placeholder="autonomous_experiment_kr_demo.lxp"
+            />
+          </label>
+        </div>
+        <div className="row">
+          <button
+            type="button"
+            className="primary"
+            onClick={handleDesign}
+            disabled={disableActions}
+          >
+            {running === "design" ? "Designing…" : "Design experiment"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSmoke}
+            disabled={disableActions}
+          >
+            {running === "smoke" ? "Running smoke…" : "Smoke run"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSweep}
+            disabled={disableActions}
+          >
+            {running === "sweep" ? "Sweeping…" : "Bounded sweep"}
+          </button>
+          <button
+            type="button"
+            onClick={handleReview}
+            disabled={disableActions}
+          >
+            {running === "review" ? "Reviewing…" : "Scientific review"}
+          </button>
+        </div>
+      </Card>
 
       {error && (
-        <p role="alert" className="error">
+        <p role="alert" className="error" style={{ marginTop: "1rem" }}>
           {error}
         </p>
       )}
 
       {design && (
-        <section>
-          <h3>Plan</h3>
-          <p>
-            <strong>Minimum viable model:</strong> {design.minimum_viable_model}
-          </p>
-          <p>
-            <strong>Capsule status:</strong>{" "}
-            <code>{design.capsule_status}</code>
-            {design.placeholders.length > 0 && (
-              <>
-                {" "}
-                (placeholders: {design.placeholders.join(", ")})
-              </>
-            )}
-          </p>
-          <p>
-            <strong>Cost estimate:</strong>{" "}
-            {design.cost_estimate.total_cpu_seconds.toFixed(2)} CPU-s on{" "}
-            <code>{design.cost_estimate.backend}</code>
-          </p>
-          <h4>Fidelity ladder</h4>
-          <ol>
-            {design.fidelity_ladder.map((step) => (
-              <li key={step.label}>
-                <code>{step.label}</code> ({step.cpu_cost_factor}×) —{" "}
-                {step.description}
-              </li>
-            ))}
-          </ol>
-          <h4>Diagnostics</h4>
-          <ul>
-            {design.diagnostics.map((d) => (
-              <li key={d}>
-                <code>{d}</code>
-              </li>
-            ))}
-          </ul>
-          <h4>Validation path</h4>
-          <ol>
-            {design.validation_path.map((v) => (
-              <li key={v}>{v}</li>
-            ))}
-          </ol>
-        </section>
+        <Card
+          title="Plan"
+          subtitle={design.minimum_viable_model}
+          action={
+            <Pill
+              kind={
+                design.capsule_status === "validated"
+                  ? "validated"
+                  : "exploratory"
+              }
+            >
+              {design.capsule_status}
+            </Pill>
+          }
+        >
+          <div className="kpi-strip">
+            <Kpi
+              label="Cost estimate"
+              value={`${design.cost_estimate.total_cpu_seconds.toFixed(2)} CPU-s`}
+            />
+            <Kpi label="Backend" value={<code>{design.cost_estimate.backend}</code>} />
+            <Kpi label="Fidelity rungs" value={design.fidelity_ladder.length} />
+            <Kpi
+              label="Placeholders"
+              value={design.placeholders.length}
+            />
+          </div>
+
+          {design.placeholders.length > 0 && (
+            <Card nested title="Placeholder coefficients" subtitle="Plan §22 — the capsule cannot be promoted to validated while any of these are unresolved.">
+              <div className="row">
+                {design.placeholders.map((name) => (
+                  <Pill key={name} kind="warning">
+                    {name}
+                  </Pill>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          <Card nested title="Fidelity ladder">
+            <ol style={{ margin: 0, paddingLeft: "1.2rem" }}>
+              {design.fidelity_ladder.map((step) => (
+                <li key={step.label}>
+                  <code>{step.label}</code> ({step.cpu_cost_factor}×) —{" "}
+                  {step.description}
+                </li>
+              ))}
+            </ol>
+          </Card>
+
+          <Card nested title="Diagnostics">
+            <div className="row">
+              {design.diagnostics.map((d) => (
+                <Pill key={d} kind="diagnostic">
+                  {d}
+                </Pill>
+              ))}
+            </div>
+          </Card>
+
+          <Card nested title="Validation path">
+            <ol style={{ margin: 0, paddingLeft: "1.2rem" }}>
+              {design.validation_path.map((v) => (
+                <li key={v}>{v}</li>
+              ))}
+            </ol>
+          </Card>
+        </Card>
       )}
 
       {smoke && (
-        <section>
-          <h3>Smoke run</h3>
+        <Card
+          title="Smoke run"
+          action={
+            smoke.instability_flags.length === 0 ? (
+              <Pill kind="trusted">healthy</Pill>
+            ) : (
+              <Pill kind="warning">
+                {smoke.instability_flags.length} flag
+                {smoke.instability_flags.length === 1 ? "" : "s"}
+              </Pill>
+            )
+          }
+        >
           {smoke.instability_flags.length === 0 ? (
-            <p>Healthy run — no instability detected.</p>
+            <p className="muted">No instability detected in the smoke trajectory.</p>
           ) : (
-            <>
-              <p>
-                <strong>Instability flags ({smoke.instability_flags.length}):</strong>
-              </p>
-              <ul>
+            <Card nested title="Instability flags">
+              <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
                 {smoke.instability_flags.map((flag) => (
                   <li key={flag}>{flag}</li>
                 ))}
               </ul>
-            </>
+            </Card>
           )}
           {smoke.suggested_param_adjustments.length > 0 && (
-            <>
-              <p>
-                <strong>Suggested adjustments (review before applying):</strong>
-              </p>
-              <ul>
+            <Card
+              nested
+              title="Suggested adjustments"
+              subtitle="Review before applying — the agent does not auto-apply parameter changes."
+            >
+              <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
                 {smoke.suggested_param_adjustments.map((s) => (
                   <li key={s}>{s}</li>
                 ))}
               </ul>
-            </>
+            </Card>
           )}
-        </section>
+        </Card>
       )}
 
       {sweep && (
-        <section>
-          <h3>Bounded sweep</h3>
-          <p>{sweep.trend_summary}</p>
-          <p>
-            <strong>Next sweep:</strong> {sweep.next_sweep_recommendation}
-          </p>
-          <p>
-            Completed {sweep.completed}, failed {sweep.failed} (failure ratio{" "}
-            {(sweep.failure_ratio * 100).toFixed(1)}%) — stopped:{" "}
-            <code>{sweep.stopped_reason}</code>
-          </p>
-        </section>
+        <Card
+          title="Bounded sweep"
+          subtitle={sweep.trend_summary}
+          action={
+            <Pill
+              kind={
+                sweep.stopped_reason === "high_failure_rate"
+                  ? "warning"
+                  : "validated"
+              }
+            >
+              {sweep.stopped_reason}
+            </Pill>
+          }
+        >
+          <div className="kpi-strip">
+            <Kpi label="Completed" value={sweep.completed} />
+            <Kpi label="Failed" value={sweep.failed} />
+            <Kpi
+              label="Failure ratio"
+              value={`${(sweep.failure_ratio * 100).toFixed(1)}%`}
+            />
+          </div>
+          <Card nested title="Next sweep recommendation">
+            <p style={{ margin: 0 }}>{sweep.next_sweep_recommendation}</p>
+          </Card>
+        </Card>
       )}
 
       {review && (
-        <section>
-          <h3>Scientific review</h3>
+        <Card
+          title="Scientific review"
+          action={<Pill kind="validation">written</Pill>}
+        >
           <p>
             Wrote <code>{review.review_path}</code> under capsule{" "}
-            <code>{review.capsule}</code>. Open the file in the Code
-            Viewer to read the full critique.
+            <code>{review.capsule}</code>. Open the file in the Code Viewer
+            to read the full critique.
           </p>
-        </section>
+        </Card>
       )}
     </article>
   );

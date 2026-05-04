@@ -1,10 +1,113 @@
+/* =============================================================================
+ * Scientific Simulation Workbench — design tokens + component classes.
+ *
+ * Three goals:
+ *   1. Encode the typed-graph mental model in semantic tokens. Node kinds
+ *      (paper / model / solver / diagnostic / validation / export) and trust
+ *      states (draft / candidate / validated / trusted / deprecated /
+ *      exploratory) map to consistent fill + border + foreground triples.
+ *   2. Provide reusable component classes (Card, Pill, Kpi, Segment,
+ *      NodeCard) so panels share visual language without each one
+ *      reinventing it.
+ *   3. Keep the existing element-level styles (sidebar, layout, table,
+ *      lifecycle bar, badge-*) working — older panels still render
+ *      identically; new panels opt in to the new primitives.
+ *
+ * The bare-CSS approach is deliberate per `LIMITATIONS.md` — visual polish
+ * is bounded to what the substrate's stage of development justifies. No
+ * Tailwind, no PostCSS, no third-party design system.
+ * ===========================================================================*/
+
 :root {
+  /* Legacy palette — preserved for backward compatibility. */
   --fg: #1a1a1a;
   --bg: #fafafa;
   --muted: #6b6b6b;
   --accent: #2b6cb0;
   --border: #e0e0e0;
   --code-bg: #f0f0f0;
+
+  /* ---- Surfaces (depth without heavy shadow) ---- */
+  --surface-page: #f4f4f6;
+  --surface-card: #ffffff;
+  --surface-nested: #f7f7f9;
+  --surface-emphasis: #ffffff;
+
+  /* ---- Elevation ---- */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.06), 0 4px 8px rgba(15, 23, 42, 0.04);
+
+  /* ---- Radius scale ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* ---- Spacing scale ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+
+  /* ---- Node-kind palette (typed-graph mental model). Each kind ships a
+   *      fill / border / foreground triple. Mirrors the toy UI's mapping. */
+  --kind-paper-fill:        #f5f3ff;
+  --kind-paper-border:      #ddd6fe;
+  --kind-paper-fg:          #4c1d95;
+
+  --kind-model-fill:        #eff6ff;
+  --kind-model-border:      #bfdbfe;
+  --kind-model-fg:          #1e3a8a;
+
+  --kind-solver-fill:       #ffffff;
+  --kind-solver-border:     #cbd5e1;
+  --kind-solver-fg:         #0f172a;
+
+  --kind-diagnostic-fill:   #ecfeff;
+  --kind-diagnostic-border: #a5f3fc;
+  --kind-diagnostic-fg:     #155e75;
+
+  --kind-validation-fill:   #fffbeb;
+  --kind-validation-border: #fde68a;
+  --kind-validation-fg:     #78350f;
+
+  --kind-export-fill:       #ecfdf5;
+  --kind-export-border:     #a7f3d0;
+  --kind-export-fg:         #065f46;
+
+  /* ---- Trust-state palette. The toy UI's convention: validated = blue
+   *      (tested against truth), trusted = green (promoted with approval),
+   *      candidate = amber (under review), draft = slate (just exists),
+   *      deprecated = red (don't use), exploratory = amber (placeholders). */
+  --status-draft-fill:        #f1f5f9;
+  --status-draft-border:      #cbd5e1;
+  --status-draft-fg:          #475569;
+
+  --status-candidate-fill:    #fef3c7;
+  --status-candidate-border:  #fcd34d;
+  --status-candidate-fg:      #92400e;
+
+  --status-validated-fill:    #dbeafe;
+  --status-validated-border:  #93c5fd;
+  --status-validated-fg:      #1e40af;
+
+  --status-trusted-fill:      #d1fae5;
+  --status-trusted-border:    #6ee7b7;
+  --status-trusted-fg:        #065f46;
+
+  --status-deprecated-fill:   #fee2e2;
+  --status-deprecated-border: #fca5a5;
+  --status-deprecated-fg:     #7f1d1d;
+
+  --status-exploratory-fill:  #fef3c7;
+  --status-exploratory-border: #fcd34d;
+  --status-exploratory-fg:    #92400e;
+
+  --status-warning-fill:      #fff7ed;
+  --status-warning-border:    #fdba74;
+  --status-warning-fg:        #7c2d12;
 }
 
 * {
@@ -19,7 +122,7 @@ body,
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--fg);
-  background: var(--bg);
+  background: var(--surface-page);
   font-size: 15px;
   line-height: 1.55;
 }
@@ -32,6 +135,10 @@ a:hover {
   text-decoration: underline;
 }
 
+/* =============================================================================
+ * Layout — sidebar + main.
+ * ===========================================================================*/
+
 .layout {
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -41,7 +148,7 @@ a:hover {
 aside.sidebar {
   border-right: 1px solid var(--border);
   padding: 1.25rem 0.9rem;
-  background: #fff;
+  background: var(--surface-card);
   position: sticky;
   top: 0;
   height: 100vh;
@@ -53,29 +160,48 @@ aside.sidebar h1 {
   font-size: 0.95rem;
   margin: 0 0 1.25rem 0;
   color: var(--fg);
+  letter-spacing: -0.01em;
 }
 
-aside.sidebar ul {
+aside.sidebar nav ul {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-aside.sidebar li {
-  padding: 0.2rem 0;
+aside.sidebar nav li {
+  padding: 0.1rem 0;
 }
 
-aside.sidebar a.active {
-  font-weight: 600;
+aside.sidebar nav a {
+  display: block;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.875rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+aside.sidebar nav a:hover {
+  background: var(--surface-nested);
   color: var(--fg);
+  text-decoration: none;
+}
+aside.sidebar nav a.active {
+  background: var(--surface-nested);
+  color: var(--fg);
+  font-weight: 600;
 }
 
 aside.sidebar .phase-tag {
   margin-top: auto;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--muted);
   border-top: 1px solid var(--border);
-  padding-top: 0.5rem;
+  padding-top: 0.75rem;
+  margin-bottom: 0;
 }
 
 main {
@@ -85,15 +211,22 @@ main {
 
 main h2 {
   margin-top: 0;
+  font-weight: 700;
+  letter-spacing: -0.005em;
 }
+
+/* =============================================================================
+ * Buttons.
+ * ===========================================================================*/
 
 button {
   font: inherit;
-  padding: 0.35rem 0.8rem;
+  padding: 0.4rem 0.85rem;
   border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 4px;
+  background: var(--surface-card);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 button:hover {
   border-color: var(--accent);
@@ -103,49 +236,15 @@ button:disabled {
   cursor: not-allowed;
 }
 
-code,
-pre {
-  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
-  font-size: 0.88em;
-  background: var(--code-bg);
+button.primary {
+  background: var(--fg);
+  color: var(--surface-card);
+  border-color: var(--fg);
+  font-weight: 600;
 }
-code {
-  padding: 0.1em 0.3em;
-  border-radius: 0.2em;
-}
-pre {
-  padding: 1rem;
-  border-radius: 0.4em;
-  overflow-x: auto;
-}
-pre code {
-  padding: 0;
-  background: none;
-}
-
-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1rem 0;
-}
-th,
-td {
-  border: 1px solid var(--border);
-  padding: 0.4rem 0.6rem;
-  text-align: left;
-  font-size: 0.92em;
-}
-th {
-  background: #f0f0f0;
-}
-
-.placeholder {
-  color: var(--muted);
-  font-style: italic;
-}
-
-.muted {
-  color: var(--muted);
+button.primary:hover {
+  background: #2d3748;
+  border-color: #2d3748;
 }
 
 /* Phase 2D — capsule explorer detail panel. */
@@ -169,6 +268,65 @@ button.tab.tab-active {
   font-weight: 600;
 }
 
+/* =============================================================================
+ * Code + tables.
+ * ===========================================================================*/
+
+code,
+pre {
+  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+}
+code {
+  padding: 0.1em 0.3em;
+  border-radius: 0.2em;
+}
+pre {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+pre code {
+  padding: 0;
+  background: none;
+}
+
+/* Dark code block (capsule manifest, generated YAML, etc.). */
+pre.code-dark {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #1e293b;
+}
+pre.code-dark code {
+  color: inherit;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th,
+td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-size: 0.92em;
+}
+th {
+  background: var(--surface-nested);
+  font-weight: 600;
+}
+
+.placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+.muted {
+  color: var(--muted);
+}
+
 .status-ok {
   color: #2f7a3a;
 }
@@ -176,18 +334,258 @@ button.tab.tab-active {
   color: #b22222;
 }
 
-.badge {
-  display: inline-block;
-  padding: 0.05rem 0.4rem;
+/* =============================================================================
+ * Card — rounded panel with title + subtitle + optional action.
+ * ===========================================================================*/
+
+.card {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+.card + .card {
+  margin-top: var(--space-5);
+}
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: var(--space-4);
+}
+.card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.005em;
+}
+.card-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 65ch;
+}
+.card-action {
+  flex-shrink: 0;
+}
+
+/* Nested panel inside a card. */
+.card-panel {
+  background: var(--surface-nested);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+}
+.card-panel + .card-panel {
+  margin-top: var(--space-3);
+}
+
+/* =============================================================================
+ * Pill — rounded chip for status, kind, or eyebrow tags.
+ * ===========================================================================*/
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
   border-radius: 999px;
-  font-size: 0.75em;
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+  color: var(--muted);
+  white-space: nowrap;
+  line-height: 1.3;
   vertical-align: middle;
 }
-.badge-warning {
-  background: #fff3cd;
-  color: #7a5b00;
-  border: 1px solid #f0d97a;
+.pill-draft        { background: var(--status-draft-fill);        border-color: var(--status-draft-border);        color: var(--status-draft-fg); }
+.pill-candidate    { background: var(--status-candidate-fill);    border-color: var(--status-candidate-border);    color: var(--status-candidate-fg); }
+.pill-validated    { background: var(--status-validated-fill);    border-color: var(--status-validated-border);    color: var(--status-validated-fg); }
+.pill-trusted      { background: var(--status-trusted-fill);      border-color: var(--status-trusted-border);      color: var(--status-trusted-fg); }
+.pill-deprecated   { background: var(--status-deprecated-fill);   border-color: var(--status-deprecated-border);   color: var(--status-deprecated-fg); }
+.pill-exploratory  { background: var(--status-exploratory-fill);  border-color: var(--status-exploratory-border);  color: var(--status-exploratory-fg); }
+.pill-warning      { background: var(--status-warning-fill);      border-color: var(--status-warning-border);      color: var(--status-warning-fg); }
+
+/* Kind-coded pills (paper / model / solver / etc.) */
+.pill-paper        { background: var(--kind-paper-fill);        border-color: var(--kind-paper-border);        color: var(--kind-paper-fg); }
+.pill-model        { background: var(--kind-model-fill);        border-color: var(--kind-model-border);        color: var(--kind-model-fg); }
+.pill-solver       { background: var(--kind-solver-fill);       border-color: var(--kind-solver-border);       color: var(--kind-solver-fg); }
+.pill-diagnostic   { background: var(--kind-diagnostic-fill);   border-color: var(--kind-diagnostic-border);   color: var(--kind-diagnostic-fg); }
+.pill-validation   { background: var(--kind-validation-fill);   border-color: var(--kind-validation-border);   color: var(--kind-validation-fg); }
+.pill-export       { background: var(--kind-export-fill);       border-color: var(--kind-export-border);       color: var(--kind-export-fg); }
+
+/* =============================================================================
+ * Kpi — small metric card (label + value).
+ * ===========================================================================*/
+
+.kpi-strip {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-bottom: var(--space-5);
 }
+.kpi {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
+  box-shadow: var(--shadow-sm);
+}
+.kpi-label {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kpi-value {
+  margin: 0.25rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--fg);
+  letter-spacing: -0.02em;
+}
+
+/* =============================================================================
+ * Hero — page-level header with eyebrow + title + subtitle.
+ * ===========================================================================*/
+
+.hero {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  margin-bottom: var(--space-6);
+  box-shadow: var(--shadow-sm);
+}
+.hero-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+.hero-eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hero-title {
+  margin: 0.5rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.hero-subtitle {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 65ch;
+}
+
+/* =============================================================================
+ * Segment — tab-as-pill nav (mode toggle, view switcher).
+ * ===========================================================================*/
+
+.segment {
+  display: inline-flex;
+  background: var(--surface-nested);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  gap: 4px;
+  border: 1px solid var(--border);
+}
+.segment button {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  box-shadow: none;
+}
+.segment button:hover {
+  color: var(--fg);
+  border-color: transparent;
+}
+.segment button.segment-active {
+  background: var(--surface-card);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border);
+}
+
+/* =============================================================================
+ * NodeCard — kind-aware abstraction node (typed-graph element).
+ * ===========================================================================*/
+
+.node-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface-card);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.node-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.node-card.node-paper      { background: var(--kind-paper-fill);      border-color: var(--kind-paper-border);      color: var(--kind-paper-fg); }
+.node-card.node-model      { background: var(--kind-model-fill);      border-color: var(--kind-model-border);      color: var(--kind-model-fg); }
+.node-card.node-solver     { background: var(--kind-solver-fill);     border-color: var(--kind-solver-border);     color: var(--kind-solver-fg); }
+.node-card.node-diagnostic { background: var(--kind-diagnostic-fill); border-color: var(--kind-diagnostic-border); color: var(--kind-diagnostic-fg); }
+.node-card.node-validation { background: var(--kind-validation-fill); border-color: var(--kind-validation-border); color: var(--kind-validation-fg); }
+.node-card.node-export     { background: var(--kind-export-fill);     border-color: var(--kind-export-border);     color: var(--kind-export-fg); }
+
+.node-card-eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.node-card-title {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.node-card-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+  line-height: 1.45;
+}
+.node-card-contract {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.05);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
+}
+
+/* =============================================================================
+ * Manifest list — label/value rows.
+ * ===========================================================================*/
 
 .manifest-row {
   display: grid;
@@ -202,7 +600,10 @@ button.tab.tab-active {
   word-break: break-all;
 }
 
-/* Phase 3D — tool lifecycle bar + per-status badge colors. */
+/* =============================================================================
+ * Phase 3D — tool lifecycle bar (kept; refactored to use tokens).
+ * ===========================================================================*/
+
 ol.lifecycle {
   list-style: none;
   display: flex;
@@ -227,28 +628,63 @@ ol.lifecycle li.lifecycle-active {
   font-weight: 600;
 }
 
-.badge-draft {
-  background: #eee;
-  color: #555;
-  border: 1px solid #ccc;
+/* =============================================================================
+ * Legacy badge classes — retained for ToolList, ParameterList, CapsuleCodeView.
+ * Now refactored to use the new trust-state tokens (visual unification with
+ * the new Pill component, semantics unchanged).
+ * ===========================================================================*/
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75em;
+  font-weight: 600;
+  vertical-align: middle;
+  border: 1px solid;
 }
-.badge-candidate {
-  background: #e3f0fd;
-  color: #225a98;
-  border: 1px solid #a8c8ec;
+.badge-warning    { background: var(--status-warning-fill);    color: var(--status-warning-fg);    border-color: var(--status-warning-border); }
+.badge-draft      { background: var(--status-draft-fill);      color: var(--status-draft-fg);      border-color: var(--status-draft-border); }
+.badge-candidate  { background: var(--status-candidate-fill);  color: var(--status-candidate-fg);  border-color: var(--status-candidate-border); }
+.badge-validated  { background: var(--status-validated-fill);  color: var(--status-validated-fg);  border-color: var(--status-validated-border); }
+.badge-trusted    { background: var(--status-trusted-fill);    color: var(--status-trusted-fg);    border-color: var(--status-trusted-border); }
+.badge-deprecated { background: var(--status-deprecated-fill); color: var(--status-deprecated-fg); border-color: var(--status-deprecated-border); }
+
+/* =============================================================================
+ * Utility classes used in ad-hoc places.
+ * ===========================================================================*/
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
-.badge-validated {
-  background: #e3f7e6;
-  color: #2f7a3a;
-  border: 1px solid #a3d7ae;
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
-.badge-trusted {
-  background: #d4eecf;
-  color: #225522;
-  border: 1px solid #7eb47e;
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
-.badge-deprecated {
-  background: #fbe6e6;
-  color: #8a3030;
-  border: 1px solid #d8a8a8;
+.error {
+  background: var(--status-deprecated-fill);
+  color: var(--status-deprecated-fg);
+  border: 1px solid var(--status-deprecated-border);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
 }
