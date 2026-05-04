@@ -1138,6 +1138,35 @@ def create_app() -> FastAPI:
             "size_bytes": written.stat().st_size,
         }
 
+    # -----------------------------------------------------------------------
+    # Phase 9 / 9D — Comparative reports. The Python reporter
+    # (``simworkbench.reports.ComparisonReport``) writes manifest.json
+    # under ``<capsule>/comparison/``. This endpoint surfaces it; no
+    # business logic in the API.
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/comparison/{name}")
+    def get_comparison_report(name: str) -> dict[str, Any]:
+        import json as _json
+
+        capsule_path = _resolve_capsule(name)
+        manifest_path = capsule_path / "comparison" / "manifest.json"
+        if not manifest_path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No comparison/manifest.json under capsule {name!r}. "
+                    "Run a sweep + ComparisonReport.write() first."
+                ),
+            )
+        try:
+            return _json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=500,
+                detail=f"Comparison manifest unreadable: {exc}",
+            ) from exc
+
     return app
 
 

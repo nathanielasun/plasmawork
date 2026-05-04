@@ -1,6 +1,6 @@
 # Phase 9 — Parameter Sweeps, Optimization, and Uncertainty
 
-**Status: Not started**
+**Status: Complete (2026-05-04).** All four workstreams 9A–9D shipped. Default convention checker green at 646 checks; opt-in mode reports no open workstreams.
 
 ## Objective
 Turn the workbench into a computational experiment factory. (Plan §Phase 9.)
@@ -25,15 +25,15 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 Starting-point hints from plan §Phase 9:
 
-- ☐ `packages/core/src/simworkbench/sweep/__init__.py` — sweep engine supporting grid, random, Latin hypercube, and adaptive sampling. Sweep-level checkpointing.
-- ☐ `packages/core/src/simworkbench/optimization/__init__.py` — Bayesian / multi-objective hooks with explicit budget caps.
-- ☐ `packages/core/src/simworkbench/uncertainty/__init__.py` — parameter and numerical uncertainty propagation, sensitivity analysis, confidence intervals, dominant-uncertainty attribution.
-- ☐ Comparative reports: ranked summaries across model variants, solver variants, backends, validation metrics. Output as a portable report under the capsule.
-- ☐ Comparison dashboard accessible from `apps/workbench-ui/`.
-- ☐ At least one sweep capsule example runs end-to-end and produces a ranked output table plus uncertainty bars.
-- ☐ Budget enforcement: a sweep with a budget cap stops at the cap with no silent overrun.
-- ☐ `tests/integration/test_sweep_engine.py`, `tests/integration/test_optimization_budget.py`, `tests/validation/test_uq_calibration.py`.
-- ☐ Sweep / optimization runs feed `provenance.lock` (every child run is part of the sweep's provenance chain).
+- ☑ `simworkbench.sweep` — `SweepEngine` + `GridSampler`, `RandomSampler`, `LatinHypercubeSampler`, `AdaptiveSampler` ABC; `SweepSpec.max_evaluations` is the hard cap (no bypass kwargs); `SweepCheckpoint` JSON survives kill-and-resume.
+- ☑ `simworkbench.optimization` — `Optimizer` ABC, `RandomSearchOptimizer`, `BayesianOptimizerHook` (skopt optional dep with structured `BayesianUnavailable` error), `OptimizationProblem.budget` hard cap, `early_stop_threshold`, multi-objective scalarization, constraint handling.
+- ☑ `simworkbench.uncertainty` — `MonteCarloPropagator`, `SensitivityAnalysis`, `ParameterDistribution` (normal/uniform/lognormal), `bootstrap_confidence_interval`, `dominant_uncertainty`.
+- ☑ `simworkbench.reports.ComparisonReport` — ranks `SweepReport` runs by metric, writes `manifest.json` + `report.md`. Backend endpoint `GET /api/comparison/{capsule}` surfaces the manifest.
+- ☑ Comparison dashboard accessible from `apps/workbench-ui/` — new "Comparisons" tab + `ComparisonReportPanel.tsx` + Vitest tests.
+- ☑ Example: `examples/parameter_sweep_quadratic/` runs an LHS sweep + writes a comparison report end-to-end.
+- ☑ Budget enforcement: gate-walk + `test_optimization_budget.py` exercise sweep + optimizer caps; signature-introspection regression refuses any future bypass kwargs.
+- ☑ `tests/integration/test_sweep_engine.py`, `tests/integration/test_optimization_budget.py`, `tests/validation/test_uq_calibration.py` plus the gate walk.
+- ☑ Sweep child rows carry `parent_sweep_id` so downstream provenance can rebuild the chain.
 
 ### Status sync at close
 

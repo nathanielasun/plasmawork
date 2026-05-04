@@ -4,6 +4,34 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-04 (Phase 9 closes — Parameter Sweeps, Optimization, and Uncertainty complete)
+
+### Completed
+- **Procedure-first.** Phase 9 opened with the gate-walk integration test as the first artifact (`tests/integration/test_phase_9_gate_walk.py`, 19 parametric tests covering every gate verb: sweep / rank / quantify / report / resume / provenance-chain / budget-cap / optimization). Implementation chased the test.
+- **Workstream 9A — Sweep engine — shipped.** `simworkbench.sweep` exposes `SweepEngine`, `SweepSpec`, `SweepReport`, `SweepRow` plus four samplers: `GridSampler` (Cartesian product over discrete sequences), `RandomSampler` (uniform, seeded), `LatinHypercubeSampler` (stratified), `AdaptiveSampler` (ABC; concrete subclasses override `next_point(history)`). `SweepCheckpoint` is a JSON file that survives kill-and-resume across multiple sessions; `SweepEngine.resume(spec, ...)` reuses the prior `sweep_id` so the provenance chain stays coherent. `SweepSpec.max_evaluations` is the hard cap — no `ignore_budget`/`unbounded` kwargs anywhere; the gate-walk asserts the signatures stay clean. Failures on a single objective evaluation are captured per-row (`SweepRow.error`) without stopping the sweep.
+- **Workstream 9B — Optimization engine — shipped.** `simworkbench.optimization` exposes `OptimizationProblem`, `OptimizationResult`, `Optimizer` ABC, `RandomSearchOptimizer` (deterministic with a seed; converges on the canonical quadratic to ~0.1 within 400 evaluations), and `BayesianOptimizerHook` (optional `scikit-optimize` dep; raises a structured `BayesianUnavailable` when missing). `OptimizationProblem` carries a hard `budget` (constraint rejections count against it; no infinite spin), `early_stop_threshold` (the only legitimate exit before budget exhaustion), `scalarization_weights` for multi-objective scalarization, and a `constraints` callback. The Phase-7/8 audit lesson is encoded as a regression: signature inspection refuses any future `skip_budget`/`ignore_budget`/`unbounded`/`force`/`no_cap` kwarg.
+- **Workstream 9C — Uncertainty quantification — shipped.** `simworkbench.uncertainty` ships `MonteCarloPropagator` (per-output mean / stddev / 95% bootstrap CI), `SensitivityAnalysis` (variance-decomposition first-order index that recovers the dominant contributor for 2- and 3-parameter functions), `ParameterDistribution` (normal / uniform / lognormal, refuses unknown kinds), `bootstrap_confidence_interval` (configurable level + resamples), and `dominant_uncertainty` (variance-based attribution from per-parameter sample sets). `tests/validation/test_uq_calibration.py` pins linear / quadratic / mixed-distribution propagation against closed-form answers and verifies bootstrap-CI nominal coverage.
+- **Workstream 9D — Comparative reports + UI — shipped.** `simworkbench.reports.ComparisonReport(metric, lower_is_better)` ranks a `SweepReport`'s rows and writes `manifest.json` + `report.md` under the capsule. The Markdown report includes a parameter+metric table and a best-run callout. The UI gains a new "Comparisons" tab (`apps/workbench-ui/src/components/reports/ComparisonReport.tsx`) backed by `GET /api/comparison/{capsule}` (FastAPI endpoint) and a TypeScript client method (`apiClient.getComparisonReport`). Two Vitest tests assert the panel renders the selector + ranking table correctly with mocked backends.
+- **End-to-end example.** `examples/parameter_sweep_quadratic/run_sweep.py` runs an LHS sweep over `f(x, y) = (x-1)² + (y-2)²`, writes the checkpoint, ranks the runs, and produces a comparison report. The example is referenced from the milestone Pre-gate hint and the convention checker.
+- **Convention checker ratchet.** All Phase 9A-9D entity assertions promoted from `--include-open-workstreams` into the default hard gate. Default mode 609 → 646 checks. Closed-phase regression flipped back to its closed-phase form ("no open workstreams").
+- **Behavioral verification (per the twenty-four-check Phase Gate Procedure).** All 24 green. Highlights:
+  - 1. End-to-end gate walk: 19 parametric tests in `test_phase_9_gate_walk.py`.
+  - 9. Gate-clause verb walk: every gate verb has a dedicated test.
+  - 10. Workstream task-bullet walk: every plan-named bullet (grid, random, LHS, adaptive, checkpointing, aggregation; Bayesian hooks, multi-objective, constraints, budget, early stopping; parameter / numerical uncertainty, sensitivity, intervals, dominant attribution; model / solver / backend / validation comparisons, ranked summaries) maps to a real artifact.
+  - 13. Hard rule via API/library flag: `SweepEngine` and `RandomSearchOptimizer` carry no bypass kwargs (signature inspection regression).
+  - 17. Validate X must consume X: `tests/validation/test_uq_calibration.py` evaluates the actual `MonteCarloPropagator` against closed-form analytic answers — not via a stub.
+  - 21. Locality: the example's run script writes under `temp_runs/` (a workbench-managed root) by default, mirroring Phase-8's audit fix.
+
+### Open questions
+- A Bayesian optimizer real implementation requires `scikit-optimize`; the hook stays as a contract until a user opts in.
+- Adaptive sampling has the ABC contract but no production strategy ships in 9A; concrete adaptive strategies (e.g. expected-improvement, trust-region) land per-need.
+- The Phase 9D Markdown report uses a simple ranking layout; richer plots (parameter-sweep heatmaps, uncertainty bars on the comparison rows) land alongside the Phase 1E plotter integration.
+
+### Next steps
+- Open Phase 10 (Autonomous Computational Experiment Design) per plan §Phase 10 with the same procedure: write the gate-walk test FIRST, enumerate plan deliverables, add per-entity opt-in convention-checker assertions, implement until everything is green.
+
+---
+
 ## 2026-05-04 (Phase 8 closes — HPC and Hardware Backends complete)
 
 ### Completed

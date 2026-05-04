@@ -899,10 +899,94 @@ check_grep_in_file 'status: validated' configs/backends.yaml \
   "configs/backends.yaml has at least one validated backend"
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch. Currently empty — Phase 8 closed 2026-05-04.
+section "Phase 9A — Sweep engine"
+check_file_exists packages/core/src/simworkbench/sweep/__init__.py
+check_file_exists packages/core/src/simworkbench/sweep/spec.py
+check_file_exists packages/core/src/simworkbench/sweep/samplers.py
+check_file_exists packages/core/src/simworkbench/sweep/engine.py
+check_file_exists packages/core/src/simworkbench/sweep/checkpoint.py
+check_grep_in_file 'class SweepEngine' \
+  packages/core/src/simworkbench/sweep/engine.py \
+  "SweepEngine class defined"
+check_grep_in_file 'class GridSampler' \
+  packages/core/src/simworkbench/sweep/samplers.py \
+  "GridSampler defined"
+check_grep_in_file 'class RandomSampler' \
+  packages/core/src/simworkbench/sweep/samplers.py \
+  "RandomSampler defined"
+check_grep_in_file 'class LatinHypercubeSampler' \
+  packages/core/src/simworkbench/sweep/samplers.py \
+  "LatinHypercubeSampler defined"
+check_grep_in_file 'class AdaptiveSampler' \
+  packages/core/src/simworkbench/sweep/samplers.py \
+  "AdaptiveSampler defined"
+check_grep_in_file 'max_evaluations' \
+  packages/core/src/simworkbench/sweep/spec.py \
+  "SweepSpec carries max_evaluations budget"
+
+section "Phase 9B — Optimization engine"
+check_file_exists packages/core/src/simworkbench/optimization/__init__.py
+check_file_exists packages/core/src/simworkbench/optimization/problem.py
+check_file_exists packages/core/src/simworkbench/optimization/random_search.py
+check_file_exists packages/core/src/simworkbench/optimization/bayesian.py
+check_grep_in_file 'class Optimizer' \
+  packages/core/src/simworkbench/optimization/problem.py \
+  "Optimizer ABC defined"
+check_grep_in_file 'class RandomSearchOptimizer' \
+  packages/core/src/simworkbench/optimization/random_search.py \
+  "RandomSearchOptimizer defined"
+check_grep_in_file 'class BayesianOptimizerHook' \
+  packages/core/src/simworkbench/optimization/bayesian.py \
+  "BayesianOptimizerHook defined"
+check_grep_in_file 'budget' \
+  packages/core/src/simworkbench/optimization/problem.py \
+  "OptimizationProblem carries budget"
+check_grep_in_file 'early_stop_threshold' \
+  packages/core/src/simworkbench/optimization/problem.py \
+  "OptimizationProblem carries early_stop_threshold"
+
+section "Phase 9C — Uncertainty quantification"
+check_file_exists packages/core/src/simworkbench/uncertainty/__init__.py
+check_grep_in_file 'class MonteCarloPropagator' \
+  packages/core/src/simworkbench/uncertainty/__init__.py \
+  "MonteCarloPropagator defined"
+check_grep_in_file 'class SensitivityAnalysis' \
+  packages/core/src/simworkbench/uncertainty/__init__.py \
+  "SensitivityAnalysis defined"
+check_grep_in_file 'class ParameterDistribution' \
+  packages/core/src/simworkbench/uncertainty/__init__.py \
+  "ParameterDistribution defined"
+check_grep_in_file 'def bootstrap_confidence_interval' \
+  packages/core/src/simworkbench/uncertainty/__init__.py \
+  "bootstrap_confidence_interval defined"
+check_grep_in_file 'def dominant_uncertainty' \
+  packages/core/src/simworkbench/uncertainty/__init__.py \
+  "dominant_uncertainty defined"
+
+section "Phase 9D — Comparative reports + UI"
+check_file_exists packages/core/src/simworkbench/reports/__init__.py
+check_grep_in_file 'class ComparisonReport' \
+  packages/core/src/simworkbench/reports/__init__.py \
+  "ComparisonReport defined"
+check_file_exists apps/workbench-ui/src/components/reports/ComparisonReport.tsx
+check_file_exists apps/workbench-ui/src/__tests__/ComparisonReportPanel.test.tsx
+check_grep_in_file 'comparison|reports' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts exposes comparison report helpers"
+check_file_exists examples/parameter_sweep_quadratic/run_sweep.py
+check_file_exists examples/parameter_sweep_quadratic/README.md
+
+section "Phase 9 — Cross-cutting + gate walk"
+check_file_exists tests/integration/test_phase_9_gate_walk.py
+check_file_exists tests/integration/test_sweep_engine.py
+check_file_exists tests/integration/test_optimization_budget.py
+check_file_exists tests/validation/test_uq_calibration.py
+
+# ---------------------------------------------------------------------------
+# Open-workstream TODO branch. Currently empty — Phase 9 closed 2026-05-04.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 8 closed 2026-05-04; Phase 9 not yet opened."
+  echo "  no open workstreams — Phase 9 closed 2026-05-04; Phase 10 not yet opened."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

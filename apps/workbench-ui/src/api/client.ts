@@ -237,6 +237,31 @@ export interface ApiClient {
     path: string,
     content: string,
   ): Promise<{ capsule: string; path: string; size_bytes: number }>;
+  /**
+   * Phase 9 / 9D — read a sweep capsule's comparison report manifest.
+   * The Python reporter (`simworkbench.reports.ComparisonReport`)
+   * writes `manifest.json` under the capsule; this endpoint surfaces
+   * it. Returns 404 if the capsule has no comparison artifact yet.
+   */
+  getComparisonReport(capsule: string): Promise<ComparisonManifest>;
+}
+
+export interface ComparisonRankRow {
+  rank: number;
+  parameters: Record<string, number>;
+  metrics: Record<string, number | string>;
+}
+
+export interface ComparisonManifest {
+  title: string;
+  sweep_id: string;
+  spec_name: string;
+  metric: string;
+  lower_is_better: boolean;
+  n_completed: number;
+  n_failed: number;
+  stopped_reason: string;
+  ranking: ComparisonRankRow[];
 }
 
 export interface CodegenFile {
@@ -543,6 +568,12 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
         baseUrl,
       );
     },
+    getComparisonReport: (capsule) =>
+      fetchJson(
+        `/comparison/${encodeURIComponent(capsule)}`,
+        undefined,
+        baseUrl,
+      ),
   };
 }
 
