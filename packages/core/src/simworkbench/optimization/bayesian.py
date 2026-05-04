@@ -69,29 +69,65 @@ class BayesianOptimizerHook(Optimizer):
             history.append((dict(point), value))
             return sign * value
 
+        # Phase-9 audit lesson: the prior implementation only
+        # *labeled* the result as "early_stop"; it didn't actually stop
+        # gp_minimize early. The threshold was checked AFTER all
+        # ``budget`` calls finished. Use skopt's callback to actually
+        # terminate as soon as the best executed value crosses the
+        # threshold.
+        early_threshold = problem.early_stop_threshold
+        early_triggered = {"hit": False}
+
+        def _early_stop_cb(_res):  # noqa: ANN001 — skopt callback shape
+            if early_threshold is None:
+                return False
+            if not history:
+                return False
+            best = (
+                min(v for _, v in history)
+                if problem.minimize
+                else max(v for _, v in history)
+            )
+            if problem.minimize and best <= early_threshold:
+                early_triggered["hit"] = True
+                return True
+            if not problem.minimize and best >= early_threshold:
+                early_triggered["hit"] = True
+                return True
+            return False
+
         result = gp_minimize(
             _wrapped,
             space,
             n_calls=problem.budget,
             random_state=self.seed,
+            callback=_early_stop_cb,
         )
-        best_values_unwrapped = sign * result.fun  # undo sign flip
-        best_params = {
-            n: float(v) for n, v in zip(names, result.x, strict=True)
-        }
-        if problem.early_stop_threshold is not None:
-            if problem.minimize and best_values_unwrapped <= problem.early_stop_threshold:
-                stopped = "early_stop"
-            elif not problem.minimize and best_values_unwrapped >= problem.early_stop_threshold:
-                stopped = "early_stop"
+        if history:
+            # ``result.fun`` reflects the sign-flipped surrogate value
+            # the surrogate saw; the executed history is the truth.
+            best_value = (
+                min(v for _, v in history)
+                if problem.minimize
+                else max(v for _, v in history)
+            )
+            best_idx = next(i for i, (_, v) in enumerate(history) if v == best_value)
+            best_params = dict(history[best_idx][0])
+        else:
+            best_value = sign * float(result.fun)
+            best_params = {
+                n: float(v) for n, v in zip(names, result.x, strict=True)
+            }
 
-        if stopped == "completed" and len(history) + rejected >= problem.budget:
+        if early_triggered["hit"]:
+            stopped = "early_stop"
+        elif len(history) + rejected >= problem.budget:
             stopped = "budget_cap"
 
         return OptimizationResult(
             best_parameters=best_params,
-            best_value=float(best_values_unwrapped),
-            evaluations=len(history) + rejected,
+            best_value=float(best_value),
+            evaluations=len(history),
             rejected_by_constraints=rejected,
             history=history,
             stopped_reason=stopped,

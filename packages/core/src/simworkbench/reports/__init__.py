@@ -53,10 +53,30 @@ class ComparisonReport:
         self,
         sweep_report: SweepReport,
         target: str | Path,
+        *,
+        require_workbench_target: bool = True,
     ) -> dict[str, Path]:
         """Write ``manifest.json`` + ``report.md`` under ``target``.
-        Returns the paths."""
+        Returns the paths.
+
+        Default: ``target`` must lie under a workbench-managed root
+        (carries the Phase-8 audit pattern "External-writer functions
+        skip the locality guard exporters got right" forward into
+        Phase 9). Pass ``require_workbench_target=False`` only when
+        the user explicitly chose an external destination.
+        """
+        from simworkbench.paths import is_under_workbench
+
         out = Path(target)
+        if require_workbench_target and not is_under_workbench(out):
+            raise PermissionError(
+                f"Refusing to write ComparisonReport outside "
+                f"workbench-managed roots: {out}. Allowed roots: "
+                "local_cache/, temp_imports/, temp_runs/, "
+                "simulation_capsules/. Pass "
+                "require_workbench_target=False if the user "
+                "explicitly chose an external destination."
+            )
         out.mkdir(parents=True, exist_ok=True)
         ranked = self.rank(sweep_report)
 

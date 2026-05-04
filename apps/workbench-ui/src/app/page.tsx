@@ -1,7 +1,8 @@
 /**
  * Phase 0 placeholder for the future workbench application shell.
  *
- * The real UI is scheduled for Phase 1F; this file exists so the repository
+ * The real UI shipped in Phase 1F (and has been extended through Phase 9);
+ * this file exists so the repository
  * skeleton has a concrete TypeScript entrypoint that convention checks can
  * track.
  */

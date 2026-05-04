@@ -32,6 +32,71 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-04: Phase 9 post-close audit — eight legitimate review findings
+
+### Affected subsystem
+- `simworkbench.sweep.engine` (`SweepEngine.__init__`, `SweepEngine.run`, `SweepEngine.resume`)
+- `simworkbench.sweep.samplers` (`AdaptiveSampler.points`)
+- `simworkbench.sweep.checkpoint` (`SweepCheckpoint.save`)
+- `simworkbench.reports` (`ComparisonReport.write`)
+- `simworkbench.optimization.random_search` (`RandomSearchOptimizer`)
+- `simworkbench.optimization.bayesian` (`BayesianOptimizerHook`)
+- `simworkbench.uncertainty` (`ParameterDistribution`, `bootstrap_confidence_interval`, `SensitivityAnalysis`)
+- `examples/parameter_sweep_quadratic/run_sweep.py`
+- `apps/workbench-ui/src/App.tsx` (and adjacent component docstrings)
+
+### Symptoms
+1. **Critical:** Adaptive sweep resume hung indefinitely. `AdaptiveSampler.points()` cleared `self._history` on entry; `SweepEngine` then pre-populated `sampler._history` with the checkpoint's completed rows. The clear ran AFTER the populate (because `points()` is a generator), wiping the history. The sampler re-proposed an already-completed point, the duplicate-skip filter consumed it without advancing, and the loop spun until killed. Direct probe: a constant-proposing sampler resumed with no cap never terminated.
+2. **High:** Phase 9 writers bypassed the workbench locality guard. `SweepEngine(checkpoint_path=...)`, `SweepCheckpoint.save(target)`, and `ComparisonReport.write(target)` all accepted arbitrary paths without `is_under_workbench` checks. Phase 8 had added the same guard to `SlurmJob.write` and `StubPICAdapter`; Phase 9's new writers shipped without it.
+3. **High:** Phase 9 was not full-gate clean. Targeted ruff over Phase 9 files initially failed with multiple violations (unsorted imports, unused imports, line length); resolved before this audit reached the run, but the gate-walk did not include a ruff assertion specific to the phase's source tree.
+4. **Medium:** `examples/parameter_sweep_quadratic/run_sweep.py` wrote to `temp_runs/<name>/comparison/manifest.json` while `GET /api/comparison/<capsule>` read from `simulation_capsules/<capsule>.lxp/comparison/manifest.json`. The example printed success; the UI's Comparisons tab returned 404. Neither side noticed because the API tests used a hand-rolled fixture in the right path, not the example's output.
+5. **Medium:** `RandomSearchOptimizer.optimize` returned `OptimizationResult(best_parameters={}, best_value=inf, evaluations=N, rejected_by_constraints=N)` when every candidate was rejected by constraints. Downstream callers seeing `best_value=inf` could not distinguish "searched, found nothing better than infinity" from "never executed the objective". `evaluations=N` was misleading: no objective call ever happened.
+6. **Medium:** `BayesianOptimizerHook.optimize` ran the full budget then labeled the result `early_stop` if the threshold matched. The budget cap was respected, but "early stop" was a label, not a termination — the wrapper never actually stopped `gp_minimize` early. `evaluations` summed executed + rejected, hiding the true work count.
+7. **Low:** UQ boundary validation was incomplete. `ParameterDistribution(kind="normal", params={"stddev": -1.0})` constructed cleanly and crashed deep in numpy. `uniform` with `low >= high` produced silent garbage. `bootstrap_confidence_interval(n_resamples=0)` raised an obscure numpy index error. `SensitivityAnalysis(distributions={})` constructed and only failed at `evaluate()` time.
+8. **Low:** Docs/UI status polish incomplete. `apps/workbench-ui/src/App.tsx` rendered `<p className="phase-tag">Phase 1F</p>` after Phase 9 closed. Adjacent component docstrings still mentioned "Phase 1F" as the headline phase.
+
+### Root cause
+- **Finding 1:** Coupling bug. The engine and the sampler each thought they owned the reset/populate contract for `_history`. The sampler's `points()` generator cleared on entry "between sweep runs"; the engine pre-populated on resume. Generator semantics meant the clear ran after the populate.
+- **Finding 2:** Phase 9's writers were introduced WITHOUT the locality guard the Phase 8 audit had added to other writers. The rule lives in `agent_error_patterns.md` prose rather than a shared helper everyone has to call. Each new writer surface is a fresh chance to forget.
+- **Finding 4:** Example/consumer divergence. The example was written before the API endpoint settled on the capsule path; nobody updated the example when the endpoint's read path was finalized. No regression test exercised the example → API round-trip.
+- **Finding 5:** The result-shape contract was "evaluations is the budget consumed", not "evaluations is the executed count". Both interpretations are defensible, but the all-rejected case proved the executed-count interpretation is the useful one.
+- **Finding 6:** The wrapper retrofitted early-stopping at the result-inspection stage instead of using `gp_minimize`'s `callback=` parameter. Common pattern when the third-party routine is treated as a black box.
+- **Finding 7:** Validation lived at sample-time / call-time rather than constructor-time. Frozen dataclasses pushed the question to `sample()`; non-dataclass functions had no validation at all.
+- **Finding 8:** The phase tag is a hard-coded JSX literal rather than a value derived from a phase constant. Phase status flips updated `README.md` and the milestone but missed `App.tsx`.
+
+### Fix
+1. Removed `_history.clear()` from `AdaptiveSampler.points()`. The engine now owns the lifecycle: `run()` clears `sampler._history` and pre-populates from the checkpoint BEFORE advancing the iterator. Added `DUPLICATE_SKIP_LIMIT=100` safety counter — even a pathological adaptive sampler now stops with `stopped_reason="adaptive_stuck"` instead of looping forever.
+2. Added `require_workbench_target: bool = True` kwarg + `is_under_workbench` check to `SweepEngine.__init__`, `SweepEngine.resume`, `SweepCheckpoint.save`, and `ComparisonReport.write`. Test fixtures using pytest's `tmp_path` (which lies outside the workbench-managed roots) pass `require_workbench_target=False`.
+3. Verified ruff clean over `packages/core/src/simworkbench/{sweep,optimization,uncertainty,reports}` and added `test_audit_phase_9_files_pass_ruff` to keep it that way.
+4. Updated `examples/parameter_sweep_quadratic/run_sweep.py` to write to `simulation_capsules/<name>.lxp/comparison/`. The example now prints the matching `GET /api/comparison/<capsule>` URL. Regression test exercises the example → API round-trip via FastAPI's `TestClient`.
+5. `RandomSearchOptimizer` now returns `evaluations=executed` (not `executed + rejected`); when every candidate is rejected, sets `stopped_reason="all_candidates_rejected"` and `best_value=NaN`. Updated `tests/integration/test_optimization_budget.py::test_constraint_rejections_counted_in_budget` to reflect the new contract.
+6. `BayesianOptimizerHook.optimize` now wires `gp_minimize(callback=_early_stop_cb)` so the search actually terminates when the executed history's best meets the threshold. `best_value` is computed from the executed history (sign-flip aware). `evaluations` reflects the executed count.
+7. Validation moved to entry points: `ParameterDistribution.sample` checks `stddev > 0` for `normal`/`lognormal` and `low < high` for `uniform`; `bootstrap_confidence_interval` rejects `n_resamples <= 0`; `SensitivityAnalysis.__post_init__` rejects empty distributions. Each raises `ValueError` with the offending value in the message.
+8. Bumped `<p className="phase-tag">` from `"Phase 1F"` to `"Phase 9"`. Removed "Phase 1F" from headline docstrings in `App.tsx`, `app/page.tsx`, `DiagnosticsPanel.tsx`, `SimulationList.tsx`, and `CodeViewer.tsx` (the placeholder/comment remains where the file is genuinely a Phase 1F-era artifact, but never as the rendered headline). Regression test parses `App.tsx`'s `phase-tag` element and asserts it isn't the pre-Phase-2 placeholder.
+
+### Regression protection
+- New regression tests in `tests/regression/test_phase_9_audit_findings.py` (17 tests covering all eight findings).
+- Updated `tests/integration/test_optimization_budget.py::test_constraint_rejections_counted_in_budget` to reflect the executed-only `evaluations` contract.
+- Eight new error patterns documented in `bugs_and_fixes/agent_error_patterns.md`:
+  1. Stateful sampler whose history-clear races with engine pre-population on resume.
+  2. New writer surfaces in a phase miss the locality guard the prior phase added.
+  3. Example writes to one path while the API endpoint reads from another.
+  4. Sentinel "best" returned alongside zero successful evaluations.
+  5. Callback-driven "early stop" that only labels the result, never terminates.
+  6. Boundary validation lives at sample-time, not constructor-time.
+  7. UI banner / sidebar phase tag drifts behind the actual phase.
+
+### Agent warning
+- When two pieces of code (engine + sampler, importer + reviewer, etc.) both write to a shared mutable attribute on entry, neither can assume ownership of the lifecycle. Document the contract in code AND test the order of operations on resume / re-entry paths.
+- Each phase that introduces a new writer surface re-introduces the locality leak. The rule is in `agent_error_patterns.md`, but agents forget. Stage the locality test alongside the gate-walk test BEFORE implementation.
+- Examples that feed UI/API paths must write to the path the consumer reads. A test that exercises the round-trip catches divergences a unit test never will.
+- Optimizer result shapes that use `inf`/`-inf`/`{}` as sentinels are misleading when the optimizer never executed the objective. Use `stopped_reason` as the primary signal; sentinel values are backup.
+- Wrappers around third-party search routines must use the routine's callback hook for early stopping. Post-call labeling is not stopping.
+- Validate user-facing data classes at construction time. Sample-time validation defers errors to a stack trace far from the offending input.
+- Phase-status-flip commits include the UI's phase-tag banner edit. Add the regression test alongside the new tag.
+
+---
+
 ## 2026-05-04: Phase 8 post-close audit — seven legitimate review findings
 
 ### Affected subsystem

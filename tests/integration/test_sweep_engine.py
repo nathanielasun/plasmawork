@@ -92,7 +92,12 @@ def test_sweep_checkpoint_survives_two_resumes(tmp_path):
         sampler=GridSampler(),
         max_evaluations=2,
     )
-    SweepEngine(spec=spec_1, objective=counting, checkpoint_path=ckpt).run()
+    SweepEngine(
+        spec=spec_1,
+        objective=counting,
+        checkpoint_path=ckpt,
+        require_workbench_target=False,
+    ).run()
     assert len(completed_records) == 2
 
     # Session 2: raise the total cap to 4. Resume should run 2 more
@@ -105,7 +110,10 @@ def test_sweep_checkpoint_survives_two_resumes(tmp_path):
         max_evaluations=4,
     )
     SweepEngine.resume(
-        spec=spec_2, objective=counting, checkpoint_path=ckpt
+        spec=spec_2,
+        objective=counting,
+        checkpoint_path=ckpt,
+        require_workbench_target=False,
     ).run()
     assert len(completed_records) == 2
 
@@ -117,7 +125,10 @@ def test_sweep_checkpoint_survives_two_resumes(tmp_path):
         sampler=GridSampler(),
     )
     SweepEngine.resume(
-        spec=spec_3, objective=counting, checkpoint_path=ckpt
+        spec=spec_3,
+        objective=counting,
+        checkpoint_path=ckpt,
+        require_workbench_target=False,
     ).run()
     assert len(completed_records) == 1
 
@@ -133,6 +144,7 @@ def test_sweep_checkpoint_round_trips_through_disk(tmp_path):
         spec=spec,
         objective=lambda p: {"loss": p["x"]},
         checkpoint_path=ckpt,
+        require_workbench_target=False,
     ).run()
     payload = json.loads(ckpt.read_text(encoding="utf-8"))
     assert payload["sweep_name"] == "disk_roundtrip"

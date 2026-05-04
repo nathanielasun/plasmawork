@@ -146,6 +146,11 @@ def test_phase_9_gate_walk_sweep_logs_failures_without_stopping():
 
 
 def test_phase_9_gate_walk_sweep_checkpoint_round_trip(tmp_path):
+    """Uses ``tmp_path`` for scratch but passes
+    ``require_workbench_target=False`` because pytest's tmpdir lies
+    outside the workbench-managed roots. Carries the Phase-8 audit
+    pattern "External-writer functions skip the locality guard
+    exporters got right" forward into Phase 9."""
     from simworkbench.sweep import GridSampler, SweepEngine, SweepSpec
 
     completed: list[dict[str, float]] = []
@@ -171,6 +176,7 @@ def test_phase_9_gate_walk_sweep_checkpoint_round_trip(tmp_path):
         spec=spec_partial,
         objective=counting_objective,
         checkpoint_path=checkpoint_path,
+        require_workbench_target=False,
     ).run()
     assert len(completed) == 2
     completed.clear()
@@ -179,6 +185,7 @@ def test_phase_9_gate_walk_sweep_checkpoint_round_trip(tmp_path):
         spec=spec_full,
         objective=counting_objective,
         checkpoint_path=checkpoint_path,
+        require_workbench_target=False,
     ).run()
     assert len(completed) == 2
 
@@ -189,6 +196,10 @@ def test_phase_9_gate_walk_sweep_checkpoint_round_trip(tmp_path):
 
 
 def test_phase_9_gate_walk_comparison_report_ranks_runs(tmp_path):
+    """Uses ``require_workbench_target=False`` because pytest's
+    tmp_path lies outside workbench-managed roots; the locality
+    guard is exercised separately in the Phase-9 audit regression
+    suite."""
     from simworkbench.reports import ComparisonReport
     from simworkbench.sweep import GridSampler, SweepEngine, SweepSpec
 
@@ -203,7 +214,7 @@ def test_phase_9_gate_walk_comparison_report_ranks_runs(tmp_path):
     ).run()
     out = tmp_path / "comparison"
     paths = ComparisonReport(metric="loss", lower_is_better=True).write(
-        report, target=out
+        report, target=out, require_workbench_target=False
     )
     assert (out / "manifest.json").is_file()
     assert (out / "report.md").is_file()

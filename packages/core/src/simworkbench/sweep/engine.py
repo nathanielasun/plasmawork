@@ -70,6 +70,7 @@ class SweepEngine:
         objective: Objective,
         checkpoint_path: str | Path | None = None,
         sweep_id: str | None = None,
+        require_workbench_target: bool = True,
     ) -> None:
         self.spec = spec
         self.objective = objective
@@ -77,8 +78,25 @@ class SweepEngine:
             Path(checkpoint_path) if checkpoint_path else None
         )
         self.sweep_id = sweep_id or uuid.uuid4().hex
+        self.require_workbench_target = require_workbench_target
         self._completed_keys: set[tuple] = set()
         self._completed_rows: list[SweepRow] = []
+        # Validate the checkpoint path BEFORE any work runs (Phase-8
+        # audit lesson: locality guards apply at construction, not
+        # halfway through the sweep).
+        if self.checkpoint_path is not None:
+            from simworkbench.paths import is_under_workbench
+
+            if (
+                self.require_workbench_target
+                and not is_under_workbench(self.checkpoint_path)
+            ):
+                raise PermissionError(
+                    f"Refusing to checkpoint sweep outside workbench-"
+                    f"managed roots: {self.checkpoint_path}. Pass "
+                    "require_workbench_target=False if the user "
+                    "explicitly chose an external destination."
+                )
 
     # ------------------------------------------------------------------
     # Resumption
@@ -91,6 +109,7 @@ class SweepEngine:
         spec: SweepSpec,
         objective: Objective,
         checkpoint_path: str | Path,
+        require_workbench_target: bool = True,
     ) -> SweepEngine:
         """Resume a sweep from ``checkpoint_path``. Re-uses the
         checkpoint's ``sweep_id`` so the provenance chain stays
@@ -107,6 +126,7 @@ class SweepEngine:
             objective=objective,
             checkpoint_path=path,
             sweep_id=ckpt.sweep_id or None,
+            require_workbench_target=require_workbench_target,
         )
         for row in ckpt.completed:
             params = dict(row.get("parameters") or {})
@@ -143,6 +163,26 @@ class SweepEngine:
         history_view = (
             sampler._history if isinstance(sampler, AdaptiveSampler) else None
         )
+        # Phase-9 audit lesson: an AdaptiveSampler whose history is
+        # empty after resume (because ``points()`` previously cleared
+        # it) keeps proposing the same already-completed point forever
+        # — the duplicate-skip path silently spins. The engine owns the
+        # reset/restore contract here: clear the sampler's history on
+        # every run, then pre-populate from the checkpoint when
+        # resuming, BEFORE ``points()`` advances.
+        if history_view is not None:
+            history_view.clear()
+            for row in self._completed_rows:
+                history_view.append(
+                    {
+                        "parameters": row.parameters,
+                        "metrics": row.metrics,
+                        "error": row.error,
+                    }
+                )
+
+        consecutive_duplicate_skips = 0
+        DUPLICATE_SKIP_LIMIT = 100  # protects against pathological samplers
 
         for params in self._iter_points(sampler):
             if budget_remaining is not None and budget_remaining <= 0:
@@ -150,8 +190,18 @@ class SweepEngine:
                 break
             key = _params_key(params)
             if key in self._completed_keys:
-                # Already done in a prior session; skip.
+                # Already done in a prior session; surface the prior
+                # row to the sampler's history so a history-driven
+                # adaptive sampler can move past it on the next
+                # proposal — and bail out if the sampler keeps
+                # proposing duplicates forever.
+                if history_view is not None:
+                    consecutive_duplicate_skips += 1
+                    if consecutive_duplicate_skips >= DUPLICATE_SKIP_LIMIT:
+                        report.stopped_reason = "adaptive_stuck"
+                        break
                 continue
+            consecutive_duplicate_skips = 0
             row = self._evaluate_one(params)
             report.runs.append(row)
             self._completed_rows.append(row)
@@ -215,7 +265,10 @@ class SweepEngine:
                 for row in self._completed_rows
             ],
         )
-        ckpt.save(self.checkpoint_path)
+        ckpt.save(
+            self.checkpoint_path,
+            require_workbench_target=self.require_workbench_target,
+        )
 
 
 __all__ = ["Objective", "SweepEngine", "SweepReport", "SweepRow"]

@@ -1,7 +1,7 @@
 /**
  * DiagnosticsPanel — shows the diagnostics of the currently selected run.
- * Phase 1F: lists runs and their diagnostic keys; clicking a key fetches
- * the time series and renders summary statistics.
+ * Lists runs and their diagnostic keys; clicking a key fetches the time
+ * series and renders summary statistics.
  */
 import { useEffect, useState } from "react";
 import {

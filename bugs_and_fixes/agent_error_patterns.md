@@ -1368,3 +1368,153 @@ This is a sibling of "UI calls itself an editor while shipping a viewer" — but
 
 ### Bug log
 - 2026-05-04 *Phase 8 post-close audit*: `simworkbench.hpc.slurm` claimed the bundle was "self-contained"; the runner explicitly required PYTHONPATH or installed package. Fix: docstring rewritten to describe the actual contract (payload + entrypoint self-contained; runtime dep must be installed on the remote node).
+
+---
+
+## Error Pattern: Stateful sampler whose history-clear races with engine pre-population on resume
+
+### Why it is bad
+An adaptive sampler exposes `_history` as the live ledger the engine populates between yields. The sampler's own `points()` generator calls `self._history.clear()` on entry "to reset between sweep runs". The engine, in its resume path, pre-populates `sampler._history` with the checkpoint's completed rows BEFORE calling `points()`. Result: `points()` clears the just-loaded history, the sampler sees an empty ledger, re-proposes the first point, the duplicate-skip filter consumes it without advancing, and the loop spins until killed.
+
+This is a coupling bug: the engine and the sampler each think they own the reset/populate contract. Whichever runs second wins, and the order is non-obvious because `points()` is a generator — the body doesn't run until `next()` is called.
+
+The pattern generalizes to any caller/callee pair where both write to a shared mutable attribute on entry. If the caller wants to pre-populate, the callee must NOT auto-clear, and the contract must be documented explicitly.
+
+### Required behavior
+- The engine owns the reset/restore contract. On every run it clears the sampler's history, then on a resume populates it from the checkpoint, BEFORE the sampler's iterator is advanced.
+- The sampler's `points()` does NOT clear `_history`. The sampler may still inspect `_history` from `next_point` — it just doesn't manage the lifecycle.
+- A safety counter (DUPLICATE_SKIP_LIMIT) wraps the loop so even a pathological adaptive sampler that re-proposes a duplicate forever stops with `stopped_reason="adaptive_stuck"` instead of hanging.
+- Regression test: an adaptive sampler that always proposes the same point completes session 1, then resumes with the cap removed and stops with `stopped_reason="adaptive_stuck"` rather than spinning. A second test pre-populates history on resume and asserts the sampler sees prior rows on its first call.
+
+### Detection
+- For any class whose `__init__` initializes a list/set attribute the caller mutates, grep for `self.<attr>.clear()` in instance methods. Each is a flag.
+- Trace the order of writes: if the engine writes before calling a callback that ALSO writes, the contract leaks.
+
+### Bug log
+- 2026-05-04 *Phase 9 post-close audit*: `AdaptiveSampler.points()` cleared `self._history` on entry, defeating `SweepEngine`'s resume pre-population. Adaptive sweeps that proposed already-completed points hung forever. Fix: removed `_history.clear()` from `points()`; engine clears + populates on every run; added `DUPLICATE_SKIP_LIMIT=100` safety counter that stops with `stopped_reason="adaptive_stuck"`.
+
+---
+
+## Error Pattern: New writer surfaces in a phase miss the locality guard the prior phase added
+
+### Why it is bad
+The repository has a load-bearing locality contract: program artifacts go under `local_cache/`, `temp_imports/`, `temp_runs/`, or `simulation_capsules/`. Phase 8 added the contract to `SlurmJob.write` and `StubPICAdapter` after an audit. Phase 9 introduced three new writers — `SweepEngine` (checkpoint), `SweepCheckpoint.save`, `ComparisonReport.write` — and none of them had the guard. A pytest sweep with `tmp_path` as the checkpoint dropped JSON outside the workbench root by default.
+
+Each phase audit catches the leak, files the pattern, and the next phase re-introduces it on new surfaces because the rule lives in patterns/prose rather than a shared helper everyone has to call. The fix is mechanical (`if require_workbench_target and not is_under_workbench(target): raise`), and a regression test prevents regression on existing surfaces — but the rule needs to apply at the moment a new writer is INTRODUCED, not after.
+
+### Required behavior
+- Every new writer function or method that accepts a `target: str | Path` (or `checkpoint_path`, `output_dir`, etc.) ships with an `is_under_workbench` check and a `require_workbench_target: bool = True` kwarg in the SAME commit that introduces the writer.
+- A regression test for each new writer verifies the refusal path with `/tmp/...` and the explicit-opt-out path with `require_workbench_target=False`.
+- When a phase opens, sweep the new writer surfaces it adds and stage the locality test alongside the gate-walk test, BEFORE implementation begins.
+
+### Detection
+- Grep the diff for new functions or methods accepting `path | target | checkpoint_path | output_dir` parameters. Each that doesn't call `is_under_workbench` is a flag.
+- A pre-commit pattern check: list every writer surface; each must appear in the corresponding regression test.
+
+### Bug log
+- 2026-05-04 *Phase 9 post-close audit*: `SweepEngine.__init__`, `SweepCheckpoint.save`, `ComparisonReport.write` all accepted external `target` paths without the workbench locality guard. Fix: each gained a `require_workbench_target=True` default + the matching `is_under_workbench` check; tests in `tests/regression/test_phase_9_audit_findings.py` enforce the refusal path.
+
+---
+
+## Error Pattern: Example writes to one path while the API endpoint reads from another
+
+### Why it is bad
+A phase ships an example script + an API endpoint that consumes the example's output. The example writes to `temp_runs/<name>/comparison/manifest.json`. The API endpoint reads `simulation_capsules/<name>.lxp/comparison/manifest.json`. The example produces a real artifact; the endpoint returns 404 forever. The UI's Comparisons tab is broken even though every individual unit test passes.
+
+The pattern is a coupling bug between an example and a consumer. The example is "happy" because it succeeds locally and prints output. The consumer is "happy" because its tests use a fixture, not the example. Neither side notices the divergence until a user runs the example and clicks the UI panel that's supposed to render the result — by which time the trail of breadcrumbs spans temp_runs/, simulation_capsules/, an env var, and a docs page.
+
+### Required behavior
+- Examples that exist to feed a UI/API path write to the SAME location the consumer reads. Either the example writes to the consumer's path, or the consumer's path is configurable from the example's output dir.
+- A regression test: the example writes its artifact, then the consumer (via TestClient or library call) reads it. If the test passes only with a hand-rolled fixture, the example/consumer link is unverified.
+- The example's output messages tell the user how to view the result via the consumer ("View in UI: GET /api/comparison/<name>").
+
+### Detection
+- For every "feeds the UI/API" example, grep the example for `temp_runs_root` / `local_cache_root` / `simulation_capsules_root`. Compare with the consumer's read path. Mismatches are flags.
+
+### Bug log
+- 2026-05-04 *Phase 9 post-close audit*: `examples/parameter_sweep_quadratic/run_sweep.py` wrote to `temp_runs/<name>/comparison/`. The Comparisons UI's API endpoint read from `simulation_capsules/<name>.lxp/comparison/`. Fix: example writes to `simulation_capsules/<name>.lxp/comparison/`, prints the matching API URL, and a regression test asserts the round-trip.
+
+---
+
+## Error Pattern: Sentinel "best" returned alongside zero successful evaluations
+
+### Why it is bad
+An optimizer returns `OptimizationResult(best_parameters={}, best_value=inf, evaluations=N, rejected_by_constraints=N)` when every candidate was rejected by constraints. Downstream callers see `best_value=inf` and assume "the optimizer searched but found nothing better than infinity" rather than "the optimizer never executed the objective". The two cases are profoundly different — the second means a constraint set is impossible — but the result shape doesn't distinguish them.
+
+`evaluations=N` (where N is the budget) further misleads: it implies "I evaluated N times and inf was the best", but no objective call ever happened. The cost of misinterpretation is downstream code that compares two infs and returns one of two empty parameter dicts as "the better optimizer".
+
+### Required behavior
+- When zero candidates pass the constraint filter, the optimizer returns `stopped_reason="all_candidates_rejected"`, `best_value=NaN`, and `evaluations=0`. The caller branches on `stopped_reason` first; the sentinel value is a backup signal.
+- `evaluations` is the EXECUTED count only; rejected candidates are tracked separately in `rejected_by_constraints`. The sum is the budget cap, but the two are not interchangeable.
+- A regression test constructs a problem with `constraints=lambda p: False`, asserts `evaluations=0`, `rejected_by_constraints=budget`, `stopped_reason="all_candidates_rejected"`.
+
+### Detection
+- Grep optimizer return statements for `evaluations=...` summing executed + rejected. Each is a flag.
+- For every `best_value=inf | -inf | nan` path, verify a `stopped_reason` other than `"completed"` or `"budget_cap"` is set.
+
+### Bug log
+- 2026-05-04 *Phase 9 post-close audit*: `RandomSearchOptimizer.optimize` returned `evaluations=budget`, `best_value=inf`, `best_parameters={}` when every candidate was rejected. Fix: `evaluations` reflects executed only; all-rejected case sets `stopped_reason="all_candidates_rejected"` and `best_value=NaN`.
+
+---
+
+## Error Pattern: Callback-driven "early stop" that only labels the result, never terminates
+
+### Why it is bad
+An optimizer wrapper invokes a third-party search routine (`gp_minimize`, etc.) for the full budget and ONLY THEN checks the early-stop threshold against the final best value. If the threshold was crossed at iteration 3 of 100, the wrapper still ran 97 useless iterations. The caller paid the time cost; the result's `stopped_reason="early_stop"` label is doubly misleading because (a) the work wasn't actually stopped, just relabeled, and (b) the caller expects "early stop" to mean "fewer evaluations".
+
+The pattern shows up whenever a wrapper around a fixed-iteration routine retrofits early-stopping at the result-inspection stage instead of using the routine's built-in callback.
+
+### Required behavior
+- Use the third-party routine's callback hook to terminate as soon as the threshold is met. `gp_minimize`'s `callback=` returns `True` to stop.
+- Track the executed history inside the callback; compute `best_value` from the history rather than the surrogate's final state, since the surrogate's value may include a sign flip or a penalty.
+- Regression test: a problem with a threshold the optimizer should hit early; assert `evaluations < budget`.
+
+### Detection
+- Grep optimizer wrappers for `result = gp_minimize(...)` followed by an early-stop comparison. If the comparison is post-call, it's labeling, not stopping.
+- The wrapper's callback parameter must be wired to the threshold check.
+
+### Bug log
+- 2026-05-04 *Phase 9 post-close audit*: `BayesianOptimizerHook` ran the full budget then labeled the result `early_stop` if the threshold matched. Fix: wired `gp_minimize(callback=_early_stop_cb)` to terminate as soon as the executed history's best meets the threshold; `evaluations` reflects actual executed count.
+
+---
+
+## Error Pattern: Boundary validation lives at sample-time, not constructor-time
+
+### Why it is bad
+A `ParameterDistribution(kind="normal", params={"mean": 0.0, "stddev": -1.0})` constructs cleanly. The bad value reaches `rng.normal(loc=0, scale=-1, size=N)`, which raises a numpy-internal error far from where the user typed the value. Worse, `lognormal` with a similar bad stddev returns silent garbage in some numpy versions. The user's stack trace blames numpy; the actual fault is the user's input from 200 lines earlier.
+
+The pattern: any data class that validates "at use time" rather than "at construction time" defers the error to the point where the trace is least useful. Pydantic validators, `__post_init__` hooks, and explicit pre-condition checks are the cure.
+
+### Required behavior
+- Every constructor / data class for user-facing input validates per-field constraints at construction (or at first use, with a clear error mentioning the original input).
+- For `ParameterDistribution`: `normal`/`lognormal` require `stddev > 0`; `uniform` requires `low < high`. Each constraint raises `ValueError` from `sample()` (since the dataclass is frozen) with the offending value in the message.
+- Bootstrap CI rejects `n_resamples <= 0`. Sensitivity analysis rejects empty distributions.
+- Regression tests for each boundary; each test names the rejected value in the assertion.
+
+### Detection
+- For every dataclass / Pydantic model in `simworkbench.uncertainty`, list the per-field constraints documented in the docstring. Each is a missing validator.
+- Negative test pass: construct each dataclass with an out-of-bounds value; assert `ValueError`.
+
+### Bug log
+- 2026-05-04 *Phase 9 post-close audit*: `ParameterDistribution` accepted `stddev <= 0` and `low >= high`; `bootstrap_confidence_interval` accepted `n_resamples <= 0`; `SensitivityAnalysis` accepted empty distributions. Fix: each constraint enforced at sample/construction time with a `ValueError` carrying the offending value.
+
+---
+
+## Error Pattern: UI banner / sidebar phase tag drifts behind the actual phase
+
+### Why it is bad
+The workbench UI's sidebar carries a phase-tag banner (`<p className="phase-tag">Phase 1F</p>`). It is read by every user. When the project ships Phase 9 and the banner still says Phase 1F, the user trusts the banner over the README. The tag becomes a small but persistent lie about what the program is.
+
+The drift happens because the tag is a hard-coded literal in JSX rather than a value derived from a single source of truth (a phase constant in code or a config). Each phase the tag needs to be bumped in lockstep with `README.md`, the milestone file, the timeline, and the docs pages — and the JSX literal is the one most easily forgotten.
+
+### Required behavior
+- The phase-tag banner is bumped in the same commit that flips the phase status in `README.md` and the milestone file. Status-flip commits include the `App.tsx` (or equivalent) edit.
+- A regression test parses `App.tsx` for `<p className="phase-tag">…</p>` and asserts the rendered text is not the pre-Phase-2 placeholder ("Phase 1F"). Future phases extend the assertion (or move to a derived phase constant).
+- Long-term: replace the hard-coded literal with a constant imported from a `phases.ts` module that the convention checker can lint.
+
+### Detection
+- Grep `apps/workbench-ui/src/**/*.tsx` for `phase-tag` and confirm the rendered text matches the current phase's tag.
+- Status-flip commits without an `App.tsx` change are flagged for review.
+
+### Bug log
+- 2026-05-04 *Phase 9 post-close audit*: `apps/workbench-ui/src/App.tsx` rendered `<p className="phase-tag">Phase 1F</p>` after Phase 9 closed. Fix: bumped to `Phase 9`; updated docstrings in adjacent components to remove "Phase 1F" from the headline; added regression test that parses the rendered tag.

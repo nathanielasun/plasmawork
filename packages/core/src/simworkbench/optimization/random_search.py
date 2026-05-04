@@ -72,11 +72,20 @@ class RandomSearchOptimizer(Optimizer):
 
         if executed + rejected >= problem.budget and stopped == "completed":
             stopped = "budget_cap"
+        # Phase-9 audit lesson: when every candidate is rejected by
+        # constraints, returning ``best_parameters={}`` + ``best_value=inf``
+        # silently looks like "best is infinity" to a downstream caller.
+        # Replace with a structured "no valid candidate" status so the
+        # caller can branch on stopped_reason instead of inspecting the
+        # sentinel value.
+        if executed == 0 and rejected > 0:
+            stopped = "all_candidates_rejected"
+            best_value = float("nan")
 
         return OptimizationResult(
             best_parameters=best_params,
             best_value=best_value,
-            evaluations=executed + rejected,
+            evaluations=executed,
             rejected_by_constraints=rejected,
             history=history,
             stopped_reason=stopped,

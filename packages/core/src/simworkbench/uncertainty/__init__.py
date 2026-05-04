@@ -46,9 +46,13 @@ class ParameterDistribution:
     """One parameter's uncertainty distribution.
 
     Supported kinds:
-      - ``normal`` — params: ``mean``, ``stddev``.
-      - ``uniform`` — params: ``low``, ``high``.
-      - ``lognormal`` — params: ``mean`` (of log), ``stddev`` (of log).
+      - ``normal`` — params: ``mean``, ``stddev`` (stddev > 0).
+      - ``uniform`` — params: ``low``, ``high`` (low < high).
+      - ``lognormal`` — params: ``mean`` (of log), ``stddev`` (of log; > 0).
+
+    Phase-9 audit lesson: validate at construction so the failure
+    surface is the constructor (a friendly ValueError), not numpy's
+    obscure errors at sample time.
     """
 
     kind: str
@@ -57,21 +61,34 @@ class ParameterDistribution:
     def sample(self, rng: np.random.Generator, n: int) -> np.ndarray:
         kind = self.kind.lower()
         if kind == "normal":
+            stddev = float(self.params["stddev"])
+            if stddev <= 0:
+                raise ValueError(
+                    f"normal stddev must be > 0; got {stddev!r}"
+                )
             return rng.normal(
                 loc=float(self.params["mean"]),
-                scale=float(self.params["stddev"]),
+                scale=stddev,
                 size=n,
             )
         if kind == "uniform":
-            return rng.uniform(
-                low=float(self.params["low"]),
-                high=float(self.params["high"]),
-                size=n,
-            )
+            low = float(self.params["low"])
+            high = float(self.params["high"])
+            if not (low < high):
+                raise ValueError(
+                    f"uniform requires low < high; got "
+                    f"({low!r}, {high!r})"
+                )
+            return rng.uniform(low=low, high=high, size=n)
         if kind == "lognormal":
+            stddev = float(self.params["stddev"])
+            if stddev <= 0:
+                raise ValueError(
+                    f"lognormal stddev must be > 0; got {stddev!r}"
+                )
             return rng.lognormal(
                 mean=float(self.params["mean"]),
-                sigma=float(self.params["stddev"]),
+                sigma=stddev,
                 size=n,
             )
         raise ValueError(
@@ -186,6 +203,8 @@ class SensitivityAnalysis:
     def __post_init__(self) -> None:
         if self.n_samples <= 0:
             raise ValueError("n_samples must be positive.")
+        if not self.distributions:
+            raise ValueError("distributions must be non-empty.")
 
     def evaluate(
         self,
@@ -253,6 +272,10 @@ def bootstrap_confidence_interval(
         raise ValueError("Cannot compute CI on empty sample set.")
     if not (0.0 < level < 1.0):
         raise ValueError(f"level must be in (0, 1); got {level!r}")
+    if n_resamples <= 0:
+        raise ValueError(
+            f"n_resamples must be positive; got {n_resamples!r}"
+        )
     rng = np.random.default_rng(seed)
     means = np.empty(n_resamples, dtype=np.float64)
     for i in range(n_resamples):

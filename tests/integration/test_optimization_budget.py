@@ -44,9 +44,13 @@ def test_constraint_rejections_counted_in_budget():
         constraints=lambda p: p["x"] > 0.5,
     )
     result = RandomSearchOptimizer(seed=0).optimize(problem)
-    # Total budget is 20 = executed + rejected.
-    assert result.evaluations == 20
-    assert counter["executed"] + result.rejected_by_constraints == 20
+    # Phase-9 audit lesson: ``evaluations`` is the executed count
+    # only; rejections are tracked separately so a downstream caller
+    # can distinguish "the optimizer did 6 work units, 14 candidates
+    # were filtered" from "the optimizer did 20 work units".
+    assert counter["executed"] == result.evaluations
+    # The hard budget covers BOTH executed and rejected.
+    assert result.evaluations + result.rejected_by_constraints == 20
     # At least some rejections happened (sanity check).
     assert result.rejected_by_constraints > 0
 

@@ -160,9 +160,11 @@ class AdaptiveSampler(Sampler):
         """Return the next parameter point, or None to stop."""
 
     def points(self, spec: SweepSpec) -> Iterator[dict[str, float]]:
-        # Reset between sweep runs so a sampler reused for two
-        # ``SweepEngine.run()`` calls starts fresh each time.
-        self._history.clear()
+        # NOTE: do NOT clear _history here. The engine owns reset
+        # vs. resume semantics: on a fresh run it will not pre-populate;
+        # on a resume it appends prior rows BEFORE the first yield.
+        # Clearing in points() defeats the resume pre-population (Phase
+        # 9 audit lesson).
         while True:
             point = self.next_point(spec, self._history)
             if point is None:

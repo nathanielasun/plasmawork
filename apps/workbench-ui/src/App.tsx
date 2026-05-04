@@ -1,9 +1,13 @@
 /**
- * Phase 1F workbench app shell.
+ * Workbench app shell (current phase: Phase 9 — Sweeps, Optimization,
+ * Uncertainty). Originally introduced in Phase 1F; rebuilt in subsequent
+ * phases as new panels (capsules, tools, papers, proposals, codegen,
+ * comparisons) shipped.
  *
  * Routes by panel: simulations, runs, code viewer, docs, diagnostics, plots,
- * capsules. Layout is a left sidebar + main content. The sidebar links use
- * React Router's NavLink so the active panel is highlighted.
+ * capsules, tools, papers, proposals, codegen, comparisons. Layout is a left
+ * sidebar + main content. The sidebar links use React Router's NavLink so the
+ * active panel is highlighted.
  */
 import { NavLink, Route, Routes, Navigate } from "react-router-dom";
 import SimulationList from "./components/SimulationList";
@@ -53,7 +57,7 @@ export default function App() {
             ))}
           </ul>
         </nav>
-        <p className="phase-tag">Phase 1F</p>
+        <p className="phase-tag">Phase 9</p>
       </aside>
       <main>
         <Routes>

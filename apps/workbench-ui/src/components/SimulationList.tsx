@@ -1,6 +1,6 @@
 /**
  * SimulationList — lists known runs and the example ModelSpecs.
- * Phase 1F. Polls /api/runs on mount.
+ * Polls /api/runs on mount.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
