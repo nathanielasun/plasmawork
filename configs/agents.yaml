@@ -22,8 +22,14 @@ agents:
 
   - role: orchestrator
     description: Maintains the global task graph and merges parallel agent work.
-    enabled: false
+    enabled: true
     phase: 6
+    capabilities: [coordinate_autonomy_pipeline]
+    budget:
+      max_concurrent_agents: 3
+    refuse_on:
+      - bypassing approval gates
+      - widening scope beyond the user-approved plan
 
   - role: repository_steward
     description: Enforces repository structure, documentation, and conventions.
@@ -70,8 +76,11 @@ agents:
 
   - role: backend_optimization
     description: Chooses and optimizes execution backend.
-    enabled: false
+    enabled: true
     phase: 8
+    capabilities: [select_backend, recommend_backend]
+    refuse_on:
+      - promoting a backend to validated/trusted without an approval token
 
   - role: validation
     description: Creates and runs validation tests.
@@ -86,13 +95,15 @@ agents:
 
   - role: documentation
     description: Updates docs, README, and usage guides.
-    enabled: false
+    enabled: true
     phase: 1
+    capabilities: [edit_docs, edit_readme]
 
   - role: bug_memory
     description: Checks bugs_and_fixes/ before subsystem modifications.
-    enabled: false
+    enabled: true
     phase: 1
+    capabilities: [read_bugfix_log, append_bugfix_entry]
 
   - role: security_sandbox
     description: Prevents unsafe file or execution behavior. Always-on once any agent is enabled.
@@ -110,6 +121,36 @@ agents:
     description: Packages stable builds and examples.
     enabled: true
     phase: 7
+
+  - role: experiment_design
+    description: Generates structured experiment plans (MVP, fidelity ladder, cost, diagnostics, validation path).
+    enabled: true
+    phase: 10
+    capabilities: [emit_experiment_plan]
+    refuse_on:
+      - emitting a plan without a validation path
+      - fabricating coefficients
+      - promoting a capsule to validated when placeholders exist
+
+  - role: controlled_sweep
+    description: Runs budget-bounded sweeps and emits trend summaries + next-sweep recommendations.
+    enabled: true
+    phase: 10
+    capabilities: [launch_bounded_sweep, summarise_trends]
+    budget:
+      max_evaluations_per_launch: 32
+    refuse_on:
+      - exceeding the configured budget
+      - silently bypassing failure-rate stop conditions
+
+  - role: scientific_review
+    description: Critiques assumptions, identifies missing physics, flags overclaims, recommends validation.
+    enabled: true
+    phase: 10
+    capabilities: [emit_scientific_review]
+    refuse_on:
+      - writing outside the capsule's review/ subtree
+      - mutating user_edits/, paper_sources/, or provenance/
 
 human_approval_gates:
   module_promotion_to_trusted: required

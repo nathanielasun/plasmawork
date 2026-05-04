@@ -1,6 +1,6 @@
 # Phase 10 — Autonomous Computational Experiment Design
 
-**Status: Not started**
+**Status: Complete (2026-05-04)**
 
 ## Objective
 Allow agents to propose, execute, analyze, and refine computational experiments under strict validation and budget constraints. (Plan §Phase 10.)
@@ -24,19 +24,42 @@ Phase 0's first gate was a false positive — see `bugs_and_fixes/bugfixes.md` 2
 
 ### Convention-checker assertions to add when this phase opens
 
-Starting-point hints from plan §Phase 10:
+The Phase 10 surface lives under `packages/core/src/simworkbench/autonomy/`, mirroring the layout used for Phases 4–9. Plan-named deliverables enumerated below; each gets one default convention-checker assertion when complete and one opt-in assertion until then.
 
-- ☐ `packages/agent_orchestration/src/experiment_design/__init__.py` — agentic experiment planner emitting plans with minimum viable model, fidelity ladder, cost estimate, diagnostics, and validation path.
-- ☐ `packages/agent_orchestration/src/autonomous_runs/__init__.py` — bounded smoke-run executor with diagnostic interpretation and instability detection.
-- ☐ `packages/agent_orchestration/src/sweep_agent/__init__.py` — controlled sweep agent honoring budget caps from `configs/agents.yaml`.
-- ☐ `packages/agent_orchestration/src/review_agents/scientific_review.py` — agent that critiques assumptions, flags missing physics, and compares to literature.
-- ☐ Approval gates wired and tested: trusted-module promotion, expensive runs, external export, destructive edits all require human approval and refuse otherwise.
-- ☐ `configs/agents.yaml` — `orchestrator`, `experiment_design`, `controlled_sweep`, `scientific_review` roles flipped to `enabled: true` with explicit budget caps and refusal sets.
-- ☐ Regression tests in `tests/regression/` cover every approval gate (each gate explicitly tested with both grant and refuse paths).
-- ☐ Provenance: every autonomous decision is logged in the capsule's `provenance/agent_trace.md`. Tests assert the trace exists and is complete after an autonomous run.
-- ☐ Plan §22 ("Scientific Accuracy Policy") explicitly tested against the autonomous pipeline — at least one regression test asserts that an autonomous run with missing coefficient data produces an `exploratory` capsule, not a `validated` one.
-- ☐ ADR on autonomous-run budget governance.
+**Workstream 10A — Experiment Design Agent**
+- ☑ `packages/core/src/simworkbench/autonomy/__init__.py`
+- ☑ `packages/core/src/simworkbench/autonomy/experiment_design.py` exposes `ExperimentDesigner`, `ExperimentPlan` dataclass with `minimum_viable_model`, `fidelity_ladder`, `cost_estimate`, `diagnostics`, `validation_path` fields, and `design(spec)` method.
+- ☑ Refuses to design from unreviewed paper interpretation (carries Phase 5 hard rule).
+
+**Workstream 10B — Autonomous Small Runs**
+- ☑ `packages/core/src/simworkbench/autonomy/smoke_runs.py` exposes `SmokeRunner` with `run(experiment, max_steps)` returning `SmokeReport(diagnostics_interpretation, instability_flags, suggested_param_adjustments, review_markdown)`.
+- ☑ Detects obvious numerical instability (NaN, monotonic blow-up, conservation drift) and reports rather than silently retries.
+
+**Workstream 10C — Controlled Sweep Agent**
+- ☑ `packages/core/src/simworkbench/autonomy/sweep_agent.py` exposes `ControlledSweepAgent(budget)` whose `launch(spec, objective)` returns a `SweepReport` honoring the budget cap, monitors run-by-run, stops failed runs (already in Phase 9), summarises trends, and emits next-sweep recommendations.
+- ☑ Budget cap is the hard ceiling; no `ignore_budget`/`unbounded` kwargs.
+
+**Workstream 10D — Scientific Review Agent**
+- ☑ `packages/core/src/simworkbench/autonomy/scientific_review.py` exposes `ScientificReviewer.review(capsule_path)` returning `ScientificReview` with `assumption_critique`, `missing_physics`, `literature_alignment`, `overclaim_flags`, `recommended_validation`.
+- ☑ Writes `<capsule>/review/scientific_review.md` and never mutates `<capsule>/src/user_edits/`, `<capsule>/paper_sources/`, or `<capsule>/provenance/`.
+
+**Workstream 10E — Human Approval Gates**
+- ☑ `packages/core/src/simworkbench/autonomy/approval_gates.py` exposes `ApprovalGate` with single-use approval tokens for the four documented actions (trusted-module promotion, expensive runs, external export, destructive edits). Mirrors the Phase-7/8 backend-approval pattern.
+- ☑ HTTP API never reads `actor`/`role` from the request body (Phase-6 audit pattern); approval comes from out-of-band tokens.
+- ☑ Public API exposes no `skip_approval`, `consume_approval=False`, `_for_tests=True`, etc.
+- ☑ `configs/agents.yaml` — `orchestrator`, `experiment_design`, `controlled_sweep`, `scientific_review`, `backend_optimization` roles flip to `enabled: true` with explicit budget caps and refusal sets; `human_approval_gates` block already lists the four required gates.
+
+**Cross-cutting**
+- ☑ `tests/integration/test_phase_10_gate_walk.py` — gate-walk integration test written FIRST (per ninth Phase-Gate-Procedure check) covering every gate verb.
+- ☑ `tests/regression/test_approval_gates_enforcement.py` — every approval gate exercised with both grant and refuse paths.
+- ☑ `tests/regression/test_autonomy_provenance_trail.py` — autonomous decisions land in `provenance/agent_trace.md`; tests assert completeness.
+- ☑ `tests/regression/test_autonomy_no_validated_without_evidence.py` — autonomous run with missing coefficient data produces an `exploratory` capsule, NOT `validated` (plan §22).
+- ☑ `examples/autonomous_experiment_kr/` — end-to-end example that produces a real capsule.
+- ☑ `program_development/architectural_decisions/ADR-0007-autonomous-budget-governance.md`.
+- ☑ `docs_site/src/content/agent_workflows.tsx` updated to describe the autonomous pipeline.
+- ☑ FastAPI endpoints for autonomous design / smoke / sweep / review (`POST /api/autonomy/{action}`) wired through `simworkbench.api.server`.
+- ☑ UI panel for autonomous pipeline (`apps/workbench-ui/src/components/autonomy/`).
 
 ### Status sync at close
 
-Flip the status in one commit touching this milestone, `README.md` Phase 10 row, `timeline.md`, `configs/agents.yaml`, the new budget-governance ADR, and any docs page that named "Phase 10 — pending".
+Flip the status in one commit touching this milestone, `README.md` Phase 10 row, `timeline.md`, `configs/agents.yaml`, the new budget-governance ADR, and any docs page that named "Phase 10 — pending". Bump `<p className="phase-tag">Phase 9</p>` → `Phase 10` in `apps/workbench-ui/src/App.tsx`.

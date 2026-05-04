@@ -983,10 +983,101 @@ check_file_exists tests/integration/test_optimization_budget.py
 check_file_exists tests/validation/test_uq_calibration.py
 
 # ---------------------------------------------------------------------------
-# Open-workstream TODO branch. Currently empty — Phase 9 closed 2026-05-04.
+# Phase 10 — every entity below was ratcheted from
+# --include-open-workstreams into the default hard gate when the phase
+# closed.
+
+section "Phase 10A — Experiment Design Agent"
+check_file_exists packages/core/src/simworkbench/autonomy/__init__.py
+check_file_exists packages/core/src/simworkbench/autonomy/experiment_design.py
+check_grep_in_file 'class ExperimentDesigner' \
+  packages/core/src/simworkbench/autonomy/experiment_design.py \
+  "ExperimentDesigner defined"
+check_grep_in_file 'class ExperimentPlan' \
+  packages/core/src/simworkbench/autonomy/experiment_design.py \
+  "ExperimentPlan dataclass defined"
+check_grep_in_file 'fidelity_ladder' \
+  packages/core/src/simworkbench/autonomy/experiment_design.py \
+  "ExperimentPlan carries fidelity_ladder"
+check_grep_in_file 'cost_estimate' \
+  packages/core/src/simworkbench/autonomy/experiment_design.py \
+  "ExperimentPlan carries cost_estimate"
+check_grep_in_file 'validation_path' \
+  packages/core/src/simworkbench/autonomy/experiment_design.py \
+  "ExperimentPlan carries validation_path"
+
+section "Phase 10B — Autonomous Small Runs"
+check_file_exists packages/core/src/simworkbench/autonomy/smoke_runs.py
+check_grep_in_file 'class SmokeRunner' \
+  packages/core/src/simworkbench/autonomy/smoke_runs.py \
+  "SmokeRunner defined"
+check_grep_in_file 'class SmokeReport' \
+  packages/core/src/simworkbench/autonomy/smoke_runs.py \
+  "SmokeReport dataclass defined"
+check_grep_in_file 'instability_flags' \
+  packages/core/src/simworkbench/autonomy/smoke_runs.py \
+  "SmokeReport carries instability_flags"
+
+section "Phase 10C — Controlled Sweep Agent"
+check_file_exists packages/core/src/simworkbench/autonomy/sweep_agent.py
+check_grep_in_file 'class ControlledSweepAgent' \
+  packages/core/src/simworkbench/autonomy/sweep_agent.py \
+  "ControlledSweepAgent defined"
+check_grep_in_file 'budget' \
+  packages/core/src/simworkbench/autonomy/sweep_agent.py \
+  "ControlledSweepAgent carries budget"
+check_grep_in_file 'next_sweep_recommendation|trend_summary' \
+  packages/core/src/simworkbench/autonomy/sweep_agent.py \
+  "ControlledSweepAgent emits trend summary / next-sweep recommendation"
+
+section "Phase 10D — Scientific Review Agent"
+check_file_exists packages/core/src/simworkbench/autonomy/scientific_review.py
+check_grep_in_file 'class ScientificReviewer' \
+  packages/core/src/simworkbench/autonomy/scientific_review.py \
+  "ScientificReviewer defined"
+check_grep_in_file 'class ScientificReview' \
+  packages/core/src/simworkbench/autonomy/scientific_review.py \
+  "ScientificReview dataclass defined"
+check_grep_in_file 'overclaim_flags' \
+  packages/core/src/simworkbench/autonomy/scientific_review.py \
+  "ScientificReview carries overclaim_flags"
+check_grep_in_file 'recommended_validation' \
+  packages/core/src/simworkbench/autonomy/scientific_review.py \
+  "ScientificReview carries recommended_validation"
+
+section "Phase 10E — Human Approval Gates"
+check_file_exists packages/core/src/simworkbench/autonomy/approval_gates.py
+check_grep_in_file 'class ApprovalGate' \
+  packages/core/src/simworkbench/autonomy/approval_gates.py \
+  "ApprovalGate defined"
+check_grep_in_file 'class ApprovalRequiredError' \
+  packages/core/src/simworkbench/autonomy/approval_gates.py \
+  "ApprovalRequiredError defined"
+check_grep_in_file 'def grant_autonomy_approval' \
+  packages/core/src/simworkbench/autonomy/approval_gates.py \
+  "grant_autonomy_approval helper defined"
+
+section "Phase 10 — Cross-cutting + gate walk"
+check_file_exists tests/integration/test_phase_10_gate_walk.py
+check_file_exists tests/regression/test_approval_gates_enforcement.py
+check_file_exists tests/regression/test_autonomy_provenance_trail.py
+check_file_exists tests/regression/test_autonomy_no_validated_without_evidence.py
+check_file_exists examples/autonomous_experiment_kr/run_autonomous.py
+check_file_exists examples/autonomous_experiment_kr/README.md
+check_file_exists program_development/architectural_decisions/ADR-0007-autonomous-budget-governance.md
+check_grep_in_file 'autonomy|autonomous' \
+  docs_site/src/content/agent_workflows.tsx \
+  "agent_workflows docs page mentions autonomy"
+check_grep_in_file 'designExperiment|reviewExperiment|autonomousSweep' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts exposes autonomy helpers"
+check_file_exists apps/workbench-ui/src/components/autonomy/AutonomyPanel.tsx
+
+# Open-workstream TODO branch. Phase 10 closed 2026-05-04; no further
+# phases scheduled.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 9 closed 2026-05-04; Phase 10 not yet opened."
+  echo "  no open workstreams — Phase 10 closed 2026-05-04 (final phase)."
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

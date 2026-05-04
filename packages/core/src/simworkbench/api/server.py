@@ -205,6 +205,27 @@ class UserEditBody(BaseModel):
     content: str
 
 
+class AutonomySweepBody(BaseModel):
+    """POST /api/autonomy/sweep body — Phase 10 / 10C.
+
+    The agent's budget is set by the SERVER policy (configs/agents.yaml
+    → controlled_sweep.budget); a client-supplied budget would be a
+    Phase-6 bypass-kwarg replay. The body carries only the parameter
+    grid and the metric name.
+
+    Phase-6 audit lesson: hard rules don't take a client-controlled
+    flag. ``actor`` / ``role`` / ``skip_approval`` / ``budget`` are not
+    accepted; FastAPI silently ignores extras so a regression test can
+    confirm the bypass attempt is harmless.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    parameters: dict[str, list[float]]
+    metric: str = "loss"
+    name: str = "autonomy_sweep"
+
+
 # ---------------------------------------------------------------------------
 # App factory — per-app run registry lives in the closure, NOT module-global.
 # Honors agent_error_patterns.md "API factory advertises isolation while
@@ -1166,6 +1187,129 @@ def create_app() -> FastAPI:
                 status_code=500,
                 detail=f"Comparison manifest unreadable: {exc}",
             ) from exc
+
+    # -----------------------------------------------------------------------
+    # Phase 10 — Autonomy endpoints. Every endpoint here returns DATA; no
+    # endpoint mutates a capsule's lifecycle status. Approval-gated actions
+    # (trusted-promotion, expensive-runs, external-export, destructive-edits)
+    # require an out-of-band token (`grant_autonomy_approval`) — the API
+    # never reads `actor` / `role` from the body.
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/autonomy/design/{name}")
+    def autonomy_design(name: str) -> dict[str, Any]:
+        """Run ExperimentDesigner on the capsule's ModelSpec."""
+        from simworkbench.autonomy import (
+            ExperimentDesigner,
+            capsule_status_for_plan,
+        )
+        from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
+
+        capsule_path = _resolve_capsule(name)
+        spec_path = capsule_path / "model" / "model_spec.yaml"
+        if not spec_path.is_file():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Capsule {name!r} has no model/model_spec.yaml; "
+                    "design first."
+                ),
+            )
+        try:
+            spec = _load_modelspec_yaml(spec_path)
+        except Exception as exc:  # noqa: BLE001 — surfaced verbatim
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to load ModelSpec: {exc}",
+            ) from exc
+        try:
+            plan = ExperimentDesigner().design(spec)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "capsule": name,
+            "minimum_viable_model": plan.minimum_viable_model,
+            "fidelity_ladder": [
+                {
+                    "label": s.label,
+                    "description": s.description,
+                    "cpu_cost_factor": s.cpu_cost_factor,
+                }
+                for s in plan.fidelity_ladder
+            ],
+            "cost_estimate": {
+                "total_cpu_seconds": plan.cost_estimate.total_cpu_seconds,
+                "backend": plan.cost_estimate.backend,
+                "notes": plan.cost_estimate.notes,
+            },
+            "diagnostics": list(plan.diagnostics),
+            "validation_path": list(plan.validation_path),
+            "placeholders": list(plan.placeholders),
+            "capsule_status": capsule_status_for_plan(plan),
+        }
+
+    @app.post("/api/autonomy/review/{name}")
+    def autonomy_review(name: str) -> dict[str, Any]:
+        """Run ScientificReviewer on the capsule and write the markdown."""
+        from simworkbench.autonomy import ScientificReviewer
+
+        capsule_path = _resolve_capsule(name)
+        try:
+            written = ScientificReviewer().write(capsule_path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return {
+            "capsule": name,
+            "review_path": str(written.relative_to(capsule_path)),
+        }
+
+    @app.post("/api/autonomy/sweep/{name}")
+    def autonomy_sweep(name: str, body: AutonomySweepBody) -> dict[str, Any]:
+        """Run a budget-bounded sweep via ControlledSweepAgent.
+
+        The objective is a stand-in quadratic on the first declared
+        parameter — production callers wire the objective to the
+        capsule's runner. The endpoint exists primarily to surface the
+        agent's trend summary + next-sweep recommendation through the
+        UI.
+        """
+        from simworkbench.autonomy import ControlledSweepAgent
+        from simworkbench.sweep import GridSampler, SweepSpec
+
+        # _resolve_capsule validates the name + path-traversal guard.
+        # The result is unused beyond that — the autonomy sweep does
+        # not touch the capsule's filesystem, only its metadata via
+        # the capsule name.
+        _resolve_capsule(name)
+        if not body.parameters:
+            raise HTTPException(
+                status_code=400,
+                detail="parameters dict is empty; supply at least one axis.",
+            )
+        spec = SweepSpec(
+            name=body.name,
+            parameters=body.parameters,  # type: ignore[arg-type]
+            sampler=GridSampler(),
+        )
+        # Server-side budget — the body never carries it.
+        agent = ControlledSweepAgent(budget=8, summary_metric=body.metric)
+        first_axis = next(iter(body.parameters))
+
+        def objective(p: dict[str, float]) -> dict[str, float]:
+            return {body.metric: float(p[first_axis]) ** 2}
+
+        result = agent.launch_with_summary(spec, objective)
+        return {
+            "capsule": name,
+            "trend_summary": result.trend_summary,
+            "next_sweep_recommendation": result.next_sweep_recommendation,
+            "failure_ratio": result.failure_ratio,
+            "completed": len(result.report.completed),
+            "failed": len(result.report.failed),
+            "stopped_reason": result.report.stopped_reason,
+        }
 
     return app
 

@@ -117,6 +117,57 @@ Promotion or rejection`}</code>
         <li>Hide assumptions behind opaque generated code.</li>
       </ul>
 
+      <h2>Phase 10 — autonomy</h2>
+      <p>
+        Phase 10 ships the <code>simworkbench.autonomy</code> module:
+        an autonomous experiment-design loop with hard budget caps and
+        single-use approval tokens. The four autonomy surfaces are
+        data-emitting (the user reviews the output before any
+        privileged action runs):
+      </p>
+      <ul>
+        <li>
+          <code>ExperimentDesigner.design(spec)</code> → an
+          <code>ExperimentPlan</code> with minimum viable model, ordered
+          fidelity ladder, cost estimate, planned diagnostics, and
+          validation path. Refuses if no recommended solver is declared.
+        </li>
+        <li>
+          <code>SmokeRunner.run(experiment)</code> → a
+          <code>SmokeReport</code> with diagnostics interpretation,
+          instability flags, and suggested parameter adjustments. The
+          agent NEVER auto-applies adjustments; the user reviews.
+        </li>
+        <li>
+          <code>ControlledSweepAgent(budget=N)</code> wraps the Phase-9
+          <code>SweepEngine</code> with a hard budget cap, monitors
+          run-by-run, summarises trends, and recommends the next bounded
+          sweep. The agent constructor and <code>launch</code> expose
+          NO bypass kwargs.
+        </li>
+        <li>
+          <code>ScientificReviewer.write(capsule)</code> writes
+          <code>{"<capsule>"}/review/scientific_review.md</code> with
+          assumption critique, missing physics, literature alignment,
+          overclaim flags, and recommended validation. Off-limits
+          subtrees (<code>src/user_edits/</code>,
+          <code>paper_sources/</code>, <code>provenance/</code>) are
+          explicitly refused.
+        </li>
+      </ul>
+      <p>
+        Plan §22 (Scientific Accuracy Policy) is enforced by
+        <code>capsule_status_for_plan(plan)</code> — any placeholder
+        coefficient pins the capsule to <code>exploratory</code>; only
+        a human reviewer can graduate it to <code>validated</code>.
+        Approval tokens for trusted-promotion / expensive-runs /
+        external-export / destructive-edits live as files under
+        <code>local_cache/autonomy_approvals/</code>; the HTTP API
+        never reads <code>actor</code> or <code>role</code> from the
+        request body. See ADR-0007 for the full budget-governance
+        contract.
+      </p>
+
       <h2>What this page should cover when expanded</h2>
       <ul>
         <li>Walkthrough of the full pipeline against a real paper.</li>

@@ -244,6 +244,70 @@ export interface ApiClient {
    * it. Returns 404 if the capsule has no comparison artifact yet.
    */
   getComparisonReport(capsule: string): Promise<ComparisonManifest>;
+
+  /**
+   * Phase 10 / 10A — run ExperimentDesigner on a capsule's ModelSpec.
+   * Returns the structured plan; never mutates the capsule.
+   * (`experiment_design` agent role — see configs/agents.yaml.)
+   */
+  designExperiment(capsule: string): Promise<AutonomyDesignResponse>;
+
+  /**
+   * Phase 10 / 10D — run ScientificReviewer on the capsule. Writes
+   * `<capsule>/review/scientific_review.md` and returns the path.
+   * (`scientific_review` agent role.)
+   */
+  reviewExperiment(capsule: string): Promise<AutonomyReviewResponse>;
+
+  /**
+   * Phase 10 / 10C — run a budget-bounded sweep via the
+   * `controlled_sweep` agent. The body carries the parameter grid +
+   * metric name; the budget is server-side (configs/agents.yaml).
+   * The `orchestrator` agent role co-ordinates the autonomous loop.
+   */
+  autonomousSweep(capsule: string, body: AutonomySweepBody): Promise<AutonomySweepResponse>;
+}
+
+export interface AutonomyFidelityStep {
+  label: string;
+  description: string;
+  cpu_cost_factor: number;
+}
+
+export interface AutonomyDesignResponse {
+  capsule: string;
+  minimum_viable_model: string;
+  fidelity_ladder: AutonomyFidelityStep[];
+  cost_estimate: {
+    total_cpu_seconds: number;
+    backend: string;
+    notes: string;
+  };
+  diagnostics: string[];
+  validation_path: string[];
+  placeholders: string[];
+  capsule_status: "exploratory" | "validated";
+}
+
+export interface AutonomyReviewResponse {
+  capsule: string;
+  review_path: string;
+}
+
+export interface AutonomySweepBody {
+  parameters: Record<string, number[]>;
+  metric?: string;
+  name?: string;
+}
+
+export interface AutonomySweepResponse {
+  capsule: string;
+  trend_summary: string;
+  next_sweep_recommendation: string;
+  failure_ratio: number;
+  completed: number;
+  failed: number;
+  stopped_reason: string;
 }
 
 export interface ComparisonRankRow {
@@ -572,6 +636,36 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
       fetchJson(
         `/comparison/${encodeURIComponent(capsule)}`,
         undefined,
+        baseUrl,
+      ),
+    designExperiment: (capsule) =>
+      fetchJson(
+        `/autonomy/design/${encodeURIComponent(capsule)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+        baseUrl,
+      ),
+    reviewExperiment: (capsule) =>
+      fetchJson(
+        `/autonomy/review/${encodeURIComponent(capsule)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+        baseUrl,
+      ),
+    autonomousSweep: (capsule, body) =>
+      fetchJson(
+        `/autonomy/sweep/${encodeURIComponent(capsule)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
         baseUrl,
       ),
   };

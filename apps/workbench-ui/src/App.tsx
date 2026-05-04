@@ -22,6 +22,7 @@ import PaperReview from "./components/papers/PaperReview";
 import ExperimentProposal from "./components/proposal/ExperimentProposal";
 import GeneratedCodeView from "./components/codegen/GeneratedCodeView";
 import ComparisonReportPanel from "./components/reports/ComparisonReport";
+import AutonomyPanel from "./components/autonomy/AutonomyPanel";
 
 const NAV: { to: string; label: string }[] = [
   { to: "/simulations", label: "Simulations" },
@@ -35,6 +36,7 @@ const NAV: { to: string; label: string }[] = [
   { to: "/proposals", label: "Proposals" },
   { to: "/codegen", label: "Generated Code" },
   { to: "/comparisons", label: "Comparisons" },
+  { to: "/autonomy", label: "Autonomy" },
   { to: "/docs", label: "Documentation" },
 ];
 
@@ -57,7 +59,7 @@ export default function App() {
             ))}
           </ul>
         </nav>
-        <p className="phase-tag">Phase 9</p>
+        <p className="phase-tag">Phase 10</p>
       </aside>
       <main>
         <Routes>
@@ -73,6 +75,7 @@ export default function App() {
           <Route path="/proposals" element={<ExperimentProposal />} />
           <Route path="/codegen" element={<GeneratedCodeView />} />
           <Route path="/comparisons" element={<ComparisonReportPanel />} />
+          <Route path="/autonomy" element={<AutonomyPanel />} />
           <Route path="/docs" element={<DocsViewer />} />
           <Route path="/docs/:slug" element={<DocsViewer />} />
           <Route path="*" element={<Navigate to="/simulations" replace />} />
