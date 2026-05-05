@@ -11,3 +11,5 @@ export { Pill } from "./Pill";
 export type { PillKind, PillProps } from "./Pill";
 export { Kpi } from "./Kpi";
 export type { KpiProps } from "./Kpi";
+export { FolderBrowser } from "./FolderBrowser";
+export type { FolderBrowserProps } from "./FolderBrowser";

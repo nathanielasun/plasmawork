@@ -1057,6 +1057,23 @@ check_grep_in_file 'def grant_autonomy_approval' \
   packages/core/src/simworkbench/autonomy/approval_gates.py \
   "grant_autonomy_approval helper defined"
 
+section "Folder browser (UI ↔ workbench-managed roots)"
+check_grep_in_file '@app.get\("/api/browse"' \
+  packages/core/src/simworkbench/api/server.py \
+  "GET /api/browse endpoint"
+check_grep_in_file '_BROWSE_ROOTS' \
+  packages/core/src/simworkbench/api/server.py \
+  "browse roots are server-side allow-listed"
+check_file_exists apps/workbench-ui/src/components/ui/FolderBrowser.tsx
+check_file_exists apps/workbench-ui/src/__tests__/FolderBrowser.test.tsx
+check_file_exists tests/integration/test_browse_api.py
+check_grep_in_file 'BROWSE_ROOTS' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts exports BROWSE_ROOTS literal union"
+check_grep_in_file 'browse:' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts exposes browse method"
+
 section "Examples gallery (UI ↔ examples/)"
 check_grep_in_file '@app.get\("/api/examples"' \
   packages/core/src/simworkbench/api/server.py \

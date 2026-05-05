@@ -46,6 +46,8 @@ Phase 1F+ enhancement; the in-process Runner already supports it (see
 
 from __future__ import annotations
 
+from datetime import UTC as _UTC
+from datetime import datetime as _datetime
 from pathlib import Path
 from typing import Any
 
@@ -205,6 +207,31 @@ class UserEditBody(BaseModel):
     content: str
 
 
+class BrowseEntry(BaseModel):
+    """One entry returned by `GET /api/browse`.
+
+    `path` is repo-relative so the UI never sees absolute filesystem
+    paths. `kind` discriminates dir / file. `size_bytes` is omitted for
+    directories.
+    """
+
+    name: str
+    path: str
+    kind: str  # "dir" | "file"
+    size_bytes: int | None = None
+    mtime_iso: str | None = None
+
+
+class BrowseResponse(BaseModel):
+    """`GET /api/browse` response."""
+
+    root: str
+    relative_path: str  # path inside the root, e.g. "" for the root itself
+    parent_relative_path: str | None  # null when at the root
+    entries: list[BrowseEntry]
+    truncated: bool  # True if we capped the entry list
+
+
 class ExampleSummary(BaseModel):
     """One row in `GET /api/examples`.
 
@@ -296,6 +323,134 @@ def create_app() -> FastAPI:
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(ok=True, version=__version__)
+
+    # -----------------------------------------------------------------------
+    # Folder browser.
+    #
+    # Read-only. Allow-listed roots: simulation_capsules, temp_runs,
+    # local_cache, temp_imports (the four workbench-managed roots), plus
+    # examples/ for picking model.yaml / run.py paths.
+    #
+    # Safety:
+    #   - root name allow-listed against _BROWSE_ROOTS.
+    #   - relative_path validated via .resolve().relative_to(root) so
+    #     `..` and symlink escapes raise.
+    #   - entry list capped at MAX_ENTRIES so a pathological dir does
+    #     not OOM the response.
+    #   - never executes any file.
+    # -----------------------------------------------------------------------
+
+    _BROWSE_ROOTS: dict[str, Path] = {
+        "simulation_capsules": simulation_capsules_root(),
+        "temp_runs": temp_runs_root(),
+        "local_cache": (repo_root() / "local_cache").resolve(),
+        "temp_imports": (repo_root() / "temp_imports").resolve(),
+        "examples": (repo_root() / "examples").resolve(),
+    }
+    _BROWSE_MAX_ENTRIES = 500
+
+    @app.get("/api/browse", response_model=BrowseResponse)
+    def browse(
+        root: str = "simulation_capsules",
+        path: str = "",
+    ) -> BrowseResponse:
+        if root not in _BROWSE_ROOTS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown browse root {root!r}. Allow-listed: "
+                    f"{sorted(_BROWSE_ROOTS)}."
+                ),
+            )
+        root_path = _BROWSE_ROOTS[root].resolve()
+        if not root_path.is_dir():
+            # Allowed root that doesn't exist on disk yet (e.g. empty
+            # local_cache before first run). Return a real but empty
+            # response rather than a 404.
+            return BrowseResponse(
+                root=root,
+                relative_path="",
+                parent_relative_path=None,
+                entries=[],
+                truncated=False,
+            )
+
+        # Resolve the requested subpath safely.
+        rel = path.strip().lstrip("/")
+        target = (root_path / rel).resolve() if rel else root_path
+        try:
+            target.relative_to(root_path)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Refusing to browse outside root {root!r}: "
+                    f"{path!r} resolves outside the allowed tree."
+                ),
+            ) from exc
+        if not target.is_dir():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Browse target {root}/{rel} is not a directory.",
+            )
+
+        # Build entry list. Dirs first, then files, both alphabetical.
+        # Stop scanning at MAX_ENTRIES.
+        try:
+            children = sorted(
+                target.iterdir(),
+                key=lambda p: (not p.is_dir(), p.name.lower()),
+            )
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission denied reading {root}/{rel}.",
+            ) from exc
+
+        truncated = len(children) > _BROWSE_MAX_ENTRIES
+        children = children[:_BROWSE_MAX_ENTRIES]
+
+        entries: list[BrowseEntry] = []
+        for child in children:
+            try:
+                stat = child.stat()
+            except OSError:
+                continue
+            is_dir = child.is_dir()
+            mtime_iso = (
+                _datetime.fromtimestamp(stat.st_mtime, tz=_UTC).isoformat(
+                    timespec="seconds"
+                )
+            )
+            entries.append(
+                BrowseEntry(
+                    name=child.name,
+                    path=str(child.relative_to(root_path)),
+                    kind="dir" if is_dir else "file",
+                    size_bytes=None if is_dir else stat.st_size,
+                    mtime_iso=mtime_iso,
+                )
+            )
+
+        rel_clean = "" if target == root_path else str(target.relative_to(root_path))
+        parent_rel: str | None
+        if rel_clean == "":
+            parent_rel = None
+        else:
+            parent_path = target.parent
+            parent_rel = (
+                ""
+                if parent_path == root_path
+                else str(parent_path.relative_to(root_path))
+            )
+
+        return BrowseResponse(
+            root=root,
+            relative_path=rel_clean,
+            parent_relative_path=parent_rel,
+            entries=entries,
+            truncated=truncated,
+        )
 
     # -----------------------------------------------------------------------
     # Examples discovery + one-click runner.

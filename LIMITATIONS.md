@@ -1,6 +1,6 @@
 # Capabilities and Limitations
 
-**Last updated: 2026-05-05 (Examples gallery — UI gained `GET /api/examples` discovery + `POST /api/examples/{name}/run` one-click runner; sidebar nav defaults to it; researchers can launch any of the six examples without a terminal)**
+**Last updated: 2026-05-05 (Folder browser — `GET /api/browse` over the four workbench-managed roots + examples/, with `..`/symlink-escape refusal; new `<FolderBrowser>` UI primitive replaces hand-typed paths in AutonomyPanel + RunControls. Examples gallery — UI gained `GET /api/examples` discovery + `POST /api/examples/{name}/run` one-click runner; sidebar nav defaults to it.)**
 
 This document is the honest, non-aspirational map of what the Scientific Simulation Workbench can and cannot do today. The convention checker verifies *structural* completeness — files exist, classes define the right fields, tests cover the named verbs. It does **not** verify scientific capability. A green gate plus a passing test suite means the wiring works and regressions don't sneak back in. It does NOT mean the system can take a real laser-physics paper and produce a publishable simulation autonomously.
 
@@ -76,6 +76,7 @@ These subsystems are real, tested, and work as documented. You can use them in e
 | FastAPI server | `simworkbench.api.server` | Real | 35 endpoints, all return real data, none read `actor`/`role` from the body. |
 | TypeScript UI shell | `apps/workbench-ui` | Real | Vite + React + React Router, 13 navigation panels, type-shared client (`apiClient`). |
 | Examples gallery | `apps/workbench-ui/src/components/examples/ExamplesGallery.tsx` + `GET /api/examples` + `POST /api/examples/{name}/run` | Real | Discovers `examples/*/` dirs that ship `run.py` + `README.md`. ModelSpec examples drive `Runner` inline; script examples exec via subprocess with the repo venv (5-min timeout, server-side allow-list, no client-supplied paths). Default landing route. |
+| Folder browser | `apps/workbench-ui/src/components/ui/FolderBrowser.tsx` + `GET /api/browse` | Real | Read-only tree view over the four workbench-managed roots + `examples/`. Server allow-lists root names; resolves `..` and symlink-escape attempts via `.resolve().relative_to(root)` and refuses with 400. AbortController-cancellable on the client. Replaces the hand-typed path inputs in AutonomyPanel and RunControls; original `<input>` stays as a power-user fallback. |
 | Vite ↔ FastAPI proxy | `apps/workbench-ui/vite.config.ts` | Real | `/api` → `localhost:8000`. |
 | Convention checker | `scripts/dev/check_repo_conventions.sh` | Real | 680 default + opt-in `--include-open-workstreams`. Hard gate for repo health. |
 | Test runner | `scripts/test/all.sh` | Real | Convention check → ruff lint → unit → integration → regression → validation → performance → UI typecheck. |

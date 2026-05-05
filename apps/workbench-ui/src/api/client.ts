@@ -238,6 +238,14 @@ export interface ApiClient {
     content: string,
   ): Promise<{ capsule: string; path: string; size_bytes: number }>;
   /**
+   * Browse one of the allow-listed roots (`simulation_capsules`,
+   * `temp_runs`, `local_cache`, `temp_imports`, `examples`). `path`
+   * is repo-root-relative within the chosen root; pass empty string
+   * for the root itself. Server validates `..` / symlink escapes.
+   */
+  browse(args: BrowseArgs, signal?: AbortSignal): Promise<BrowseResponse>;
+
+  /**
    * List the runnable examples discovered under `examples/`. Each entry
    * carries enough metadata for the UI to render a card + Run button
    * without the user knowing whether it's ModelSpec-driven or script-
@@ -339,6 +347,54 @@ export interface AutonomySweepResponse {
   completed: number;
   failed: number;
   stopped_reason: string;
+}
+
+/**
+ * Browse-able roots. The TS literal type mirrors the server-side
+ * allow-list in `simworkbench.api.server._BROWSE_ROOTS`. Adding a
+ * root requires a server change first, then this list.
+ */
+export const BROWSE_ROOTS = [
+  "simulation_capsules",
+  "temp_runs",
+  "local_cache",
+  "temp_imports",
+  "examples",
+] as const;
+
+export type BrowseRoot = (typeof BROWSE_ROOTS)[number];
+
+export interface BrowseArgs {
+  readonly root: BrowseRoot;
+  readonly path?: string;
+}
+
+/**
+ * Discriminated union: directories don't carry size/mtime in the
+ * common case, files always do.
+ */
+export type BrowseEntry =
+  | {
+      readonly kind: "dir";
+      readonly name: string;
+      readonly path: string;
+      readonly size_bytes: null;
+      readonly mtime_iso: string | null;
+    }
+  | {
+      readonly kind: "file";
+      readonly name: string;
+      readonly path: string;
+      readonly size_bytes: number;
+      readonly mtime_iso: string | null;
+    };
+
+export interface BrowseResponse {
+  readonly root: BrowseRoot;
+  readonly relative_path: string;
+  readonly parent_relative_path: string | null;
+  readonly entries: readonly BrowseEntry[];
+  readonly truncated: boolean;
 }
 
 export interface ExampleSummary {
@@ -688,6 +744,11 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
         undefined,
         baseUrl,
       ),
+    browse: ({ root, path }, signal) => {
+      const search = new URLSearchParams({ root });
+      if (path) search.set("path", path);
+      return fetchJson(`/browse?${search}`, { signal }, baseUrl);
+    },
     listExamples: () =>
       fetchJson(`/examples`, undefined, baseUrl),
     runExample: (name) =>

@@ -23,10 +23,11 @@ import {
   type AutonomySmokeResponse,
   type AutonomySweepResponse,
 } from "../../api/client";
-import { Card, Kpi, Pill } from "../ui";
+import { Card, FolderBrowser, Kpi, Pill } from "../ui";
 
 export default function AutonomyPanel() {
   const [capsule, setCapsule] = useState("");
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [design, setDesign] = useState<AutonomyDesignResponse | null>(null);
   const [smoke, setSmoke] = useState<AutonomySmokeResponse | null>(null);
   const [review, setReview] = useState<AutonomyReviewResponse | null>(null);
@@ -125,7 +126,30 @@ export default function AutonomyPanel() {
               placeholder="autonomous_experiment_kr_demo.lxp"
             />
           </label>
+          <button
+            type="button"
+            onClick={() => setBrowserOpen((v) => !v)}
+          >
+            {browserOpen ? "Hide browser" : "Browse capsules…"}
+          </button>
         </div>
+        {browserOpen && (
+          <div style={{ marginBottom: "0.75rem" }}>
+            <FolderBrowser
+              roots={["simulation_capsules"]}
+              initialRoot="simulation_capsules"
+              onSelect={(entry) => {
+                // Top-level capsule directories are the selectable
+                // unit; descend into them to inspect, but the autonomy
+                // endpoints want the directory name itself.
+                const head = entry.path.split("/")[0];
+                setCapsule(head);
+                setBrowserOpen(false);
+              }}
+              onClose={() => setBrowserOpen(false)}
+            />
+          </div>
+        )}
         <div className="row">
           <button
             type="button"

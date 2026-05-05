@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import { apiClient, type RunSummary } from "../api/client";
+import { FolderBrowser } from "./ui";
 
 export default function RunControls() {
   const [modelPath, setModelPath] = useState(
@@ -17,6 +18,7 @@ export default function RunControls() {
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [browserOpen, setBrowserOpen] = useState(false);
 
   async function onStart() {
     setRunning(true);
@@ -51,7 +53,13 @@ export default function RunControls() {
                 value={modelPath}
                 onChange={(e) => setModelPath(e.target.value)}
                 size={50}
-              />
+              />{" "}
+              <button
+                type="button"
+                onClick={() => setBrowserOpen((v) => !v)}
+              >
+                {browserOpen ? "Hide" : "Browse…"}
+              </button>
             </td>
           </tr>
           <tr>
@@ -90,6 +98,27 @@ export default function RunControls() {
           </tr>
         </tbody>
       </table>
+
+      {browserOpen && (
+        <div style={{ marginBottom: "1rem" }}>
+          <FolderBrowser
+            roots={["examples", "simulation_capsules"]}
+            initialRoot="examples"
+            filter={(entry) =>
+              entry.kind === "file" &&
+              (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))
+            }
+            onSelect={(entry, root) => {
+              // FolderBrowser yields a path relative to the chosen root;
+              // prefix with the root's directory name so the backend can
+              // resolve from repo_root().
+              setModelPath(`${root}/${entry.path}`);
+              setBrowserOpen(false);
+            }}
+            onClose={() => setBrowserOpen(false)}
+          />
+        </div>
+      )}
 
       <p>
         <button onClick={onStart} disabled={running}>
