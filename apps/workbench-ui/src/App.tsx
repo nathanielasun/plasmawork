@@ -1,14 +1,10 @@
 /**
- * Workbench app shell (current phase: Phase 9 — Sweeps, Optimization,
- * Uncertainty). Originally introduced in Phase 1F; rebuilt in subsequent
- * phases as new panels (capsules, tools, papers, proposals, codegen,
- * comparisons) shipped.
- *
- * Routes by panel: simulations, runs, code viewer, docs, diagnostics, plots,
- * capsules, tools, papers, proposals, codegen, comparisons. Layout is a left
- * sidebar + main content. The sidebar links use React Router's NavLink so the
- * active panel is highlighted.
+ * Workbench app shell. Layout is a collapsible left sidebar + main
+ * content area. The sidebar links use React Router's NavLink so the
+ * active panel is highlighted; collapsed state persists across reloads
+ * via localStorage.
  */
+import { useEffect, useState } from "react";
 import { NavLink, Route, Routes, Navigate } from "react-router-dom";
 import SimulationList from "./components/SimulationList";
 import RunControls from "./components/RunControls";
@@ -25,28 +21,69 @@ import ComparisonReportPanel from "./components/reports/ComparisonReport";
 import AutonomyPanel from "./components/autonomy/AutonomyPanel";
 import ExamplesGallery from "./components/examples/ExamplesGallery";
 
-const NAV: { to: string; label: string }[] = [
-  { to: "/examples", label: "Examples" },
-  { to: "/simulations", label: "Simulations" },
-  { to: "/runs", label: "Run Controls" },
-  { to: "/code", label: "Code Viewer" },
-  { to: "/diagnostics", label: "Diagnostics" },
-  { to: "/plots", label: "Plots" },
-  { to: "/capsules", label: "Capsules" },
-  { to: "/tools", label: "Tools" },
-  { to: "/papers", label: "Papers" },
-  { to: "/proposals", label: "Proposals" },
-  { to: "/codegen", label: "Generated Code" },
-  { to: "/comparisons", label: "Comparisons" },
-  { to: "/autonomy", label: "Autonomy" },
-  { to: "/docs", label: "Documentation" },
+interface NavEntry {
+  readonly to: string;
+  readonly label: string;
+  readonly short: string; // shown when sidebar is collapsed
+}
+
+const NAV: readonly NavEntry[] = [
+  { to: "/examples", label: "Examples", short: "Ex" },
+  { to: "/simulations", label: "Simulations", short: "Sim" },
+  { to: "/runs", label: "Run Controls", short: "Run" },
+  { to: "/code", label: "Code Viewer", short: "Code" },
+  { to: "/diagnostics", label: "Diagnostics", short: "Diag" },
+  { to: "/plots", label: "Plots", short: "Plot" },
+  { to: "/capsules", label: "Capsules", short: "Caps" },
+  { to: "/tools", label: "Tools", short: "Tool" },
+  { to: "/papers", label: "Papers", short: "Pap" },
+  { to: "/proposals", label: "Proposals", short: "Prop" },
+  { to: "/codegen", label: "Generated Code", short: "Gen" },
+  { to: "/comparisons", label: "Comparisons", short: "Comp" },
+  { to: "/autonomy", label: "Autonomy", short: "Auto" },
+  { to: "/docs", label: "Documentation", short: "Docs" },
 ];
 
-export default function App() {
+const STORAGE_KEY = "workbench:sidebar-collapsed";
+
+function readInitialCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export default function App(): JSX.Element {
+  const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
+    } catch {
+      // localStorage unavailable (private mode, jsdom in test) — ignore.
+    }
+  }, [collapsed]);
+
+  const toggle = (): void => setCollapsed((v) => !v);
+
   return (
-    <div className="layout">
-      <aside className="sidebar">
-        <h1>Scientific Simulation Workbench</h1>
+    <div className={`layout${collapsed ? " layout-collapsed" : ""}`}>
+      <aside className="sidebar" aria-label="Primary">
+        <div className="sidebar-header">
+          {!collapsed && <h1>Scientific Simulation Workbench</h1>}
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggle}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? "›" : "‹"}
+          </button>
+        </div>
         <nav>
           <ul>
             {NAV.map((entry) => (
@@ -54,14 +91,19 @@ export default function App() {
                 <NavLink
                   to={entry.to}
                   className={({ isActive }) => (isActive ? "active" : undefined)}
+                  title={collapsed ? entry.label : undefined}
                 >
-                  {entry.label}
+                  {collapsed ? (
+                    <span className="sidebar-short">{entry.short}</span>
+                  ) : (
+                    entry.label
+                  )}
                 </NavLink>
               </li>
             ))}
           </ul>
         </nav>
-        <p className="phase-tag">Phase 10</p>
+        {!collapsed && <p className="phase-tag">Phase 10</p>}
       </aside>
       <main>
         <Routes>

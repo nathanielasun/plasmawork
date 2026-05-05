@@ -1,46 +1,27 @@
 /**
  * DocsViewer — in-app documentation panel.
  *
- * Per AGENTS.md "Maintain program documentation inside `docs_site/`...
- * the workbench UI loads documentation from this canonical source", this
- * panel pulls each page directly from `docs_site/src/content/<slug>.tsx`
- * via Vite's `import.meta.glob`. The TSX modules are bundled lazily —
- * each page is its own chunk, so the workbench startup is unaffected
- * by docs we haven't opened yet.
+ * Pages are bundled from `docs_site/src/content/*.tsx` via Vite's
+ * `import.meta.glob`, one lazy chunk per page. The user-facing surface
+ * is intentionally minimal: a horizontal nav of page links, then the
+ * page body. No architectural exposition, no probe, no iframe.
  *
- * History:
- *   - The first attempt used a dynamic `import()` with `@vite-ignore`,
- *     which made Vite skip alias resolution and every page 404'd at
- *     runtime.
- *   - The second attempt iframed a separate Vite server at
- *     `localhost:3000`, which worked but required a third process to
- *     be running.
- *   - This version (2026-05-05) collapses the docs back into the
- *     workbench UI bundle: one server, one process, no iframe, no
- *     probe. The canonical-source rule is still satisfied — pages
- *     literally come from `docs_site/src/content/`, just bundled
- *     into the workbench instead of served by a separate process.
+ * Routing: `/docs` defaults to the first discovered page; `/docs/:slug`
+ * activates that page. NavLink-based so right-click → open in new tab
+ * and URL sharing both work.
  */
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Card, Pill } from "./ui";
+import { NavLink, Navigate, useParams } from "react-router-dom";
 
 type DocsModule = { default: ComponentType };
 
-// `import.meta.glob` runs at build time. Vite walks docs_site/src/content/
-// and produces a Record of dynamic-import functions, one per .tsx file.
-// Path is relative to THIS file (apps/workbench-ui/src/components/), so:
-//   ../../../../docs_site/src/content/*.tsx
-// Lazy `eager: false` means each page becomes its own code-split chunk.
+// Build-time discovery: Vite walks docs_site/src/content/ and produces
+// a Record of lazy import functions. Path is relative to THIS file.
 const PAGE_MODULES = import.meta.glob<DocsModule>(
   "../../../../docs_site/src/content/*.tsx",
 );
 
-// Build a slug → loader map. Path looks like
-//   "../../../../docs_site/src/content/overview.tsx"
-// → slug = "overview". Done once at module-load time so navigation is
-// instant.
 const PAGE_LOADERS: Readonly<Record<string, () => Promise<DocsModule>>> = (() => {
   const out: Record<string, () => Promise<DocsModule>> = {};
   for (const [path, loader] of Object.entries(PAGE_MODULES)) {
@@ -51,6 +32,7 @@ const PAGE_LOADERS: Readonly<Record<string, () => Promise<DocsModule>>> = (() =>
 })();
 
 const SLUGS = Object.freeze(Object.keys(PAGE_LOADERS).sort());
+const DEFAULT_SLUG = SLUGS.includes("overview") ? "overview" : SLUGS[0] ?? "";
 
 function humanize(slug: string): string {
   return slug
@@ -67,17 +49,21 @@ interface PageState {
 
 export default function DocsViewer(): JSX.Element {
   const { slug } = useParams<{ slug?: string }>();
-  const activeSlug = slug ?? SLUGS[0] ?? "overview";
+  // No slug in URL → redirect to the default page so the user has
+  // a stable URL they can bookmark / share.
+  if (!slug) {
+    return <Navigate to={`/docs/${DEFAULT_SLUG}`} replace />;
+  }
+
   const [page, setPage] = useState<PageState>({ kind: "loading" });
-  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
-    const loader = PAGE_LOADERS[activeSlug];
+    const loader = PAGE_LOADERS[slug];
     if (!loader) {
       setPage({
         kind: "missing",
-        message: `No docs page found at docs_site/src/content/${activeSlug}.tsx`,
+        message: `No docs page at docs_site/src/content/${slug}.tsx.`,
       });
       return;
     }
@@ -97,67 +83,38 @@ export default function DocsViewer(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [activeSlug]);
+  }, [slug]);
 
   return (
-    <article>
-      <header className="hero">
-        <div className="hero-row">
-          <div>
-            <p className="hero-eyebrow">Documentation</p>
-            <h1 className="hero-title">Workbench docs</h1>
-            <p className="hero-subtitle">
-              Pages live at <code>docs_site/src/content/&lt;slug&gt;.tsx</code>{" "}
-              and are bundled into the workbench UI lazily — one chunk per
-              page. AGENTS.md "no inlined doc text" still holds: the
-              workbench imports from the canonical source rather than
-              copying it.
-            </p>
-          </div>
-          <Pill kind="trusted">{SLUGS.length} pages</Pill>
-        </div>
-      </header>
-
-      <Card title="Pages" subtitle="Click a page to load it.">
-        {SLUGS.length === 0 && (
-          <p className="placeholder">
-            No docs pages discovered under{" "}
-            <code>docs_site/src/content/</code>. Add a TSX file there
-            and the panel will pick it up on the next reload.
-          </p>
-        )}
-        {SLUGS.length > 0 && (
-          <div className="row">
-            {SLUGS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={s === activeSlug ? "primary" : undefined}
-                onClick={() => navigate(`/docs/${s}`)}
-              >
-                {humanize(s)}
-              </button>
-            ))}
-          </div>
-        )}
-      </Card>
+    <div className="docs-page">
+      <nav className="docs-nav" aria-label="Documentation pages">
+        {SLUGS.map((s) => (
+          <NavLink
+            key={s}
+            to={`/docs/${s}`}
+            className={({ isActive }) =>
+              isActive ? "docs-nav-link docs-nav-active" : "docs-nav-link"
+            }
+          >
+            {humanize(s)}
+          </NavLink>
+        ))}
+      </nav>
 
       <div className="docs-content">
         {page.kind === "loading" && (
-          <p className="placeholder">Loading {activeSlug}…</p>
+          <p className="docs-loading">Loading…</p>
         )}
         {page.kind === "missing" && (
-          <Card title={`Page not found: ${activeSlug}`}>
-            <p>{page.message}</p>
-          </Card>
+          <p className="docs-loading">{page.message}</p>
         )}
         {page.kind === "error" && (
-          <Card title={`Failed to load ${activeSlug}`}>
-            <p className="error">{page.message}</p>
-          </Card>
+          <p className="error" role="alert">
+            {page.message}
+          </p>
         )}
         {page.kind === "ready" && page.Component && <page.Component />}
       </div>
-    </article>
+    </div>
   );
 }

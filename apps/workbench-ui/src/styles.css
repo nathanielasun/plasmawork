@@ -143,24 +143,77 @@ a:hover {
   display: grid;
   grid-template-columns: 260px 1fr;
   min-height: 100vh;
+  transition: grid-template-columns 0.2s ease;
+}
+.layout.layout-collapsed {
+  grid-template-columns: 56px 1fr;
 }
 
 aside.sidebar {
   border-right: 1px solid var(--border);
-  padding: 1.25rem 0.9rem;
+  padding: 1rem 0.9rem;
   background: var(--surface-card);
   position: sticky;
   top: 0;
   height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.layout-collapsed aside.sidebar {
+  padding: 1rem 0.5rem;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 aside.sidebar h1 {
   font-size: 0.95rem;
-  margin: 0 0 1.25rem 0;
+  margin: 0;
   color: var(--fg);
   letter-spacing: -0.01em;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-toggle {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.sidebar-toggle:hover {
+  background: var(--surface-nested);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.layout-collapsed .sidebar-header {
+  justify-content: center;
+}
+
+.sidebar-short {
+  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
+  font-size: 0.78rem;
+  letter-spacing: -0.005em;
 }
 
 aside.sidebar nav ul {
@@ -175,11 +228,14 @@ aside.sidebar nav li {
 
 aside.sidebar nav a {
   display: block;
-  padding: 0.35rem 0.6rem;
+  padding: 0.4rem 0.6rem;
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 0.875rem;
   transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 aside.sidebar nav a:hover {
   background: var(--surface-nested);
@@ -190,6 +246,11 @@ aside.sidebar nav a.active {
   background: var(--surface-nested);
   color: var(--fg);
   font-weight: 600;
+}
+
+.layout-collapsed aside.sidebar nav a {
+  text-align: center;
+  padding: 0.45rem 0.25rem;
 }
 
 aside.sidebar .phase-tag {
@@ -690,28 +751,69 @@ ol.lifecycle li.lifecycle-active {
 }
 
 /* =============================================================================
- * docs-content — typography reset for the in-app DocsViewer.
+ * Docs page — clean, minimal-chrome reading surface.
  *
- * The TSX pages under docs_site/src/content/ are written as plain HTML
- * (no Tailwind, no per-page styling). This wrapper gives them readable
- * line-length, breathing room, and consistent hierarchy when bundled
- * into the workbench UI via `import.meta.glob` from DocsViewer.tsx.
+ * The TSX pages under docs_site/src/content/ are written as plain HTML.
+ * `.docs-page` lays out the nav + content; `.docs-content` provides the
+ * typography reset; `.docs-nav` is the horizontal page selector.
  * ===========================================================================*/
 
-.docs-content {
+.docs-page {
+  display: flex;
+  flex-direction: column;
   max-width: 78ch;
   margin: 0 auto;
+  gap: 1.25rem;
 }
 
-.docs-content article {
-  background: var(--surface-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  padding: 2rem 2.5rem;
-  box-shadow: var(--shadow-sm);
+.docs-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-nav-link {
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+  letter-spacing: -0.005em;
+}
+.docs-nav-link:hover {
+  background: var(--surface-nested);
+  color: var(--fg);
+  text-decoration: none;
+}
+.docs-nav-active {
+  background: var(--fg);
+  color: var(--surface-card);
+}
+.docs-nav-active:hover {
+  background: var(--fg);
+  color: var(--surface-card);
+}
+
+.docs-loading {
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.docs-content {
   font-size: 0.95rem;
   line-height: 1.65;
   color: var(--fg);
+}
+
+/* Pages render their own <article> root; the wrapper just gives it
+ * room to breathe without another visible card boundary. */
+.docs-content article {
+  margin: 0;
 }
 
 .docs-content h1 {
