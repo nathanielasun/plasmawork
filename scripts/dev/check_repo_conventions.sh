@@ -1125,6 +1125,55 @@ check_grep_in_file 'Cross-cutting review checks' \
 check_grep_in_file 'Definition of Done' \
   program_development/phase_05_security_implementation_plan.md \
   "implementation plan documents close-out gate"
+# v4 residual fixes (V4-R1 through V4-R10) must remain landed in the plan.
+check_grep_in_file 'archive\.entry_rejected' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 §29 includes archive.entry_rejected (V4-R1)"
+check_grep_in_file 'csrf\.failed' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 audit-event list includes csrf.failed (V4-R2)"
+check_grep_in_file 'origin\.mismatch' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 audit-event list includes origin.mismatch (V4-R2)"
+check_grep_in_file 'unauthenticated' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 schema accepts unauthenticated actor_type (V4-R3)"
+check_grep_in_file 'approval:request' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 capability list includes approval:request (V4-R4)"
+check_grep_in_file 'Storage Reservation Lifecycle' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 documents storage_reservations lifecycle (V4-R5)"
+check_grep_in_file 'period_end > period_start' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 quota_counters CHECK enforces period bounds (V4-R6)"
+check_grep_in_file 'audit_event_id UUID NOT NULL' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 operator_events.audit_event_id NOT NULL (V4-R7)"
+check_grep_in_file 'changing security configuration, defined as' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 §5.6 enumerates security-configuration changes (V4-R8)"
+check_grep_in_file 'tested JCS library' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 §19.3 mandates tested JCS library (V4-R9)"
+check_grep_in_file 'run:approve_hpc' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 §13 includes run:approve_hpc (V4-R10)"
+
+section "Layer-0 ADRs + secure_core manifest"
+check_file_exists program_development/architectural_decisions/ADR-0008-secure-core-language-and-layout.md
+check_file_exists program_development/architectural_decisions/ADR-0009-sandbox-runtime.md
+check_file_exists program_development/architectural_decisions/ADR-0010-worm-anchor-provider.md
+check_file_exists program_development/architectural_decisions/ADR-0011-secrets-manager.md
+check_file_exists program_development/architectural_decisions/ADR-0012-worker-upload-protocol.md
+check_file_exists packages/secure_core/IMPLEMENTATION_MANIFEST.md
+check_file_exists packages/secure_core/README.md
+check_grep_in_file 'Per-endpoint canonical recipe' \
+  packages/secure_core/IMPLEMENTATION_MANIFEST.md \
+  "secure_core manifest documents the per-endpoint recipe"
+check_grep_in_file 'Error shape contract' \
+  packages/secure_core/IMPLEMENTATION_MANIFEST.md \
+  "secure_core manifest documents the error envelope"
 
 section "Phase 10 — Cross-cutting + gate walk"
 check_file_exists tests/integration/test_phase_10_gate_walk.py
