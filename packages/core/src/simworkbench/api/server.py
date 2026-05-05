@@ -634,15 +634,142 @@ def create_app() -> FastAPI:
             duration_seconds=_time.monotonic() - started,
         )
 
+    # ---- runs <-> temp_runs/ unification ------------------------------
+    #
+    # In-memory `runs` is populated by `start_run` and the modelspec
+    # branch of `run_example`. Script-driven example runs (ising, MD,
+    # laser_species, pde_wave_equation) execute via subprocess and
+    # write summaries to `temp_runs/<run_id>/summary.json` — they
+    # never enter the in-memory dict. Without merging, the
+    # Diagnostics tab silently drops every script-driven run.
+    #
+    # The merge is read-only: discovery walks temp_runs/ on each
+    # listing call, parses each summary.json, and extracts any
+    # diagnostic-shaped data (list[number], dict of list[number],
+    # or list[dict] columnar) so the existing /api/runs response
+    # contract still holds.
+
+    def _load_temp_run_summary(run_id: str) -> dict[str, Any] | None:
+        """Return the parsed summary.json for a run id under temp_runs/.
+
+        Path-traversal-guarded via name normalisation: the run_id
+        cannot contain `/` or start with `.`. Returns None if the
+        file doesn't exist or won't parse.
+        """
+        if not run_id or "/" in run_id or "\\" in run_id or run_id.startswith("."):
+            return None
+        target = temp_runs_root() / run_id / "summary.json"
+        if not target.is_file():
+            return None
+        try:
+            import json as _json
+
+            return _json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def _extract_diagnostics(summary: dict[str, Any]) -> dict[str, list[float]]:
+        """Walk the summary dict, surface anything time-series-shaped.
+
+        Three accepted shapes (heuristic, best-effort — heterogeneous
+        run-script outputs predate any JSON schema):
+          1. Top-level ``key: list[number]`` → exposed as ``key``.
+          2. Top-level ``key: {sub: list[number]}`` → exposed as
+             ``key.sub`` (e.g. ``species_trajectories.A``).
+          3. Top-level ``key: list[dict]`` → each numeric column is
+             exposed as ``key.column`` (e.g. ising's ``rows.m_per_spin``).
+        """
+        out: dict[str, list[float]] = {}
+
+        def _is_number_list(seq: Any) -> bool:
+            return (
+                isinstance(seq, list)
+                and bool(seq)
+                and all(isinstance(x, (int, float)) for x in seq)
+                and not all(isinstance(x, bool) for x in seq)
+            )
+
+        for key, val in summary.items():
+            # Pattern 1: list of numbers.
+            if _is_number_list(val):
+                out[key] = [float(x) for x in val]
+                continue
+            # Pattern 2: dict of list of numbers.
+            if isinstance(val, dict):
+                for sub_key, sub_val in val.items():
+                    if _is_number_list(sub_val):
+                        out[f"{key}.{sub_key}"] = [float(x) for x in sub_val]
+                continue
+            # Pattern 3: list of dicts → tabular columns.
+            if isinstance(val, list) and val and all(isinstance(x, dict) for x in val):
+                columns: set[str] = set()
+                for row in val:
+                    columns.update(row.keys())
+                for col in columns:
+                    series: list[float] = []
+                    for row in val:
+                        v = row.get(col)
+                        if isinstance(v, (int, float)) and not isinstance(v, bool):
+                            series.append(float(v))
+                    if series:
+                        out[f"{key}.{col}"] = series
+        return out
+
+    def _temp_run_to_info(summary: dict[str, Any]) -> dict[str, Any]:
+        """Project a summary.json into the same shape `runs[rid]` uses."""
+        diagnostics = _extract_diagnostics(summary)
+        # Best-effort: time axis from a `time_seconds` key if present
+        # under any common location, else nothing (the diagnostic GET
+        # falls back to integer indices).
+        return {
+            "state": str(summary.get("state", "completed")),
+            "elapsed_seconds": float(summary.get("elapsed_seconds", 0.0) or 0.0),
+            "final_simulation_time": float(
+                summary.get("final_simulation_time")
+                or summary.get("simulated_time_s")
+                or 0.0
+            ),
+            "diagnostics": diagnostics,
+            "placeholders": list(summary.get("placeholders", []) or []),
+            "_source": "temp_run",
+        }
+
+    def _discover_temp_runs() -> dict[str, dict[str, Any]]:
+        """Walk temp_runs/ and load every summary.json found."""
+        root = temp_runs_root()
+        out: dict[str, dict[str, Any]] = {}
+        if not root.is_dir():
+            return out
+        for child in root.iterdir():
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            summary = _load_temp_run_summary(child.name)
+            if summary is None:
+                continue
+            run_id = str(summary.get("run_id") or child.name)
+            out[run_id] = _temp_run_to_info(summary)
+        return out
+
     @app.get("/api/runs", response_model=list[RunSummary])
     def list_runs() -> list[RunSummary]:
-        return [_summary(rid, info) for rid, info in runs.items()]
+        # In-memory runs take precedence (they carry the Runner's
+        # full diagnostic dict); on-disk summaries fill in everything
+        # the user kicked off through Examples gallery / a terminal.
+        merged: dict[str, dict[str, Any]] = {}
+        merged.update(_discover_temp_runs())
+        merged.update(runs)
+        return [_summary(rid, info) for rid, info in merged.items()]
 
     @app.get("/api/runs/{run_id}", response_model=RunSummary)
     def get_run(run_id: str) -> RunSummary:
-        if run_id not in runs:
-            raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found")
-        return _summary(run_id, runs[run_id])
+        if run_id in runs:
+            return _summary(run_id, runs[run_id])
+        summary = _load_temp_run_summary(run_id)
+        if summary is None:
+            raise HTTPException(
+                status_code=404, detail=f"Run {run_id!r} not found"
+            )
+        return _summary(run_id, _temp_run_to_info(summary))
 
     @app.post("/api/runs", response_model=RunSummary)
     def start_run(req: StartRunRequest) -> RunSummary:
@@ -704,16 +831,34 @@ def create_app() -> FastAPI:
 
     @app.get("/api/runs/{run_id}/diagnostics/{name}")
     def get_diagnostic(run_id: str, name: str) -> dict[str, Any]:
-        if run_id not in runs:
+        # Resolve the run from in-memory first, then fall back to the
+        # on-disk summary. This is what unifies the Diagnostics tab
+        # across in-process runs and script-driven examples.
+        info: dict[str, Any] | None = None
+        if run_id in runs:
+            info = runs[run_id]
+        else:
+            summary = _load_temp_run_summary(run_id)
+            if summary is not None:
+                info = _temp_run_to_info(summary)
+        if info is None:
             raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found")
-        diagnostics = runs[run_id]["diagnostics"]
+        diagnostics = info["diagnostics"]
         if name not in diagnostics:
             raise HTTPException(
                 status_code=404,
                 detail=f"Diagnostic {name!r} not present on run {run_id!r}",
             )
-        times = diagnostics.get("time_seconds", [])
-        return {"run_id": run_id, "name": name, "times": times, "values": diagnostics[name]}
+        values = diagnostics[name]
+        # Time axis: prefer time_seconds when present (python_cpu shape),
+        # otherwise an integer index axis. Scripts that produce
+        # tabular data via Pattern 3 in _extract_diagnostics get the
+        # index axis — the consumer can rebind by picking another
+        # column as x via a future axis-selector UI.
+        times = diagnostics.get("time_seconds")
+        if not isinstance(times, list) or len(times) != len(values):
+            times = list(range(len(values)))
+        return {"run_id": run_id, "name": name, "times": times, "values": values}
 
     @app.get("/api/docs/pages")
     def list_docs_pages() -> list[dict[str, str]]:

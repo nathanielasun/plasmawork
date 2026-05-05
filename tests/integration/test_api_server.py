@@ -23,10 +23,20 @@ def test_health_returns_ok():
     assert "version" in body
 
 
-def test_runs_list_initially_empty():
+def test_runs_list_responds_with_a_list_of_run_summaries():
+    """`/api/runs` returns 200 with a JSON list. The list is no longer
+    "initially empty" — as of the temp_runs/ merge (2026-05-05) it
+    surfaces on-disk summaries written by script-driven examples too.
+    Per-app in-memory isolation is checked separately by
+    `test_two_apps_have_isolated_in_memory_runs`."""
     r = _client().get("/api/runs")
     assert r.status_code == 200
-    assert r.json() == []
+    body = r.json()
+    assert isinstance(body, list)
+    for row in body:
+        assert "run_id" in row
+        assert "state" in row
+        assert "diagnostics_keys" in row
 
 
 def test_start_run_executes_simple_rate_equations():
@@ -61,11 +71,19 @@ def test_start_run_executes_simple_rate_equations():
     assert any(item["run_id"] == run_id for item in listed)
 
 
-def test_two_apps_have_isolated_run_registries():
+def test_two_apps_have_isolated_in_memory_runs():
     """Regression for `agent_error_patterns.md` "API factory advertises
-    isolation while sharing module-global state"."""
+    isolation while sharing module-global state".
+
+    Both apps share the on-disk `temp_runs/` directory (it's a
+    filesystem singleton, not closure state), but the in-memory
+    registry must remain per-app. Asserting on the diff in run_ids
+    after one app starts a run is the right shape: the freshly
+    started run_id must appear ONLY in app A's listing.
+    """
     a = _client()
     b = _client()
+    a_before = {row["run_id"] for row in a.get("/api/runs").json()}
     started = a.post(
         "/api/runs",
         json={
@@ -76,13 +94,17 @@ def test_two_apps_have_isolated_run_registries():
         },
     )
     assert started.status_code == 200
-    a_runs = a.get("/api/runs").json()
-    b_runs = b.get("/api/runs").json()
-    assert len(a_runs) == 1, "App A should see its own run"
-    assert len(b_runs) == 0, (
-        "App B should NOT see App A's run — registry must live in the "
-        "create_app() closure, not at module scope."
+    new_run_id = started.json()["run_id"]
+    a_after = {row["run_id"] for row in a.get("/api/runs").json()}
+    b_after = {row["run_id"] for row in b.get("/api/runs").json()}
+    assert new_run_id in a_after, "App A should see its own run"
+    assert new_run_id not in b_after, (
+        "App B should NOT see App A's IN-MEMORY run — registry must "
+        "live in the create_app() closure, not at module scope. "
+        "(Disk-backed temp_runs/ entries are shared by design.)"
     )
+    # And app A's in-memory delta is exactly the new run.
+    assert (a_after - a_before) == {new_run_id}
 
 
 def test_get_run_returns_404_for_unknown_id():
