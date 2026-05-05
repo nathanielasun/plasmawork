@@ -75,10 +75,12 @@ This creates a Python virtualenv under `.venv/`, installs the Phase 1 core packa
 # Run the Python backend / API server (Phase 1A–C)
 ./scripts/dev/run_backend.sh
 
-# Run the documentation site (port 3000 by default).
-# The workbench UI's "Documentation" tab iframes this server, so the
-# pages render directly from `docs_site/src/content/` without
-# duplication. Override the URL the UI uses via VITE_DOCS_BASE_URL.
+# (Optional) Run the docs site as a standalone Vite app on port 3000.
+# As of 2026-05-05 the workbench UI's "Documentation" tab bundles
+# every page from `docs_site/src/content/*.tsx` directly into the
+# UI bundle (one lazy chunk per page) — so this server is only
+# needed if you want to host or preview the docs without the
+# workbench UI running.
 ./scripts/docs/dev.sh
 
 # Validate repository conventions

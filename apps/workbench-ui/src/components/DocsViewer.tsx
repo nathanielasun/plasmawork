@@ -3,106 +3,101 @@
  *
  * Per AGENTS.md "Maintain program documentation inside `docs_site/`...
  * the workbench UI loads documentation from this canonical source", this
- * panel renders the docs by IFRAMING the docs_site dev server (default
- * `http://localhost:3000/`). Pages on disk live at
- * `docs_site/src/content/<slug>.tsx`; the docs server serves them at
- * `/<slug>`. Nothing is duplicated into the workbench UI bundle.
+ * panel pulls each page directly from `docs_site/src/content/<slug>.tsx`
+ * via Vite's `import.meta.glob`. The TSX modules are bundled lazily —
+ * each page is its own chunk, so the workbench startup is unaffected
+ * by docs we haven't opened yet.
  *
- * The earlier implementation tried to dynamically import the TSX modules
- * via Vite's `@docs/` alias with `/* @vite-ignore *‍/`, which made the
- * import skip resolution at build time and 404 at runtime. That broke
- * every page. The iframe approach is structurally simpler: the docs
- * server already knows how to serve the pages, the workbench just
- * embeds it.
- *
- * Override the docs URL via `VITE_DOCS_BASE_URL` if you run the docs
- * server on a non-default port.
+ * History:
+ *   - The first attempt used a dynamic `import()` with `@vite-ignore`,
+ *     which made Vite skip alias resolution and every page 404'd at
+ *     runtime.
+ *   - The second attempt iframed a separate Vite server at
+ *     `localhost:3000`, which worked but required a third process to
+ *     be running.
+ *   - This version (2026-05-05) collapses the docs back into the
+ *     workbench UI bundle: one server, one process, no iframe, no
+ *     probe. The canonical-source rule is still satisfied — pages
+ *     literally come from `docs_site/src/content/`, just bundled
+ *     into the workbench instead of served by a separate process.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import type { ComponentType } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { apiClient, type DocsPage } from "../api/client";
 import { Card, Pill } from "./ui";
 
-const DOCS_BASE_URL: string =
-  (import.meta.env.VITE_DOCS_BASE_URL as string | undefined) ??
-  "http://localhost:3000";
+type DocsModule = { default: ComponentType };
 
-type ServerState = "probing" | "up" | "down";
+// `import.meta.glob` runs at build time. Vite walks docs_site/src/content/
+// and produces a Record of dynamic-import functions, one per .tsx file.
+// Path is relative to THIS file (apps/workbench-ui/src/components/), so:
+//   ../../../../docs_site/src/content/*.tsx
+// Lazy `eager: false` means each page becomes its own code-split chunk.
+const PAGE_MODULES = import.meta.glob<DocsModule>(
+  "../../../../docs_site/src/content/*.tsx",
+);
 
-function buildPageUrl(slug: string): string {
-  return `${DOCS_BASE_URL.replace(/\/$/, "")}/${slug}`;
+// Build a slug → loader map. Path looks like
+//   "../../../../docs_site/src/content/overview.tsx"
+// → slug = "overview". Done once at module-load time so navigation is
+// instant.
+const PAGE_LOADERS: Readonly<Record<string, () => Promise<DocsModule>>> = (() => {
+  const out: Record<string, () => Promise<DocsModule>> = {};
+  for (const [path, loader] of Object.entries(PAGE_MODULES)) {
+    const match = path.match(/\/([^/]+)\.tsx$/);
+    if (match) out[match[1]] = loader;
+  }
+  return out;
+})();
+
+const SLUGS = Object.freeze(Object.keys(PAGE_LOADERS).sort());
+
+function humanize(slug: string): string {
+  return slug
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
-function probeDocsServer(signal: AbortSignal): Promise<boolean> {
-  // The docs server has no /health endpoint; a HEAD on the root
-  // suffices. Use `mode: "no-cors"` so a successful network round-trip
-  // doesn't fail the promise just because Vite's dev server doesn't
-  // emit CORS headers for our origin. Even with no-cors we get a
-  // non-throwing response when the server is reachable.
-  return fetch(`${DOCS_BASE_URL}/`, {
-    method: "GET",
-    mode: "no-cors",
-    signal,
-  })
-    .then(() => true)
-    .catch(() => false);
+interface PageState {
+  readonly kind: "loading" | "ready" | "missing" | "error";
+  readonly Component?: ComponentType;
+  readonly message?: string;
 }
 
 export default function DocsViewer(): JSX.Element {
   const { slug } = useParams<{ slug?: string }>();
-  const activeSlug = slug ?? "overview";
-  const [pages, setPages] = useState<readonly DocsPage[] | null>(null);
-  const [pagesError, setPagesError] = useState<string | null>(null);
-  const [serverState, setServerState] = useState<ServerState>("probing");
+  const activeSlug = slug ?? SLUGS[0] ?? "overview";
+  const [page, setPage] = useState<PageState>({ kind: "loading" });
   const navigate = useNavigate();
-  const probeTimer = useRef<number | null>(null);
 
-  // Fetch the page list once.
   useEffect(() => {
     let cancelled = false;
-    apiClient
-      .listDocsPages()
-      .then((p) => {
-        if (!cancelled) setPages(p);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setPagesError(e instanceof Error ? e.message : String(e));
-        }
+    const loader = PAGE_LOADERS[activeSlug];
+    if (!loader) {
+      setPage({
+        kind: "missing",
+        message: `No docs page found at docs_site/src/content/${activeSlug}.tsx`,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Probe the docs server. Re-probe every 5 s when down so the panel
-  // catches up the moment the user runs `scripts/docs/dev.sh`.
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-
-    const tick = (): void => {
-      probeDocsServer(controller.signal).then((up) => {
+      return;
+    }
+    setPage({ kind: "loading" });
+    loader()
+      .then((mod) => {
         if (cancelled) return;
-        setServerState(up ? "up" : "down");
-        if (!up) {
-          probeTimer.current = window.setTimeout(tick, 5000);
-        }
+        setPage({ kind: "ready", Component: mod.default });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setPage({
+          kind: "error",
+          message: err instanceof Error ? err.message : String(err),
+        });
       });
-    };
-    tick();
-
     return () => {
       cancelled = true;
-      controller.abort();
-      if (probeTimer.current !== null) {
-        window.clearTimeout(probeTimer.current);
-        probeTimer.current = null;
-      }
     };
-  }, []);
-
-  const iframeUrl = buildPageUrl(activeSlug);
+  }, [activeSlug]);
 
   return (
     <article>
@@ -112,92 +107,57 @@ export default function DocsViewer(): JSX.Element {
             <p className="hero-eyebrow">Documentation</p>
             <h1 className="hero-title">Workbench docs</h1>
             <p className="hero-subtitle">
-              Pages are served by the canonical{" "}
-              <code>docs_site/</code> dev server at{" "}
-              <code>{DOCS_BASE_URL}</code>. Per AGENTS.md, the workbench UI
-              never inlines doc text — it embeds the docs server, so
-              pages are kept in lockstep with the source on disk.
+              Pages live at <code>docs_site/src/content/&lt;slug&gt;.tsx</code>{" "}
+              and are bundled into the workbench UI lazily — one chunk per
+              page. AGENTS.md "no inlined doc text" still holds: the
+              workbench imports from the canonical source rather than
+              copying it.
             </p>
           </div>
-          {serverState === "up" && <Pill kind="trusted">docs server up</Pill>}
-          {serverState === "down" && (
-            <Pill kind="warning">docs server not reachable</Pill>
-          )}
-          {serverState === "probing" && <Pill kind="draft">probing…</Pill>}
+          <Pill kind="trusted">{SLUGS.length} pages</Pill>
         </div>
       </header>
 
-      {pagesError && (
-        <p className="error" role="alert">
-          Backend pages list unavailable: {pagesError}
-        </p>
-      )}
-
-      <Card title="Pages" subtitle="Click a page to load it from the docs server.">
-        {pages === null && <p className="placeholder">Loading…</p>}
-        {pages !== null && pages.length === 0 && (
-          <p className="placeholder">No docs pages discovered.</p>
+      <Card title="Pages" subtitle="Click a page to load it.">
+        {SLUGS.length === 0 && (
+          <p className="placeholder">
+            No docs pages discovered under{" "}
+            <code>docs_site/src/content/</code>. Add a TSX file there
+            and the panel will pick it up on the next reload.
+          </p>
         )}
-        {pages !== null && pages.length > 0 && (
+        {SLUGS.length > 0 && (
           <div className="row">
-            {pages.map((p) => (
+            {SLUGS.map((s) => (
               <button
-                key={p.slug}
+                key={s}
                 type="button"
-                className={p.slug === activeSlug ? "primary" : undefined}
-                onClick={() => navigate(`/docs/${p.slug}`)}
+                className={s === activeSlug ? "primary" : undefined}
+                onClick={() => navigate(`/docs/${s}`)}
               >
-                {p.title}
+                {humanize(s)}
               </button>
             ))}
           </div>
         )}
       </Card>
 
-      <Card
-        title={activeSlug}
-        action={
-          <a
-            href={iframeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            open in new tab ↗
-          </a>
-        }
-      >
-        {serverState === "down" ? (
-          <div className="card-panel">
-            <p>
-              <strong>Docs server is not reachable at{" "}
-              <code>{DOCS_BASE_URL}</code>.</strong>
-            </p>
-            <p>Start it from a terminal:</p>
-            <pre>
-              <code>scripts/docs/dev.sh</code>
-            </pre>
-            <p className="muted">
-              The panel re-probes every five seconds; it will swap to the
-              live page automatically once the server responds. Override
-              the URL by setting <code>VITE_DOCS_BASE_URL</code> when you
-              run the workbench UI.
-            </p>
-          </div>
-        ) : (
-          <iframe
-            key={activeSlug /* force reload on slug change */}
-            title={`docs page: ${activeSlug}`}
-            src={iframeUrl}
-            style={{
-              width: "100%",
-              height: "70vh",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--surface-card)",
-            }}
-          />
+      <div className="docs-content">
+        {page.kind === "loading" && (
+          <p className="placeholder">Loading {activeSlug}…</p>
         )}
-      </Card>
+        {page.kind === "missing" && (
+          <Card title={`Page not found: ${activeSlug}`}>
+            <p>{page.message}</p>
+          </Card>
+        )}
+        {page.kind === "error" && (
+          <Card title={`Failed to load ${activeSlug}`}>
+            <p className="error">{page.message}</p>
+          </Card>
+        )}
+        {page.kind === "ready" && page.Component && <page.Component />}
+      </div>
     </article>
   );
 }

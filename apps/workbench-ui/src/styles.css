@@ -690,6 +690,148 @@ ol.lifecycle li.lifecycle-active {
 }
 
 /* =============================================================================
+ * docs-content — typography reset for the in-app DocsViewer.
+ *
+ * The TSX pages under docs_site/src/content/ are written as plain HTML
+ * (no Tailwind, no per-page styling). This wrapper gives them readable
+ * line-length, breathing room, and consistent hierarchy when bundled
+ * into the workbench UI via `import.meta.glob` from DocsViewer.tsx.
+ * ===========================================================================*/
+
+.docs-content {
+  max-width: 78ch;
+  margin: 0 auto;
+}
+
+.docs-content article {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 2rem 2.5rem;
+  box-shadow: var(--shadow-sm);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--fg);
+}
+
+.docs-content h1 {
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  margin: 0 0 1rem;
+  color: var(--fg);
+}
+
+.docs-content h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+}
+
+.docs-content h2:first-child {
+  margin-top: 0;
+}
+
+.docs-content h3 {
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--fg);
+}
+
+.docs-content h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 1rem 0 0.4rem;
+  color: var(--fg);
+}
+
+.docs-content p {
+  margin: 0 0 0.85rem;
+}
+
+.docs-content ul,
+.docs-content ol {
+  padding-left: 1.4rem;
+  margin: 0 0 0.85rem;
+}
+
+.docs-content li {
+  margin-bottom: 0.35rem;
+}
+
+.docs-content li > p {
+  margin-bottom: 0.35rem;
+}
+
+.docs-content code {
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+
+.docs-content pre {
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.docs-content pre code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+.docs-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: rgba(43, 108, 176, 0.35);
+  text-underline-offset: 0.15em;
+}
+.docs-content a:hover {
+  text-decoration-color: var(--accent);
+}
+
+.docs-content blockquote {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-nested);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--fg);
+}
+
+.docs-content table {
+  margin: 1rem 0;
+}
+
+.docs-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+/* The docs pages use `.page-status` for the per-page "Phase N complete"
+ * banner. Style it as an inline pill so it stands out without dominating. */
+.docs-content .page-status {
+  display: inline-block;
+  background: var(--status-validated-fill);
+  color: var(--status-validated-fg);
+  border: 1px solid var(--status-validated-border);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0 0 1.25rem;
+}
+
+/* =============================================================================
  * FolderBrowser — read-only tree view over the four workbench-managed roots
  * + examples/. Used by RunControls, AutonomyPanel, etc. as a path picker.
  * ===========================================================================*/
