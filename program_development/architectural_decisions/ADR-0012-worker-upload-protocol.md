@@ -204,20 +204,23 @@ storage moves to a dedicated object-storage tier.
   `file` part. The credential is supplied as a bearer header bound
   to a single run ID at issuance time (§18.1).
 - **Path derivation.** A single helper
-  `simworkbench.security.uploads.derive_artifact_path(workspace_id,
-  run_id, artifact_kind, artifact_name)` is the only function
-  authorized to compute the destination. The endpoint never accepts
-  a worker-supplied path component beyond `artifact_name`, and that
-  component is sanitized through the existing §9.4 helper.
-- **Streaming.** The handler uses framework-native streaming
-  (FastAPI `UploadFile.stream()` or equivalent) and writes through a
-  size-limited iterator that aborts at `max_upload_size`.
+  `packages/secure_core/src/workers/derive_artifact_path.ts`
+  exporting `deriveArtifactPath({ workspaceId, runId, artifactKind, artifactName }): AbsolutePath`
+  is the only function authorized to compute the destination. The
+  endpoint never accepts a worker-supplied path component beyond
+  `artifactName`, and that component is sanitized through the §9.4
+  workspace path builder helper (`packages/secure_core/src/paths/builder.ts`).
+- **Streaming.** The handler uses Fastify's
+  `@fastify/multipart` streaming API and writes through a
+  size-limited Node `Transform` that aborts at `max_upload_size`.
+  No buffering of the entire body in memory; backpressure handled by
+  Node streams.
 - **Archive validation.** Reuses the §9.4.11 zip/symlink defense
   added during the workspace import path; the upload handler calls
   the same validator before extraction.
-- **Redaction.** Reuses `simworkbench.security.redaction` (§19.4)
-  for filenames, comments, and any free-text metadata that ends up
-  in the audit log.
+- **Redaction.** Reuses `packages/secure_core/src/audit/redaction.ts`
+  (§19.4) for filenames, comments, and any free-text metadata that
+  ends up in the audit log.
 - **Audit events.** `worker.uploaded` and `worker.upload_denied`
   are added to the §19.5 event registry. Both events carry
   `(workspace_id, run_id, artifact_kind, artifact_name_redacted,

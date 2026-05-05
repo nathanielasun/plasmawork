@@ -10,7 +10,7 @@ It is intended to be copied into, or referenced directly by:
 AGENTS.md
 CLAUDE.md
 README.md
-program_development/architectural_decisions/ADR-0004-secure-multi-user-foundation.md
+program_development/architectural_decisions/ADR-0013-secure-multi-user-foundation.md
 docs_site/src/content/security_testing.tsx
 ```
 
@@ -2158,7 +2158,7 @@ CLAUDE.md
 README.md
 bugs_and_fixes/agent_error_patterns.md
 program_development/timeline.md
-program_development/architectural_decisions/ADR-0004-secure-multi-user-foundation.md
+program_development/architectural_decisions/ADR-0013-secure-multi-user-foundation.md
 ```
 
 ---

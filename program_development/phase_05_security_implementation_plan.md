@@ -82,7 +82,11 @@ These are the choices an agent cannot make alone. Each is a short ADR (one page 
 
 **Deliverable:** five ADRs at status `Accepted`. Each ADR must enumerate at least two alternatives considered.
 
-**Owner:** human owner + one agent for each ADR draft. 2–3 days total.
+**Two-step process:**
+1. An agent (or the human) drafts each ADR at status `Proposed` with explicit alternatives + a recommendation. This step has been completed (commit `5eccda0`) for ADR-0008..ADR-0012.
+2. **The human owner reads each Proposed ADR, accepts or returns it for revision, and flips the status to `Accepted` in a single commit.** No agent may flip the status. Until that flip happens, Layer-1 task assignment is blocked.
+
+**Owner:** human owner. Drafting takes ~30 min/ADR (already done); acceptance + flip is the agent-uncrossable gate.
 
 ### Gate G2 — Implementation manifest
 
@@ -231,12 +235,13 @@ A single-page artifact at `secure_core/IMPLEMENTATION_MANIFEST.md` (or wherever 
 | L5.2 | All §29 tests | Grouped per the review's §29 mapping; one PR per group | XL |
 | L5.3 | CI integration + branch protection | `scripts/test/security.sh` runs on every PR; admin override emits `branch_protection.bypass` audit event; CI runs without prod secrets (Test #73) | M |
 | L5.4 | Documentation | §28 list: `docs_site/src/content/security_*.tsx` pages cover threat model, capability list, approval flow, sandbox, audit chain | M |
-| L5.5 | ADR-0004 final form | Aggregates the L0 ADRs into the canonical `ADR-0004-secure-multi-user-foundation.md` referenced by v4 §Purpose | S |
+| L5.5 | ADR-0013 final form | Aggregates the L0 ADRs into the canonical `ADR-0013-secure-multi-user-foundation.md` referenced by v4 §Purpose. ADR number changed from the original v4 reference to ADR-0004 (units-library is already at that slot — finding from the round-1 review). | S |
 
 **Layer 5 review checks:**
-- Every §29 test (1–73 + V4-R1, V4-R2 additions) is green, named explicitly, and runs on a clean DB.
+- Every §29 test (#1–#84) is green, named explicitly, and runs on a clean DB. The list expanded from the original 73 to 84 when the V4 residual fixes (R1–R10) added one test per residual: #74 archive size+count limits (R1), #75–76 csrf/origin audit emission (R2), #77 unauthenticated `actor_type` (R3), #78 `approval:request` capability gate (R4), #79 storage-reservation reaper (R5), #80 quota period CHECK (R6), #81 operator_events FK NOT NULL (R7), #82 each enumerated security-config change gates on high-risk approval (R8), #83 cross-language JCS byte-equality (R9), #84 distinct `run:approve_hpc` capability (R10).
 - Tests #51–54 run as the restricted DB role, not as superuser. Reviewer probes by inspecting the test harness's connection string.
 - Test #62 (bootstrap-after-restore) actually exercises a DB restore against an ephemeral instance, not just a unit test of the gate logic.
+- Test #83 runs against fixtures from BOTH the TS canonicalization library (`@truestamp/canonify`) and a chosen reference implementation in another language (Python `rfc8785` if any worker is Python, else a CLI invocation of `serde_jcs`). Byte-identical output is the gate.
 - `scripts/test/security.sh` exits non-zero on any failure; CI pipeline fails the PR; branch-protection refuses merge.
 - Documentation page count matches §28 list; each page is reachable from the workbench UI Documentation tab via the existing `import.meta.glob` pattern.
 

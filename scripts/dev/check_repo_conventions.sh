@@ -1174,6 +1174,41 @@ check_grep_in_file 'Per-endpoint canonical recipe' \
 check_grep_in_file 'Error shape contract' \
   packages/secure_core/IMPLEMENTATION_MANIFEST.md \
   "secure_core manifest documents the error envelope"
+# v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
+# original v4 reference to ADR-0004 collided with the units-library
+# ADR and was renumbered during round-2 review).
+check_grep_in_file 'ADR-0013-secure-multi-user-foundation' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "v4 plan points at ADR-0013 (renumbered to avoid units-library collision)"
+
+section "v4 §1 inserts + security stub"
+check_grep_in_file 'Secure Multi-User Development Requirements' AGENTS.md \
+  "AGENTS.md carries v4 §1.1 insert"
+check_grep_in_file 'Claude Code Security Rules' CLAUDE.md \
+  "CLAUDE.md carries v4 §1.2 insert"
+check_file_executable scripts/test/security.sh "scripts/test/security.sh stub"
+check_grep_in_file 'STUB' scripts/test/security.sh \
+  "security.sh stub announces itself as a stub"
+
+# Phase 0.5 Layer-1 readiness probe — informational, not a hard gate
+# (the gate IS the human accepting the ADRs). Surfaces ADR status in
+# CI output so progress toward Layer-1 unblock is visible.
+section "Phase 0.5 Layer-1 readiness probe (informational)"
+for adr_file in program_development/architectural_decisions/ADR-0008-*.md \
+                program_development/architectural_decisions/ADR-0009-*.md \
+                program_development/architectural_decisions/ADR-0010-*.md \
+                program_development/architectural_decisions/ADR-0011-*.md \
+                program_development/architectural_decisions/ADR-0012-*.md; do
+  adr_id=$(basename "$adr_file" | grep -oE 'ADR-00[0-9]+')
+  status_line=$(awk '/^## Status/{getline; print; exit}' "$adr_file" 2>/dev/null | tr -d ' ')
+  if [[ "$status_line" == "Accepted" ]]; then
+    PASS=$((PASS+1))
+    note "$adr_id Accepted — Layer-1 unblocked for this ADR"
+  else
+    PASS=$((PASS+1))
+    note "$adr_id $status_line (informational; Layer-1 awaits human owner)"
+  fi
+done
 
 section "Phase 10 — Cross-cutting + gate walk"
 check_file_exists tests/integration/test_phase_10_gate_walk.py

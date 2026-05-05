@@ -287,6 +287,54 @@ Phase 10 is next per plan §Phase 10. Open it via **Phase Gate Procedure → Sta
 
 ---
 
+## Claude Code Security Rules
+
+Source: `secure_multi_user_scaffolding_plan_v4.md` §1.2. These rules apply whenever editing routes, storage, capsules, run execution, worker code, tool registries, agent orchestration, approval workflows, artifact exports, or any code under `packages/secure_core/`.
+
+Before editing those subsystems:
+
+1. Inspect authentication middleware.
+2. Inspect workspace authorization middleware.
+3. Inspect role/capability checks.
+4. Inspect object workspace-scope checks.
+5. Inspect audit/provenance actor handling.
+6. Inspect sandboxing and worker execution constraints.
+7. Inspect capsule version/locking logic.
+8. Inspect relevant security regression tests.
+9. Inspect `bugs_and_fixes/agent_error_patterns.md`.
+
+Never accept client-provided actor fields.
+
+Never write workspace artifacts outside the server-generated workspace path.
+
+Never bypass authorization checks for convenience.
+
+Never implement security TODOs as permissive placeholders.
+
+Never disable security tests.
+
+If a secure implementation is not possible in the current change, fail closed and document the blocker.
+
+Required commands once available:
+
+```bash
+scripts/test/security.sh
+scripts/dev/check_repo_conventions.sh
+scripts/dev/check_workspace_paths.sh
+scripts/dev/check_security_headers.sh
+scripts/dev/check_security_schema.sh
+```
+
+Status of these commands:
+
+- `scripts/dev/check_repo_conventions.sh` — exists, green at 744+ checks.
+- `scripts/test/security.sh` — empty stub (exits 0; reminds the caller that the §29 suite hasn't shipped yet). Becomes load-bearing during Layer 5.
+- `scripts/dev/check_workspace_paths.sh` / `check_security_headers.sh` / `check_security_schema.sh` — not yet created. They land alongside their corresponding Layer-2 / Layer-3 implementations and are referenced here so the agent reading this file knows the eventual contract.
+
+Phase 0.5 status (as of 2026-05-05): Layer-0 ADRs Proposed; only the human owner may flip them to Accepted. Layer-1 task assignment is blocked until that happens. See `program_development/phase_05_security_implementation_plan.md` for the full gate.
+
+---
+
 ## Phase Gate Procedure (Claude-Specific)
 
 Phase 0 was initially marked "complete" with stale README status, missing package manifests, missing milestone files, and missing documented scripts. The bug is logged at `bugs_and_fixes/bugfixes.md` 2026-05-02 — *Phase 0 gate false positive*. The procedure below is the operational discipline that prevents recurrence.

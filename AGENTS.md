@@ -49,6 +49,50 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 
 ---
 
+## Secure Multi-User Development Requirements
+
+These rules apply to every agent touching authentication, authorization, workspace isolation, audit logging, provenance actor tracking, execution sandboxing, approval workflows, capsule version protection, or any code under `packages/secure_core/`. Source: `secure_multi_user_scaffolding_plan_v4.md` §1.1.
+
+All development agents must treat authentication, authorization, workspace isolation, audit logging, provenance actor tracking, execution sandboxing, approval workflows, and capsule version protection as first-class requirements.
+
+Do not create global capsule, run, tool, or artifact endpoints.
+
+Do not trust `user_id`, `actor_id`, `created_by`, `updated_by`, `approved_by`, `workspace_role`, `role_id`, `workspace_id`, `status`, `storage_path`, `assurance_level`, `auth_method`, or any `*_hash` field from request bodies.
+
+All actor fields must be derived server-side from authenticated session context.
+
+All artifacts must be workspace-scoped under:
+
+```text
+workspaces/<workspace_id>/
+```
+
+Every protected object access must verify:
+
+1. authenticated identity,
+2. live workspace membership,
+3. role or capability,
+4. object belongs to workspace,
+5. operation is valid for object state,
+6. high-risk actions have valid approval,
+7. high-risk actions re-check membership/capability at commit.
+
+Security-sensitive code must not be implemented as permissive stubs. If authentication, authorization, audit logging, sandboxing, approval checks, or path isolation are incomplete, dependent endpoints must fail closed.
+
+Never disable a security test to make CI green. Failing security tests block merge.
+
+Security summaries in this file must be reviewed at least once per major release or whenever the security scaffolding plan changes.
+
+Until Phase 0.5 is implemented, dependent features that would require these guarantees must remain disabled or scoped to single-user local-only operation. The implementation plan, gates, and ADRs live at:
+
+- `secure_multi_user_scaffolding_plan_v4.md` (design)
+- `security_review_v4_and_decomposability.md` (review + decomposition)
+- `program_development/phase_05_security_implementation_plan.md` (executable plan)
+- `program_development/architectural_decisions/ADR-0008` through `ADR-0012` (Layer-0 decisions; Proposed)
+- `packages/secure_core/IMPLEMENTATION_MANIFEST.md` (project layout, error envelope, fixture conventions)
+
+---
+
 ## Repository Architecture Rules
 
 - **Languages**: Python for core/runtime/physics (`packages/core`, `packages/physics_modules`, `packages/solver_backends`); TypeScript for UI (`apps/workbench-ui`) and docs (`docs_site/`).

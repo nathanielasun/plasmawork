@@ -55,17 +55,23 @@ checker.
 1. **Production secrets backend: AWS Secrets Manager.** Every secret in
    scope above is stored as a Secrets Manager entry, namespaced by
    environment (`plasmawork/prod/...`, `plasmawork/staging/...`). The
-   application server, audit-anchor worker, and any background job
-   reads secrets through a single client wrapper located at
-   `packages/core/src/simworkbench/secrets/client.py` (Python) and
-   `apps/workbench-ui/src/server/secrets.ts` (TypeScript edge). The
-   IAM policy attached to each runtime principal allows
-   `secretsmanager:GetSecretValue` on a documented allowlist of secret
-   ARNs and nothing else.
+   secure-core service reads secrets through a single TypeScript client
+   wrapper located at `packages/secure_core/src/secrets/client.ts`,
+   per ADR-0008's Shape-A boundary (TypeScript on Node 24+ in
+   `packages/secure_core/`). The IAM policy attached to each runtime
+   principal allows `secretsmanager:GetSecretValue` on a documented
+   allowlist of secret ARNs and nothing else.
 
-2. **Single client wrapper, two providers.** The wrapper exposes
-   `get_secret(name: str) -> str`. At process start it picks a
-   provider:
+   The legacy `packages/core/` Python workbench does not consume the
+   secure-core secrets surface; while it remains single-user it has
+   no production secrets to manage. If a future ADR extends Phase 0.5
+   into the Python workbench, a parallel `secrets/client.py` wrapper
+   ports the same allowlist + redaction discipline; it is out of scope
+   for this ADR.
+
+2. **Single client wrapper, one provider abstraction.** The wrapper
+   exposes `getSecret(name: string): Promise<string>`. At process
+   start it picks a provider:
 
    - If `PLASMAWORK_SECRETS_PROVIDER=local` (default in dev), read
      from `local_cache/secrets/secrets.local.json`. The wrapper logs
@@ -73,15 +79,14 @@ checker.
      Production deployments unset this variable.
    - If `PLASMAWORK_SECRETS_PROVIDER=env` (CI default), read from
      environment variables prefixed `PLASMAWORK_SECRET_<NAME>`.
-   - Otherwise, read from AWS Secrets Manager via boto3 / the AWS SDK
-     v3.
+   - Otherwise, read from AWS Secrets Manager via `@aws-sdk/client-secrets-manager` (Node SDK v3).
 
-3. **Allowlist-gated reads.** The wrapper holds a frozen set of
-   secret names declared in
-   `packages/core/src/simworkbench/secrets/allowlist.py`. Any call to
-   `get_secret("not-on-the-list")` raises `SecretNotAllowed` BEFORE
-   any provider is contacted. This prevents typo-driven leakage of an
-   unrelated secret and bounds the audit surface.
+3. **Allowlist-gated reads.** The wrapper holds a frozen `Set<string>`
+   of secret names declared in
+   `packages/secure_core/src/secrets/allowlist.ts`. Any call to
+   `getSecret("not-on-the-list")` throws `SecretNotAllowedError`
+   BEFORE any provider is contacted. This prevents typo-driven leakage
+   of an unrelated secret and bounds the audit surface.
 
 4. **In-memory TTL cache.** The wrapper caches each secret value for
    five minutes by default (configurable via
@@ -91,12 +96,13 @@ checker.
    value is the cleartext + a monotonic deadline.
 
 5. **Redaction in logs and exceptions.** The wrapper wraps secret
-   values in a `RedactedSecret` type whose `__repr__` and `__str__`
-   return the constant `"<redacted:<name>>"`. Logging, exception
-   formatting, and the FastAPI default error handler all see the
-   redacted form. Tests in
-   `tests/security/test_secrets_redaction.py` capture stdout / stderr
-   / `caplog` and assert the literal cleartext never appears.
+   values in a `RedactedSecret` class whose `toString()` and
+   `Symbol.toPrimitive` both return the constant
+   `"<redacted:<name>>"`. Pino's structured logger, the Fastify error
+   handler, and any `JSON.stringify` call all see the redacted form.
+   Tests in `packages/secure_core/test/security/secrets-redaction.test.ts`
+   capture stdout / stderr / pino transport output and assert the
+   literal cleartext never appears.
 
 6. **Rotation policy:**
    - **Database passwords** are rotated on a 30-day cadence by an AWS
@@ -168,7 +174,7 @@ wrapper abstraction if AWS lock-in becomes a problem.
   rotation Lambdas, IAM policies, and CloudTrail integration are
   AWS-specific. Migrating to Vault later is a real project, not a
   config flip. Mitigation: keep the wrapper interface narrow
-  (`get_secret`, `rotate_secret`, `invalidate_cache`) and forbid
+  (`getSecret`, `rotateSecret`, `invalidateCache`) and forbid
   AWS-specific types in caller code.
 - **Cost grows with secret count.** ~$0.40 / secret-month adds up if
   every per-tenant credential is a separate secret. Where it is

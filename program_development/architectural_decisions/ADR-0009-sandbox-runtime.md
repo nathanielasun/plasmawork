@@ -64,16 +64,31 @@ two layers, so the backstop must be a single coherent runtime.
    surface (the host kernel never sees the sandboxed syscall
    directly); `--no-new-privs`, no SUID, no `/dev` passthrough.
 
-2. **All egress flows through a per-run L7 proxy sidecar** (tinyproxy
-   or Squid) with an explicit hostname allowlist drawn from v4 §15.3
-   (package mirrors, HPC submission, institutional data sources,
-   object storage upload, approved webhooks). The sandbox container
-   has `--network=none`; the only reachable network endpoint is a
-   UNIX socket / private veth into the proxy namespace. Direct UDP/TCP
-   53 from the sandbox is physically impossible — no network stack
-   exists to originate it. Hostname resolution happens inside the
-   proxy against a controlled resolver, only for allowlisted hosts.
-   Blocked requests emit `sandbox.violation` audit events (v4 §15.3).
+2. **All egress flows through a per-run L7 proxy sidecar over a
+   UNIX-domain socket.** The proxy is a `tinyproxy` (or Squid)
+   container in a sibling namespace with its own network access; the
+   proxy's listener is bound to a UNIX socket at
+   `/var/run/secure_core/proxy.sock`, which is bind-mounted into the
+   sandbox container as the only egress affordance. The sandbox
+   container is launched with `--network=none` — no network namespace,
+   no `lo`, no veth, no resolver. Direct UDP/TCP 53 from the sandbox is
+   physically impossible: there is no network stack to open a socket
+   against. The proxy enforces the v4 §15.3 hostname allowlist
+   (package mirrors, HPC submission, institutional data sources, object
+   storage upload, approved webhooks); blocked requests emit
+   `sandbox.violation` audit events.
+
+   Application HTTP clients inside the sandbox (Python `urllib3`,
+   Node `undici`, `curl --unix-socket`) dial the bind-mounted socket
+   instead of a TCP host. The L1.6 secrets wrapper exposes a
+   `getSecret('proxy.unix_socket_path')` so workers can build the
+   client without hardcoded paths. UNIX-socket-only is chosen over
+   the alternative private-veth topology because the latter requires
+   a network namespace inside the sandbox, which weakens the
+   "no network stack" invariant — every veth pair is a packet path
+   that a misconfigured allowlist could leak. UNIX sockets cannot
+   carry IP packets and cannot resolve hostnames, so the leak class
+   is closed by construction rather than by allowlist correctness.
 
 3. **No long-lived credentials, signing keys, DB DSNs, or session
    material enter the sandbox env.** The orchestrator builds the run
@@ -198,8 +213,14 @@ production sandbox regardless of dev convenience.
 - Per-run sandbox launched via the orchestrator using an OCI runtime
   spec generated from the run request; the spec is itself an audit
   artifact.
-- Egress proxy sidecar runs in a sibling network namespace; the
-  sandbox container has `--network=none`.
+- Egress proxy sidecar runs in its own container with full network
+  access. Its listener binds to a UNIX-domain socket at
+  `/var/run/secure_core/proxy-<run_id>.sock`; that socket file is
+  bind-mounted read-write into the sandbox container at a
+  predictable in-sandbox path. The sandbox itself has `--network=none`
+  — no network namespace, no `lo`, no veth pair. The bind-mounted
+  socket is the entire egress affordance; nothing else reaches the
+  proxy.
 - Proxy allowlist is a workspace-scoped configuration object, not a
   per-run free-text field.
 - Sandbox launch failures, quota terminations, and proxy denials all
