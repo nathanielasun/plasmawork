@@ -75,7 +75,10 @@ This creates a Python virtualenv under `.venv/`, installs the Phase 1 core packa
 # Run the Python backend / API server (Phase 1A–C)
 ./scripts/dev/run_backend.sh
 
-# Run the documentation site (Phase 0B)
+# Run the documentation site (port 3000 by default).
+# The workbench UI's "Documentation" tab iframes this server, so the
+# pages render directly from `docs_site/src/content/` without
+# duplication. Override the URL the UI uses via VITE_DOCS_BASE_URL.
 ./scripts/docs/dev.sh
 
 # Validate repository conventions

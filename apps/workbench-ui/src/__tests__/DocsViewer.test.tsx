@@ -1,13 +1,19 @@
 /**
- * DocsViewer test — verifies the canonical-source rule from AGENTS.md:
- * docs MUST come from `docs_site/src/content/`, not be inlined into the UI.
+ * DocsViewer test — verifies the canonical-source rule from AGENTS.md.
  *
- * The dynamic import inside DocsViewer is mocked here so we don't have to
- * spin up the full Vite alias resolution in vitest. The contract we exercise
- * is: when the backend returns a list of docs pages, DocsViewer renders the
- * navigation links that route to those pages, AND it never inlines page text
- * (we assert by checking the source file references `@docs/` rather than
- * pasting the doc content into the component).
+ * As of 2026-05-05 the panel iframes the docs_site dev server (default
+ * `http://localhost:3000/`) instead of dynamically importing TSX
+ * modules. The earlier `@docs/` dynamic-import pattern was broken
+ * (every page 404'd at runtime). The canonical-source rule ("docs
+ * come from docs_site/, not the UI bundle") is preserved by the
+ * iframe — the docs server itself serves from `docs_site/src/content/`.
+ *
+ * The contract this test pins:
+ *   1. The page list is rendered as clickable buttons.
+ *   2. The viewer's source still references `docs_site` (the URL is
+ *      written into the canonical-source explanation banner).
+ *   3. The iframe URL points at the docs server, NOT at the workbench UI.
+ *   4. Doc body text is NOT inlined into the component.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -19,7 +25,8 @@ import DocsViewer from "../components/DocsViewer";
 describe("DocsViewer", () => {
   beforeEach(() => {
     vi.spyOn(global, "fetch").mockImplementation(async (url) => {
-      if (String(url).endsWith("/api/docs/pages")) {
+      const u = String(url);
+      if (u.endsWith("/api/docs/pages")) {
         return new Response(
           JSON.stringify([
             { slug: "overview", title: "Overview", path: "docs_site/src/content/overview.tsx" },
@@ -28,11 +35,15 @@ describe("DocsViewer", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
+      // Probe to the docs server returns "ok" so the panel renders the iframe.
+      if (u.includes("localhost:3000")) {
+        return new Response("", { status: 200 });
+      }
       return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
     });
   });
 
-  it("renders navigation links for the canonical pages", async () => {
+  it("renders navigation buttons for the canonical pages", async () => {
     render(
       <MemoryRouter initialEntries={["/docs"]}>
         <DocsViewer />
@@ -44,22 +55,32 @@ describe("DocsViewer", () => {
     });
   });
 
-  it("imports docs from the canonical source (not duplicated in the UI)", () => {
-    // Read the DocsViewer source and verify it references `@docs/` — the
-    // Vite alias for `docs_site/src/content`. If a future refactor inlines
-    // doc text into DocsViewer this test fails, matching AGENTS.md's
-    // "no duplicated documentation strings" rule.
+  it("renders an iframe pointing at the docs server", async () => {
+    render(
+      <MemoryRouter initialEntries={["/docs/overview"]}>
+        <DocsViewer />
+      </MemoryRouter>,
+    );
+    // Wait for the docs-server probe to succeed → iframe gets rendered.
+    await waitFor(() => {
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+    });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    expect(iframe.src).toMatch(/localhost:3000\/overview/);
+  });
+
+  it("source references docs_site and never inlines doc text", () => {
     const here = path.dirname(new URL(import.meta.url).pathname);
     const src = fs.readFileSync(
       path.resolve(here, "../components/DocsViewer.tsx"),
       "utf-8",
     );
-    expect(src).toContain("@docs/");
+    // Canonical-source rule: the viewer must explicitly explain that
+    // docs come from docs_site/, not the UI bundle.
     expect(src).toContain("docs_site");
-    // Should not contain a doc body — sanity check by looking for an
-    // inline opening <article> with non-trivial paragraph content; the
-    // viewer should only render its own header + links + the imported
-    // canonical Page component.
+    // No inlined doc body — sanity check by searching for a phrase
+    // that would only exist in the overview page itself.
     expect(src).not.toMatch(/<p>The Scientific Simulation Workbench is/);
   });
 });
