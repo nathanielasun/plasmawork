@@ -1112,6 +1112,20 @@ check_grep_in_file 'STYLING.md' AGENTS.md \
 check_grep_in_file 'STYLING.md' CLAUDE.md \
   "CLAUDE.md references STYLING.md"
 
+section "Phase 0.5 secure-multi-user planning"
+check_file_exists secure_multi_user_scaffolding_plan_v4.md
+check_file_exists security_review_v4_and_decomposability.md
+check_file_exists program_development/phase_05_security_implementation_plan.md
+check_grep_in_file 'Pre-implementation gates' \
+  program_development/phase_05_security_implementation_plan.md \
+  "implementation plan documents the three pre-implementation gates"
+check_grep_in_file 'Cross-cutting review checks' \
+  program_development/phase_05_security_implementation_plan.md \
+  "implementation plan documents reviewer checks"
+check_grep_in_file 'Definition of Done' \
+  program_development/phase_05_security_implementation_plan.md \
+  "implementation plan documents close-out gate"
+
 section "Phase 10 — Cross-cutting + gate walk"
 check_file_exists tests/integration/test_phase_10_gate_walk.py
 check_file_exists tests/regression/test_approval_gates_enforcement.py

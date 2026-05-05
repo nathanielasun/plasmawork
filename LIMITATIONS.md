@@ -1,6 +1,6 @@
 # Capabilities and Limitations
 
-**Last updated: 2026-05-05 (Styling guide — new top-level `STYLING.md` documents design tokens, the two semantic palettes, shared primitives, and the maintenance protocol; AGENTS.md + CLAUDE.md require agents to reference it before any UI styling change. `.page-status` info box fixed — subtle `--radius-md` rounding instead of full pill, block layout, code-overflow contained. Sidebar collapsible. DocsViewer cleanup + consolidation. Runs ↔ temp_runs/ merge. Folder browser. Examples gallery.)**
+**Last updated: 2026-05-05 (Phase 0.5 implementation plan — `program_development/phase_05_security_implementation_plan.md` decomposes `secure_multi_user_scaffolding_plan_v4.md` into ~45 agent-tractable tasks across 5 layers, with explicit pre-implementation gates, cross-cutting review checks, and a Definition of Done aligned to the v4 §30 list. Hand-off + review templates included. Styling guide. `.page-status` info box fix. Sidebar collapsible. DocsViewer consolidation. Runs ↔ temp_runs/ merge. Folder browser. Examples gallery.)**
 
 This document is the honest, non-aspirational map of what the Scientific Simulation Workbench can and cannot do today. The convention checker verifies *structural* completeness — files exist, classes define the right fields, tests cover the named verbs. It does **not** verify scientific capability. A green gate plus a passing test suite means the wiring works and regressions don't sneak back in. It does NOT mean the system can take a real laser-physics paper and produce a publishable simulation autonomously.
 
@@ -170,6 +170,8 @@ A short, brutal list of cases where you'd hit a wall. Each is a real consequence
 4. **"Have the agent critique my spec and fix the issues."** The reviewer flags absolutist phrasing and missing-physics categories. It does not propose code changes, and does not have any model of *what physics is missing for your specific problem*.
 5. **"Submit to a real Slurm cluster from the workbench."** `SlurmJob.write` writes a real bundle. The remote node needs `simworkbench-core` installed and `PYTHONPATH` configured; the bundle is "self-contained" only for the workbench's own payload + entrypoint, not for the runtime. ADR documents this.
 6. **"Run the full `examples/autonomous_experiment_kr` pipeline against a real paper."** The example uses a stand-in quadratic objective. The four-stage pipeline runs end-to-end, but the objective it sweeps is `(x - 0.7)^2`, not anything tied to the spec.
+7. **"Have multiple researchers share a workspace."** No multi-user system today. Anyone hitting `localhost:8000` has full access to the FastAPI backend; there is no auth, no workspace isolation, no per-user identity, no audit trail of *who* did what (the `agent_trace.md` records *what kind of agent*, not *which user*). Phase 0.5 is the gap. The design is `secure_multi_user_scaffolding_plan_v4.md`; the implementation plan is `program_development/phase_05_security_implementation_plan.md`. Estimated 10–12 weeks of work for a small agent team.
+8. **"Run this on a sandboxed worker."** No sandbox today. `simworkbench.runtime.python_cpu` runs in-process via the same Python interpreter as the API server; `simworkbench.codegen.sandbox.sandboxed_write` is a path-allow-list, not a process boundary. Per the same Phase 0.5 plan.
 
 ---
 
@@ -185,6 +187,7 @@ This is the order-of-magnitude estimate. The substrate is solid; the rest is rea
 | PIC / MHD / hydrodynamics solver | Months+ | These are full research codes; the workbench is a wrapper that needs them to exist. |
 | Real paper interpretation (not template) | Weeks (LLM-driven) | Same shape as agent wiring — replace the template artifacts with LLM-generated drafts that still require human review per Plan §22. |
 | Real solver suite for `cpp` / `fortran` / `kokkos` / `petsc` / `amrex` | Months+ each | Each backend lifecycle gate is gated; promoting them requires real benchmarks. |
+| Phase 0.5 — multi-user auth / workspace isolation / sandbox / audit chain | 10–12 weeks | Plan: `secure_multi_user_scaffolding_plan_v4.md`. Decomposition: `program_development/phase_05_security_implementation_plan.md`. Five Layer-0 ADRs (language, sandbox, WORM, secrets manager, worker upload) gate Layer-1 start. |
 
 ---
 
