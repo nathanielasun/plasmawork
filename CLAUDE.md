@@ -417,6 +417,31 @@ Do NOT update on: routine bug fixes, refactors that preserve contracts, test add
 
 The maintenance protocol lives in `LIMITATIONS.md` itself; this file just enforces "update on phase close" as part of the close commit.
 
+### UI styling — read `STYLING.md` before any visual change
+
+`STYLING.md` is the source of truth for the workbench UI's visual language: design tokens, the two semantic palettes (node-kind: paper/model/solver/diagnostic/validation/export; trust-state: draft/candidate/validated/trusted/deprecated/exploratory/warning), the shared `Card` / `Pill` / `Kpi` / `FolderBrowser` primitives, the layout patterns each panel follows, and the dos/don'ts.
+
+Read it before:
+- Adding a new UI panel or refactoring an existing one.
+- Introducing a new visual treatment (info box, callout, banner, etc.).
+- Picking a color for any new state — semantic colors map to specific lifecycle meanings.
+- Touching `apps/workbench-ui/src/styles.css`.
+
+Update `STYLING.md` when:
+- You add a new design token (color / radius / shadow / spacing).
+- You ship a new shared primitive in `components/ui/`.
+- You shift an existing visual contract (e.g. validated changes color).
+
+Do NOT update `STYLING.md` for routine per-panel tweaks that don't introduce a new pattern. Like `LIMITATIONS.md`, noise is worse than silence — only structural visual changes belong.
+
+The convention checker pins `STYLING.md`'s existence and its "Maintenance protocol" section. Removing a documented token without updating the doc breaks the gate.
+
+Hard rules from `STYLING.md` (see the file for the full list):
+- **No Tailwind, no PostCSS, no CSS-in-JS.** Bare CSS with custom properties only.
+- **No per-component CSS files.** All styling lives in `apps/workbench-ui/src/styles.css`.
+- **No `999px` border-radius on multi-line content.** Pill rounding is for chips only; multi-line info boxes use `--radius-md`.
+- **No inline color hex literals.** If the color isn't a token, propose a token.
+
 ### Closing a phase — twenty-four behavioral checks (Phase 2 + 3 + 4 + 5 + 6 lessons)
 
 Phases 1, 2, 3, 4, 5, and 6 each shipped an incomplete close (Phase 4 twice; Phase 5 once; Phase 6 with eight findings). Steps 1–6 above (convention checker green, status sync, etc.) are the existence checks. They are necessary but not sufficient. The convention checker proves files exist; it does not prove the gate criteria's *behaviors* work. Add these twenty-four before the close commit:

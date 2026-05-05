@@ -1100,6 +1100,17 @@ check_grep_in_file 'Last updated:' LIMITATIONS.md \
   "LIMITATIONS.md carries a Last-updated header"
 check_grep_in_file 'Maintenance protocol' LIMITATIONS.md \
   "LIMITATIONS.md documents the update cadence"
+check_file_exists STYLING.md
+check_grep_in_file 'Last updated:' STYLING.md \
+  "STYLING.md carries a Last-updated header"
+check_grep_in_file 'Maintenance protocol' STYLING.md \
+  "STYLING.md documents the update cadence"
+check_grep_in_file 'Tokens' STYLING.md \
+  "STYLING.md documents design tokens"
+check_grep_in_file 'STYLING.md' AGENTS.md \
+  "AGENTS.md references STYLING.md"
+check_grep_in_file 'STYLING.md' CLAUDE.md \
+  "CLAUDE.md references STYLING.md"
 
 section "Phase 10 — Cross-cutting + gate walk"
 check_file_exists tests/integration/test_phase_10_gate_walk.py

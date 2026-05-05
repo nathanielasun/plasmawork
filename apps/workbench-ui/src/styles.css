@@ -764,6 +764,11 @@ ol.lifecycle li.lifecycle-active {
   max-width: 78ch;
   margin: 0 auto;
   gap: 1.25rem;
+  /* Flex children default to min-width: auto, which lets long
+   * content (wide <pre>, unbreakable URLs) push the parent past
+   * the viewport. min-width: 0 lets it shrink to fit instead. */
+  min-width: 0;
+  width: 100%;
 }
 
 .docs-nav {
@@ -882,11 +887,18 @@ ol.lifecycle li.lifecycle-active {
   border: 1px solid var(--border);
   background: #0f172a;
   color: #e2e8f0;
+  border-radius: var(--radius-md);
+  /* Scroll horizontally on overflow rather than push the parent
+   * past the viewport. */
+  overflow-x: auto;
+  max-width: 100%;
 }
 .docs-content pre code {
   color: inherit;
   background: transparent;
   padding: 0;
+  /* Preserve the source's whitespace + line breaks; don't auto-wrap. */
+  white-space: pre;
 }
 
 .docs-content a {
@@ -919,18 +931,28 @@ ol.lifecycle li.lifecycle-active {
 }
 
 /* The docs pages use `.page-status` for the per-page "Phase N complete"
- * banner. Style it as an inline pill so it stands out without dominating. */
+ * banner. Multi-line prose (often citing workstreams + ADRs) → an info
+ * card with subtly rounded corners reads better than a stretched pill.
+ * `code` inside is rendered with the dark surface's lighter contrast
+ * so the box stays visually unified. */
 .docs-content .page-status {
-  display: inline-block;
+  display: block;
   background: var(--status-validated-fill);
   color: var(--status-validated-fg);
   border: 1px solid var(--status-validated-border);
-  border-radius: 999px;
-  padding: 0.25rem 0.75rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  margin: 0 0 1.25rem;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0;
+  margin: 0 0 1.5rem;
+  max-width: 100%;
+}
+.docs-content .page-status code {
+  background: rgba(30, 64, 175, 0.08);
+  color: var(--status-validated-fg);
+  font-size: 0.88em;
 }
 
 /* =============================================================================
