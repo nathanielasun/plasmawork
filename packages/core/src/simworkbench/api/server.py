@@ -205,6 +205,36 @@ class UserEditBody(BaseModel):
     content: str
 
 
+class ExampleSummary(BaseModel):
+    """One row in `GET /api/examples`.
+
+    Each example under `examples/` ships at least a `run.py` and
+    `README.md`. ModelSpec-driven examples (simple_rate_equations,
+    krf_excimer) also ship `model.yaml`; the `kind` field
+    distinguishes the two execution paths so the UI can render the
+    right action.
+    """
+
+    name: str
+    kind: str  # "modelspec" | "script"
+    description: str
+    has_model_yaml: bool
+    readme_path: str
+    run_path: str
+    model_yaml_path: str | None = None
+
+
+class RunExampleResponse(BaseModel):
+    """POST /api/examples/{name}/run response."""
+
+    name: str
+    run_id: str | None = None
+    summary_path: str | None = None
+    capsule_name: str | None = None
+    stdout_tail: str = ""
+    duration_seconds: float = 0.0
+
+
 class AutonomySweepBody(BaseModel):
     """POST /api/autonomy/sweep body — Phase 10 / 10C.
 
@@ -266,6 +296,188 @@ def create_app() -> FastAPI:
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(ok=True, version=__version__)
+
+    # -----------------------------------------------------------------------
+    # Examples discovery + one-click runner.
+    #
+    # The UI's "Examples" panel lists every directory under examples/ that
+    # ships a run.py + README.md. Each example is server-side allow-listed
+    # against the discovered set; the API never reads a script path from
+    # the request body. ModelSpec-driven examples (those with a
+    # model.yaml) reuse the existing /api/runs path; pure-script examples
+    # invoke run.py via subprocess with the repo venv, a 5-minute timeout,
+    # and stdout capture.
+    # -----------------------------------------------------------------------
+
+    def _discover_examples() -> dict[str, ExampleSummary]:
+        """Walk examples/ and return one ExampleSummary per qualified dir."""
+        examples_root = repo_root() / "examples"
+        out: dict[str, ExampleSummary] = {}
+        if not examples_root.is_dir():
+            return out
+        for child in sorted(examples_root.iterdir()):
+            if not child.is_dir():
+                continue
+            run_py = child / "run.py"
+            readme = child / "README.md"
+            if not (run_py.is_file() and readme.is_file()):
+                continue
+            model_yaml = child / "model.yaml"
+            has_model = model_yaml.is_file()
+            # Description = first paragraph of README, headers stripped.
+            description = ""
+            try:
+                body = readme.read_text(encoding="utf-8")
+                for raw in body.splitlines():
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    description = line
+                    break
+            except OSError:
+                description = ""
+            out[child.name] = ExampleSummary(
+                name=child.name,
+                kind="modelspec" if has_model else "script",
+                description=description,
+                has_model_yaml=has_model,
+                readme_path=str(readme.relative_to(repo_root())),
+                run_path=str(run_py.relative_to(repo_root())),
+                model_yaml_path=(
+                    str(model_yaml.relative_to(repo_root())) if has_model else None
+                ),
+            )
+        return out
+
+    @app.get("/api/examples", response_model=list[ExampleSummary])
+    def list_examples() -> list[ExampleSummary]:
+        return list(_discover_examples().values())
+
+    @app.post("/api/examples/{name}/run", response_model=RunExampleResponse)
+    def run_example(name: str) -> RunExampleResponse:
+        """Run an example end-to-end.
+
+        For ModelSpec-driven examples, parses the YAML and drives
+        ``Runner`` synchronously (mirrors /api/runs). For
+        script-driven examples, exec's run.py via subprocess with the
+        repo venv. Either way the resulting capsule + summary paths
+        come back as a typed response so the UI can link the user
+        straight to the artifact.
+        """
+        import re
+        import subprocess
+        import time as _time
+
+        examples = _discover_examples()
+        if name not in examples:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Example {name!r} not found. Discovered: "
+                    f"{sorted(examples)}"
+                ),
+            )
+        example = examples[name]
+        started = _time.monotonic()
+
+        if example.kind == "modelspec":
+            # Reuse the validated /api/runs path: build Experiment +
+            # Runner inline. We re-import here rather than calling the
+            # endpoint function so the run is still recorded in `runs`.
+            assert example.model_yaml_path is not None
+            spec_path = (repo_root() / example.model_yaml_path).resolve()
+            try:
+                spec = load_modelspec_yaml(spec_path)
+                experiment = Experiment.from_model_spec(
+                    spec,
+                    run_config=RunConfig(
+                        start_time="0 s",
+                        end_time="100 ns",
+                        max_steps=200,
+                        seed=0,
+                    ),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            runner = Runner(experiment, base_seed=0)
+            try:
+                result = runner.run()
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            runs[runner.run_id] = {
+                "state": result.state.value,
+                "elapsed_seconds": result.elapsed_seconds,
+                "final_simulation_time": result.final_simulation_time,
+                "diagnostics": {k: list(v) for k, v in result.diagnostics.items()},
+                "placeholders": list(result.placeholders),
+            }
+            return RunExampleResponse(
+                name=name,
+                run_id=runner.run_id,
+                duration_seconds=_time.monotonic() - started,
+                stdout_tail=(
+                    f"ran ModelSpec {example.model_yaml_path} → run_id={runner.run_id}"
+                ),
+            )
+
+        # Script-driven example. Run via subprocess with the repo venv.
+        venv_python = repo_root() / ".venv" / "bin" / "python"
+        python_exe = (
+            str(venv_python) if venv_python.is_file() else "python3"
+        )
+        run_path = (repo_root() / example.run_path).resolve()
+        # Defense in depth: refuse if the resolved run path escapes
+        # examples/. _discover_examples already validated this, but
+        # the file might be a symlink.
+        try:
+            run_path.relative_to((repo_root() / "examples").resolve())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Refusing to run example outside examples/: {run_path}",
+            ) from exc
+
+        try:
+            proc = subprocess.run(
+                [python_exe, str(run_path)],
+                cwd=str(repo_root()),
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Example {name!r} exceeded 5-minute timeout",
+            ) from exc
+
+        if proc.returncode != 0:
+            tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-30:])
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Example {name!r} failed (exit {proc.returncode}). "
+                    f"Last lines:\n{tail}"
+                ),
+            )
+
+        # Parse stdout for the summary path + run_id (the examples'
+        # own '[done]' / '[run]' lines are the source of truth).
+        run_id_match = re.search(r"run_id\s*=\s*(\S+)", proc.stdout)
+        summary_match = re.search(r"summary\s*=\s*(\S+)", proc.stdout)
+        capsule_match = re.search(r"capsule\s*=\s*(\S+)", proc.stdout)
+        stdout_tail = "\n".join(proc.stdout.splitlines()[-12:])
+        return RunExampleResponse(
+            name=name,
+            run_id=run_id_match.group(1) if run_id_match else None,
+            summary_path=summary_match.group(1) if summary_match else None,
+            capsule_name=(
+                Path(capsule_match.group(1)).name if capsule_match else None
+            ),
+            stdout_tail=stdout_tail,
+            duration_seconds=_time.monotonic() - started,
+        )
 
     @app.get("/api/runs", response_model=list[RunSummary])
     def list_runs() -> list[RunSummary]:

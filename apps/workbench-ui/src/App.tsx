@@ -23,8 +23,10 @@ import ExperimentProposal from "./components/proposal/ExperimentProposal";
 import GeneratedCodeView from "./components/codegen/GeneratedCodeView";
 import ComparisonReportPanel from "./components/reports/ComparisonReport";
 import AutonomyPanel from "./components/autonomy/AutonomyPanel";
+import ExamplesGallery from "./components/examples/ExamplesGallery";
 
 const NAV: { to: string; label: string }[] = [
+  { to: "/examples", label: "Examples" },
   { to: "/simulations", label: "Simulations" },
   { to: "/runs", label: "Run Controls" },
   { to: "/code", label: "Code Viewer" },
@@ -63,7 +65,8 @@ export default function App() {
       </aside>
       <main>
         <Routes>
-          <Route path="/" element={<Navigate to="/simulations" replace />} />
+          <Route path="/" element={<Navigate to="/examples" replace />} />
+          <Route path="/examples" element={<ExamplesGallery />} />
           <Route path="/simulations" element={<SimulationList />} />
           <Route path="/runs" element={<RunControls />} />
           <Route path="/code" element={<CodeViewer />} />
@@ -78,7 +81,7 @@ export default function App() {
           <Route path="/autonomy" element={<AutonomyPanel />} />
           <Route path="/docs" element={<DocsViewer />} />
           <Route path="/docs/:slug" element={<DocsViewer />} />
-          <Route path="*" element={<Navigate to="/simulations" replace />} />
+          <Route path="*" element={<Navigate to="/examples" replace />} />
         </Routes>
       </main>
     </div>

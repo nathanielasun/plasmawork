@@ -36,6 +36,7 @@ describe("App shell", () => {
     // landing page's heading, so we scope the query to the sidebar nav.
     const nav = screen.getByRole("navigation");
     for (const label of [
+      "Examples",
       "Simulations",
       "Run Controls",
       "Code Viewer",

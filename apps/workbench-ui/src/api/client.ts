@@ -238,6 +238,21 @@ export interface ApiClient {
     content: string,
   ): Promise<{ capsule: string; path: string; size_bytes: number }>;
   /**
+   * List the runnable examples discovered under `examples/`. Each entry
+   * carries enough metadata for the UI to render a card + Run button
+   * without the user knowing whether it's ModelSpec-driven or script-
+   * driven.
+   */
+  listExamples(): Promise<ExampleSummary[]>;
+
+  /**
+   * Run a discovered example end-to-end. Returns the run_id + summary +
+   * capsule paths (when present) so the UI can link the user to the
+   * resulting artifact.
+   */
+  runExample(name: string): Promise<RunExampleResponse>;
+
+  /**
    * Phase 9 / 9D — read a sweep capsule's comparison report manifest.
    * The Python reporter (`simworkbench.reports.ComparisonReport`)
    * writes `manifest.json` under the capsule; this endpoint surfaces
@@ -324,6 +339,25 @@ export interface AutonomySweepResponse {
   completed: number;
   failed: number;
   stopped_reason: string;
+}
+
+export interface ExampleSummary {
+  name: string;
+  kind: "modelspec" | "script";
+  description: string;
+  has_model_yaml: boolean;
+  readme_path: string;
+  run_path: string;
+  model_yaml_path: string | null;
+}
+
+export interface RunExampleResponse {
+  name: string;
+  run_id: string | null;
+  summary_path: string | null;
+  capsule_name: string | null;
+  stdout_tail: string;
+  duration_seconds: number;
 }
 
 export interface ComparisonRankRow {
@@ -652,6 +686,18 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
       fetchJson(
         `/comparison/${encodeURIComponent(capsule)}`,
         undefined,
+        baseUrl,
+      ),
+    listExamples: () =>
+      fetchJson(`/examples`, undefined, baseUrl),
+    runExample: (name) =>
+      fetchJson(
+        `/examples/${encodeURIComponent(name)}/run`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
         baseUrl,
       ),
     designExperiment: (capsule) =>

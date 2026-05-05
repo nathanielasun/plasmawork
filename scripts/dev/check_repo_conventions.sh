@@ -1057,6 +1057,26 @@ check_grep_in_file 'def grant_autonomy_approval' \
   packages/core/src/simworkbench/autonomy/approval_gates.py \
   "grant_autonomy_approval helper defined"
 
+section "Examples gallery (UI ↔ examples/)"
+check_grep_in_file '@app.get\("/api/examples"' \
+  packages/core/src/simworkbench/api/server.py \
+  "GET /api/examples discovery endpoint"
+check_grep_in_file '@app.post\("/api/examples/\{name\}/run"' \
+  packages/core/src/simworkbench/api/server.py \
+  "POST /api/examples/{name}/run runner endpoint"
+check_grep_in_file 'def _discover_examples' \
+  packages/core/src/simworkbench/api/server.py \
+  "examples discovery walker is server-side allow-list"
+check_file_exists apps/workbench-ui/src/components/examples/ExamplesGallery.tsx
+check_file_exists apps/workbench-ui/src/__tests__/ExamplesGallery.test.tsx
+check_file_exists tests/integration/test_examples_api.py
+check_grep_in_file 'listExamples' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts exposes listExamples"
+check_grep_in_file 'runExample' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts exposes runExample"
+
 section "Top-level governance docs"
 check_file_exists LIMITATIONS.md
 check_grep_in_file 'Last updated:' LIMITATIONS.md \
