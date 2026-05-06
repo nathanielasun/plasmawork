@@ -71,6 +71,10 @@ export const METADATA_ALLOWLIST: ReadonlySet<string> = Object.freeze(
     "count",
     "subject_redacted",
     "endpoint",
+    // L2 middleware emissions (§4.1 / §6.2 rejection paths)
+    "rejected_field",
+    "capability",
+    "role_name",
   ]),
 );
 

@@ -1359,6 +1359,107 @@ check_grep_absent_in_file 'INSERT INTO provenance_events' \
 check_grep_absent_in_file 'INSERT INTO operator_events' \
   packages/secure_core/test/fixtures/factories.ts \
   "L1.5 factories do NOT INSERT into operator_events (manifest §4)"
+
+section "secure_core Layer-2 middleware (L2.1..L2.8)"
+# Foundation
+check_file_exists packages/secure_core/src/server.ts
+check_file_exists packages/secure_core/src/middleware/types.ts
+check_file_exists packages/secure_core/src/middleware/fastify_augment.ts
+check_file_exists packages/secure_core/src/middleware/compose.ts
+check_file_exists packages/secure_core/src/middleware/requireRequestId.ts
+check_file_exists packages/secure_core/src/middleware/index.ts
+check_grep_in_file 'export const MIDDLEWARE_ORDER' \
+  packages/secure_core/src/middleware/compose.ts \
+  "L2 encodes the §6.2 middleware order in one place"
+check_grep_in_file 'export function composeMiddleware' \
+  packages/secure_core/src/middleware/compose.ts \
+  "L2 exposes composeMiddleware() helper"
+check_grep_in_file 'fastify' packages/secure_core/package.json \
+  "L2 depends on Fastify (per ADR-0008)"
+check_grep_in_file '@fastify/cookie' packages/secure_core/package.json \
+  "L2 includes @fastify/cookie for session + CSRF middleware"
+check_grep_in_file 'ajv' packages/secure_core/package.json \
+  "L2 includes Ajv for validateInputSchema"
+# L2.1 requireAuth
+check_file_exists packages/secure_core/src/middleware/requireAuth.ts
+check_grep_in_file 'export function requireAuth' \
+  packages/secure_core/src/middleware/requireAuth.ts \
+  "L2.1 exports requireAuth(deps) factory"
+check_grep_in_file 'session\.revoked' \
+  packages/secure_core/src/middleware/requireAuth.ts \
+  "L2.1 emits session.revoked on revoked session"
+check_file_exists packages/secure_core/test/middleware/requireAuth.test.ts
+# L2.2 enforceCsrfForStateChange
+check_file_exists packages/secure_core/src/middleware/enforceCsrfForStateChange.ts
+check_grep_in_file 'export function enforceCsrfForStateChange' \
+  packages/secure_core/src/middleware/enforceCsrfForStateChange.ts \
+  "L2.2 exports enforceCsrfForStateChange(deps) factory"
+check_grep_in_file 'csrf\.failed' \
+  packages/secure_core/src/middleware/enforceCsrfForStateChange.ts \
+  "L2.2 emits csrf.failed on token mismatch (V4-R2)"
+check_grep_in_file 'origin\.mismatch' \
+  packages/secure_core/src/middleware/enforceCsrfForStateChange.ts \
+  "L2.2 emits origin.mismatch on Origin/Referer rejection (V4-R2)"
+check_file_exists packages/secure_core/test/middleware/enforceCsrfForStateChange.test.ts
+# L2.3 validateInputSchema
+check_file_exists packages/secure_core/src/middleware/validateInputSchema.ts
+check_grep_in_file 'export function validateInputSchema' \
+  packages/secure_core/src/middleware/validateInputSchema.ts \
+  "L2.3 exports validateInputSchema(schema, deps) factory"
+check_grep_in_file 'FORBIDDEN_BODY_FIELDS' \
+  packages/secure_core/src/middleware/validateInputSchema.ts \
+  "L2.3 enumerates v4 §4.1 forbidden body fields"
+check_grep_in_file 'request\.unexpected_field' \
+  packages/secure_core/src/middleware/validateInputSchema.ts \
+  "L2.3 emits request.unexpected_field on rejection"
+check_file_exists packages/secure_core/test/middleware/validateInputSchema.test.ts
+# L2.4 loadWorkspace + enforceUniformNotFound
+check_file_exists packages/secure_core/src/middleware/loadWorkspace.ts
+check_grep_in_file 'export function loadWorkspace' \
+  packages/secure_core/src/middleware/loadWorkspace.ts \
+  "L2.4 exports loadWorkspace(deps) factory"
+check_grep_in_file 'enforceUniformNotFound' \
+  packages/secure_core/src/middleware/loadWorkspace.ts \
+  "L2.4 exports enforceUniformNotFound (v4 §4.4)"
+check_file_exists packages/secure_core/test/middleware/loadWorkspace.test.ts
+# L2.5 requireWorkspaceMembership
+check_file_exists packages/secure_core/src/middleware/requireWorkspaceMembership.ts
+check_grep_in_file 'export function requireWorkspaceMembership' \
+  packages/secure_core/src/middleware/requireWorkspaceMembership.ts \
+  "L2.5 exports requireWorkspaceMembership(deps) factory"
+check_file_exists packages/secure_core/test/middleware/requireWorkspaceMembership.test.ts
+# L2.6 requireCapability
+check_file_exists packages/secure_core/src/middleware/requireCapability.ts
+check_grep_in_file 'export function requireCapability' \
+  packages/secure_core/src/middleware/requireCapability.ts \
+  "L2.6 exports requireCapability(deps) factory"
+check_grep_in_file 'permission\.denied' \
+  packages/secure_core/src/middleware/requireCapability.ts \
+  "L2.6 emits permission.denied on missing capability"
+check_file_exists packages/secure_core/test/middleware/requireCapability.test.ts
+# L2.7 enforceObjectWorkspaceScope
+check_file_exists packages/secure_core/src/middleware/enforceObjectWorkspaceScope.ts
+check_grep_in_file 'export function enforceObjectWorkspaceScope' \
+  packages/secure_core/src/middleware/enforceObjectWorkspaceScope.ts \
+  "L2.7 exports enforceObjectWorkspaceScope(deps) factory"
+check_file_exists packages/secure_core/test/middleware/enforceObjectWorkspaceScope.test.ts
+# L2.8 attachAuditActor
+check_file_exists packages/secure_core/src/middleware/attachAuditActor.ts
+check_grep_in_file 'attachAuditActor' \
+  packages/secure_core/src/middleware/attachAuditActor.ts \
+  "L2.8 exports attachAuditActor middleware"
+check_grep_absent_in_file 'req\\.body\\.\\(actor\\|user_id\\|created_by\\|updated_by\\|approved_by\\)' \
+  packages/secure_core/src/middleware/attachAuditActor.ts \
+  "L2.8 attachAuditActor never reads actor identity from req.body (v4 §19.1)"
+check_file_exists packages/secure_core/test/middleware/attachAuditActor.test.ts
+# Hard rule: no middleware reads forbidden body fields for actor identity (v4 §4.1 + §19.1)
+check_grep_absent_in_file 'req\\.body\\.actor_user_id\\|req\\.body\\.created_by\\|req\\.body\\.approved_by' \
+  packages/secure_core/src/middleware/requireAuth.ts \
+  "L2.1 requireAuth never reads actor identity from req.body"
+check_grep_absent_in_file 'req\\.body\\.actor_user_id\\|req\\.body\\.created_by\\|req\\.body\\.approved_by' \
+  packages/secure_core/src/middleware/requireCapability.ts \
+  "L2.6 requireCapability never reads actor identity from req.body"
+
 # v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
 # original v4 reference to ADR-0004 collided with the units-library
 # ADR and was renumbered during round-2 review).
