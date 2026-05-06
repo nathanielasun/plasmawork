@@ -120,7 +120,7 @@ A single-page artifact at `secure_core/IMPLEMENTATION_MANIFEST.md` (or wherever 
 | L1.5 | Test fixtures | Manifest §G2.3 | `tests/fixtures/`: factories returning realistic entities; per-test DB cleanup helper | Smoke test: creates a workspace + member + capsule + run in <50ms; second test sees a clean DB | L5.* | S |
 | L1.6 | Secrets client wrapper | ADR-0011 | `secrets.ts`: `getSecret(name): Promise<string>`, in-memory cache with TTL, no logging of values | Test: secret value never appears in test output / log capture | L3.8 | M |
 | L1.7 | Audit logger interface | §19.4 redaction | `auditLogger.ts`: typed event API, redaction allowlist, refuses `metadata: req.body` shape | Lint (test) refuses passing `req.body` to logger; runtime refuses keys outside allowlist | L2.8, L3.1 | S |
-| L1.8 | Schema migration package | §11 + §12 + §12.1 + V4-R3/R6/R7 fixes | Migration set: 28 tables, indexes, CHECK constraints, GRANT statements, capability seed data, default roles | `pnpm migrate:reset` produces the schema; SELECT against `role_permissions` returns rows for all capabilities; non-app role has INSERT-only on log tables | All of L3, L4 | M |
+| L1.8 | Schema migration package | §11 + §12 + §12.1 + V4-R3/R6/R7 fixes | Migration set: 26 tables, indexes, CHECK constraints, GRANT statements, capability seed data, default roles | `pnpm migrate:reset` produces the schema; SELECT against `role_permissions` returns rows for all capabilities; non-app role has INSERT-only on log tables | All of L3, L4 | M |
 
 **Layer 1 review checks (cross-task):**
 - No use of `any` / `unknown` without narrowing.
@@ -247,6 +247,44 @@ A single-page artifact at `secure_core/IMPLEMENTATION_MANIFEST.md` (or wherever 
 
 ---
 
+## 7.5. Layer 6 — UI integration (deferred; ship after Layer 5)
+
+Layer 6 wires the existing Vite + React workbench UI (`apps/workbench-ui/`) onto the secure_core service. Detailed component planning is intentionally deferred — the conversation that scoped this layer (2026-05-06) explicitly chose to defer extensive UI design until the backend surface stabilizes. This section is a placeholder so the integration is not forgotten, plus enough detail that the eventual implementing agent has the load-bearing constraints.
+
+**Three load-bearing UX pieces (from the 2026-05-06 design pass):**
+
+1. **OIDC redirect login + workspace as URL prefix.** Single SSO entry point; `auth_method='oidc'` is already in v4's enum (`packages/secure_core/src/db/schema.ts` `sessions.authMethod` CHECK). Route every page as `/w/<workspaceId>/<panel>`. Workspace switcher (top-left dropdown, lists only workspaces where you're an active member per `workspace_memberships` with `removed_at IS NULL`) is the primary mental model. Every existing panel (Examples, Diagnostics, Capsules, Proposals, Generated Code, Comparisons, Folder Browser) gets remounted under the active workspace's scope. The §4.4 uniform-404 contract (deleted / not-member / cross-workspace = identical response) is enforced server-side; the UI just renders "Not found" without distinguishing causes.
+2. **Capability-driven nav + approval inbox as first-class chrome.** The user's role's capabilities (joined from `role_permissions` at session establishment, attached to `req.auth`) drive which nav tabs and action buttons render. Examples: no "Promote" button without `tool:approve_promotion`; no Operator panel without `platform:audit_read`; no "Approve HPC run" without `run:approve_hpc` (V4-R10). Pair with a persistent top-bar approval inbox showing `approval_requests` where the current user is a valid approver per the §13 capability map, plus the user's own pending requests. High-risk actions trigger an approval modal that names the required approver capability instead of failing silently.
+3. **Cut-over: dual-mode for one phase, then flip.** The single-user FastAPI workbench at `:8001` keeps working for solo research; the secure_core Fastify service runs at a different port (default `:8443`); the Vite UI feature-flags between them via a "Secure mode (multi-user)" toggle. Tradeoff: parallel stacks for one phase double the maintenance surface, but a hard cut-over breaks every existing example/run while middleware + endpoint code is still landing across L2–L4. Lean toward dual-mode unless explicitly directed otherwise. The toggle gates which `apiClient` base URL is used; both clients share types where shapes overlap.
+
+**Layer 6 task slate (placeholder; not yet broken into tickets):**
+
+| ID | Title | Notes | Est |
+|---|---|---|---|
+| L6.1 | OIDC login + session bootstrap | Redirect flow, callback route, session cookie handling, `/w/<workspaceId>` router prefix | M |
+| L6.2 | Workspace switcher + scope context | React context exposing `{ workspaceId, role, capabilities }`; switcher reads `GET /api/workspaces` filtered to active memberships | M |
+| L6.3 | Capability-driven nav + button gating | `useCapability("tool:approve_promotion")` hook; shared `<RequireCapability>` wrapper around action buttons | S |
+| L6.4 | Approval inbox panel | Top-bar count + dedicated panel; reads `GET /api/approvals?as=approver` and `?as=requester`; modal flow for high-risk actions | M |
+| L6.5 | Per-panel workspace scoping | Remount existing panels (Examples, Diagnostics, Capsules, Proposals, Generated Code, Comparisons, Folder Browser) under workspace context; 404s render uniformly | L |
+| L6.6 | Audit + provenance browser | Read-only filtered view of `audit_events` / `provenance_events` for the active workspace; PlatformAuditor sees the cross-workspace view via Operator panel | M |
+| L6.7 | Dual-mode toggle + feature flag | "Secure mode" client toggle in `apiClient`; gracefully falls back to single-user FastAPI when secure_core is unreachable | S |
+| L6.8 | UI cut-over of FastAPI workbench | Once L6.1–L6.7 pass, retire the single-user mode behind a deprecation flag | M |
+
+**Layer 6 review checks:**
+- Capability gating is double-enforced: UI hides the affordance AND the API rejects with `PERMISSION_DENIED`. UI absence-only is a security bug — a power user can hit the API directly.
+- Workspace switcher never reveals workspace IDs the user isn't a member of (no leak via 404 timing or autocomplete; the list comes pre-filtered from the server).
+- The approval modal text never reveals workspace IDs / object IDs that the requester wouldn't otherwise see; copy comes from a closed message catalog, not server-supplied free text.
+- Dual-mode toggle's secure path never falls through to the single-user FastAPI for a workspace-scoped request — fall-through is an isolation bypass.
+- All existing panels respect the new workspace prefix; navigating to a panel without a workspace id redirects to the switcher.
+
+**Dependencies:**
+- L4.1 (Workspace CRUD + members) MUST ship before L6.2.
+- L4.6 (Approval endpoints) MUST ship before L6.4.
+- L4.7 (Audit/provenance read) MUST ship before L6.6.
+- Detailed component design (FolderBrowser-style spec for each new component) is the implementing agent's first task in L6 — NOT pre-planned here.
+
+---
+
 ## 8. Cross-cutting review checks (apply to every PR)
 
 The reviewing agent runs these on every PR, regardless of which layer the PR is in:
@@ -298,6 +336,7 @@ Phase 0.5 is complete only when **all** of these hold. Maps 1:1 with v4 §30 ite
 | Plus | V4 residuals R1–R10 closed | G0 + per-test additions |
 | Plus | All five Layer-0 ADRs Accepted | G1 |
 | Plus | IMPLEMENTATION_MANIFEST.md current | G2 |
+| Plus | UI cut-over to secure_core (workspace prefix, capability-gated nav, approval inbox) | L6.1–L6.8; reviewer probes capability double-enforcement (UI hides + API rejects) |
 
 ---
 
@@ -314,6 +353,8 @@ Phase 0.5 is complete only when **all** of these hold. Maps 1:1 with v4 §30 ite
 | Sandbox runner ships with a CPU/mem/PID limit forgotten | High (per reviewer) | Reviewer protocol: run a fork-bomb / mem-bomb / 5-minute-tight-loop / 100GB-write inside a dev sandbox. Each must be killed by the runner. |
 | Workforce burnout from §29's 73-test scale | Medium | Group tests per the review's mapping; one PR per group; reviewers reject PRs that bundle multiple groups. |
 | Convention checker becomes the gate instead of the spec | Low | All §29 tests must be runnable independently and named for §29 numbers; the checker only gates structural completeness. |
+| UI capability gating enforced only in the client (UI absence-of-button without server-side `requireCapability`) | Medium | Layer 6 review check: every gated affordance has a paired server-side `requireCapability` test. Reviewer probes by calling the API directly with a token whose role lacks the capability — must 403. |
+| Dual-mode UI toggle leaks workspace-scoped requests to the single-user FastAPI fallback | Medium | L6.7 hard rule: any request that includes a workspace prefix never falls through to single-user mode. Test asserts that disabling secure_core surfaces an explicit "secure mode unavailable" error rather than silently routing to FastAPI. |
 
 ---
 
