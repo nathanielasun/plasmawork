@@ -1678,6 +1678,71 @@ check_grep_absent_in_file 'req\.body\.\(actor\|created_by\|approved_by\)' \
   packages/secure_core/src/audit/anchor.ts \
   "L3.2 AnchorCommitter never reads actor identity from req.body"
 
+# L3.8 — worker token issuer + verifier (v4 §18.1)
+check_file_exists packages/secure_core/src/workers/tokenIssuer.ts
+check_file_exists packages/secure_core/src/workers/index.ts
+check_grep_in_file 'export function issueWorkerToken' \
+  packages/secure_core/src/workers/tokenIssuer.ts \
+  "L3.8 exports issueWorkerToken"
+check_grep_in_file 'export function verifyWorkerToken' \
+  packages/secure_core/src/workers/tokenIssuer.ts \
+  "L3.8 exports verifyWorkerToken"
+check_grep_in_file 'WORKER_CAPABILITIES' \
+  packages/secure_core/src/workers/tokenIssuer.ts \
+  "L3.8 enumerates the v4 §18.1 closed worker capability set"
+check_grep_in_file 'run_mismatch' \
+  packages/secure_core/src/workers/tokenIssuer.ts \
+  "L3.8 refuses cross-run token use (§29 #44)"
+check_grep_in_file 'capability_missing' \
+  packages/secure_core/src/workers/tokenIssuer.ts \
+  "L3.8 refuses tokens lacking the required capability"
+check_grep_in_file 'expired' \
+  packages/secure_core/src/workers/tokenIssuer.ts \
+  "L3.8 enforces token expiry"
+check_file_exists packages/secure_core/test/workers/tokenIssuer.test.ts
+
+# L3.10 — SSRF-safe URL guard + fetcher + webhook signer (v4 §26)
+check_file_exists packages/secure_core/src/outbound/ssrf.ts
+check_file_exists packages/secure_core/src/outbound/fetcher.ts
+check_file_exists packages/secure_core/src/outbound/webhookSigner.ts
+check_file_exists packages/secure_core/src/outbound/index.ts
+check_grep_in_file 'export class SsrfGuard' \
+  packages/secure_core/src/outbound/ssrf.ts \
+  "L3.10 exports SsrfGuard"
+check_grep_in_file 'export function classifyIp' \
+  packages/secure_core/src/outbound/ssrf.ts \
+  "L3.10 exports classifyIp helper"
+check_grep_in_file 'metadata_service' \
+  packages/secure_core/src/outbound/ssrf.ts \
+  "L3.10 blocks cloud metadata service IPs (v4 §26.1 #7)"
+check_grep_in_file 'loopback' \
+  packages/secure_core/src/outbound/ssrf.ts \
+  "L3.10 blocks loopback (v4 §26.1 #2)"
+check_grep_in_file 'private_range' \
+  packages/secure_core/src/outbound/ssrf.ts \
+  "L3.10 blocks RFC1918 private ranges (v4 §26.1 #4)"
+check_grep_in_file 'ipv6_ula' \
+  packages/secure_core/src/outbound/ssrf.ts \
+  "L3.10 blocks IPv6 ULAs (v4 §26.1 #5)"
+check_grep_in_file 'export class SafeFetcher' \
+  packages/secure_core/src/outbound/fetcher.ts \
+  "L3.10 exports SafeFetcher"
+check_grep_in_file 'redirect: "manual"' \
+  packages/secure_core/src/outbound/fetcher.ts \
+  "L3.10 disables auto-redirect so each hop is re-validated (v4 §26.1 #6)"
+check_grep_in_file 'export function signWebhook' \
+  packages/secure_core/src/outbound/webhookSigner.ts \
+  "L3.10 exports signWebhook (v4 §26.2)"
+check_grep_in_file 'export function verifyWebhook' \
+  packages/secure_core/src/outbound/webhookSigner.ts \
+  "L3.10 exports verifyWebhook with timestamp + signature checks (v4 §26.2)"
+check_grep_in_file 'timestamp_stale' \
+  packages/secure_core/src/outbound/webhookSigner.ts \
+  "L3.10 refuses webhook payloads beyond ±5 minutes (v4 §26.2 #2)"
+check_file_exists packages/secure_core/test/outbound/ssrf.test.ts
+check_file_exists packages/secure_core/test/outbound/fetcher.test.ts
+check_file_exists packages/secure_core/test/outbound/webhookSigner.test.ts
+
 # L3.3 — approval system (request/issue/consume/deny/revoke)
 check_file_exists packages/secure_core/src/approvals/service.ts
 check_file_exists packages/secure_core/src/approvals/index.ts
