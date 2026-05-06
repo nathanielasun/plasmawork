@@ -1174,6 +1174,41 @@ check_grep_in_file 'Per-endpoint canonical recipe' \
 check_grep_in_file 'Error shape contract' \
   packages/secure_core/IMPLEMENTATION_MANIFEST.md \
   "secure_core manifest documents the error envelope"
+
+section "secure_core package skeleton + L1.1 constants"
+check_file_exists packages/secure_core/package.json
+check_file_exists packages/secure_core/tsconfig.json
+check_file_exists packages/secure_core/vitest.config.ts
+check_grep_in_file '"type": "module"' packages/secure_core/package.json \
+  "secure_core is ESM"
+check_grep_in_file '"strict": true' packages/secure_core/tsconfig.json \
+  "secure_core tsconfig is strict"
+check_file_exists packages/secure_core/src/config/capabilities.ts
+check_file_exists packages/secure_core/src/config/audit_events.ts
+check_file_exists packages/secure_core/src/config/high_risk_actions.ts
+check_grep_in_file 'export const CAPABILITIES' \
+  packages/secure_core/src/config/capabilities.ts \
+  "L1.1 capabilities const defined"
+check_grep_in_file 'approval:request' \
+  packages/secure_core/src/config/capabilities.ts \
+  "L1.1 includes approval:request capability (V4-R4)"
+check_grep_in_file 'run:approve_hpc' \
+  packages/secure_core/src/config/capabilities.ts \
+  "L1.1 includes run:approve_hpc capability (V4-R10)"
+check_grep_in_file 'archive.entry_rejected' \
+  packages/secure_core/src/config/audit_events.ts \
+  "L1.1 audit events include archive.entry_rejected (V4-R1)"
+check_grep_in_file 'csrf.failed' \
+  packages/secure_core/src/config/audit_events.ts \
+  "L1.1 audit events include csrf.failed (V4-R2)"
+check_grep_in_file 'security_config\.' \
+  packages/secure_core/src/config/high_risk_actions.ts \
+  "L1.1 high-risk actions enumerate security-config changes (V4-R8)"
+check_file_exists packages/secure_core/test/config/constants.test.ts
+check_file_executable scripts/test/secure_core.sh \
+  "scripts/test/secure_core.sh runs typecheck + vitest"
+check_grep_in_file 'secure_core.sh' scripts/test/all.sh \
+  "scripts/test/all.sh runs the secure_core suite"
 # v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
 # original v4 reference to ADR-0004 collided with the units-library
 # ADR and was renumbered during round-2 review).
@@ -1190,10 +1225,12 @@ check_file_executable scripts/test/security.sh "scripts/test/security.sh stub"
 check_grep_in_file 'STUB' scripts/test/security.sh \
   "security.sh stub announces itself as a stub"
 
-# Phase 0.5 Layer-1 readiness probe — informational, not a hard gate
-# (the gate IS the human accepting the ADRs). Surfaces ADR status in
-# CI output so progress toward Layer-1 unblock is visible.
-section "Phase 0.5 Layer-1 readiness probe (informational)"
+# Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
+# to Accepted on 2026-05-06; staying Accepted is now an invariant.
+# Backsliding to Proposed (or any non-Accepted state) is a hard
+# failure — Layer-1 in-flight code depends on the architectural
+# decisions in these ADRs.
+section "Phase 0.5 Layer-0 gate (Accepted invariant)"
 for adr_file in program_development/architectural_decisions/ADR-0008-*.md \
                 program_development/architectural_decisions/ADR-0009-*.md \
                 program_development/architectural_decisions/ADR-0010-*.md \
@@ -1203,10 +1240,10 @@ for adr_file in program_development/architectural_decisions/ADR-0008-*.md \
   status_line=$(awk '/^## Status/{getline; print; exit}' "$adr_file" 2>/dev/null | tr -d ' ')
   if [[ "$status_line" == "Accepted" ]]; then
     PASS=$((PASS+1))
-    note "$adr_id Accepted — Layer-1 unblocked for this ADR"
+    note "$adr_id Accepted (Layer-1 invariant holds)"
   else
-    PASS=$((PASS+1))
-    note "$adr_id $status_line (informational; Layer-1 awaits human owner)"
+    FAIL=$((FAIL+1))
+    fail "$adr_id status is $status_line, expected Accepted — Layer-1 work depends on this ADR. Reverting to a non-Accepted state requires a deliberate ADR rewrite, not a casual edit."
   fi
 done
 

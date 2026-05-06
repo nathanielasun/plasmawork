@@ -1,7 +1,7 @@
 # ADR-0011: Secrets Management Backend
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-05-05

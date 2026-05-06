@@ -1,7 +1,7 @@
 # ADR-0012: Worker Artifact Upload Protocol
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-05-05

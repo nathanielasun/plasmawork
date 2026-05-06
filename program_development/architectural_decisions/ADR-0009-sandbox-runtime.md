@@ -1,7 +1,7 @@
 # ADR-0009: Per-Run Execution Sandbox Runtime
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-05-05

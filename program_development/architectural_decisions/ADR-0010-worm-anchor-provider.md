@@ -1,7 +1,7 @@
 # ADR-0010: WORM Anchor Provider for Log Chain and Bootstrap Marker
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-05-05

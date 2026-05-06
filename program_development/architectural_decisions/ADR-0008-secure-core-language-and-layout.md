@@ -1,7 +1,7 @@
 # ADR-0008: Secure-core language, framework, ORM, and project layout
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-05-05
