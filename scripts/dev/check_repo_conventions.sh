@@ -1701,6 +1701,35 @@ check_grep_in_file 'expired' \
   "L3.8 enforces token expiry"
 check_file_exists packages/secure_core/test/workers/tokenIssuer.test.ts
 
+# L3.9 — worker artifact upload route (ADR-0012)
+check_file_exists packages/secure_core/src/workers/deriveArtifactPath.ts
+check_file_exists packages/secure_core/src/workers/uploadRoute.ts
+check_grep_in_file 'export async function deriveArtifactPath' \
+  packages/secure_core/src/workers/deriveArtifactPath.ts \
+  "L3.9 exports server-derived path helper (ADR-0012 step 2)"
+check_grep_in_file 'ARTIFACT_KINDS' \
+  packages/secure_core/src/workers/deriveArtifactPath.ts \
+  "L3.9 enumerates the closed artifact-kind set"
+check_grep_in_file 'export const workerUploadRoute' \
+  packages/secure_core/src/workers/uploadRoute.ts \
+  "L3.9 exports the Fastify upload route plugin"
+check_grep_in_file '@fastify/multipart' \
+  packages/secure_core/package.json \
+  "L3.9 depends on @fastify/multipart for streaming uploads (ADR-0012 step 3)"
+check_grep_in_file 'worker\.uploaded' \
+  packages/secure_core/src/workers/uploadRoute.ts \
+  "L3.9 emits worker.uploaded on success"
+check_grep_in_file 'worker\.upload_denied' \
+  packages/secure_core/src/workers/uploadRoute.ts \
+  "L3.9 emits worker.upload_denied on rejection"
+check_grep_in_file 'reserveBytes' \
+  packages/secure_core/src/workers/uploadRoute.ts \
+  "L3.9 reserves quota before opening the destination (ADR-0012 step 4)"
+check_grep_in_file 'ByteLimitTransform' \
+  packages/secure_core/src/workers/uploadRoute.ts \
+  "L3.9 enforces a streaming byte cap (no buffering full payload)"
+check_file_exists packages/secure_core/test/workers/deriveArtifactPath.test.ts
+
 # L3.10 — SSRF-safe URL guard + fetcher + webhook signer (v4 §26)
 check_file_exists packages/secure_core/src/outbound/ssrf.ts
 check_file_exists packages/secure_core/src/outbound/fetcher.ts

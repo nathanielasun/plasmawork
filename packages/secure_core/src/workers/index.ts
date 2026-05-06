@@ -1,6 +1,21 @@
 /**
- * Worker subsystem barrel — Phase 0.5 Layer 3 (L3.8).
+ * Worker subsystem barrel — Phase 0.5 Layer 3 (L3.8 + L3.9).
  */
+
+export {
+  deriveArtifactPath,
+  isArtifactKind,
+  ARTIFACT_KINDS,
+  ARTIFACT_KIND_SET,
+  type ArtifactKind,
+  type DeriveArtifactPathOptions,
+} from "./deriveArtifactPath.js";
+
+export {
+  workerUploadRoute,
+  type WorkerUploadRouteOptions,
+  type WrittenArtifactInfo,
+} from "./uploadRoute.js";
 
 export {
   issueWorkerToken,
