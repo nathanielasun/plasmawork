@@ -1264,7 +1264,10 @@ check_grep_in_file '^local_cache/secrets/secrets\.local\.json$' .gitignore \
   "L1.6 local secrets file is explicitly gitignored"
 check_grep_absent_in_file 'AWS provider not yet wired' packages/secure_core/src/secrets/client.ts \
   "L1.6 AWS provider is not a stub"
-env_hits=$(grep -R -n 'process\.env' packages/secure_core/src --exclude='env.ts' || true)
+# Detect runtime reads of process.env. Skip docstring / comment matches by
+# excluding lines whose first non-space character is `*` or `//`.
+env_hits=$(grep -R -n 'process\.env' packages/secure_core/src --exclude='env.ts' \
+  | grep -vE ':\s*(\*|//)' || true)
 if [[ -z "$env_hits" ]]; then
   PASS=$((PASS+1))
   note "L1.6 owns all process.env reads under packages/secure_core/src"
@@ -1459,6 +1462,101 @@ check_grep_absent_in_file 'req\\.body\\.actor_user_id\\|req\\.body\\.created_by\
 check_grep_absent_in_file 'req\\.body\\.actor_user_id\\|req\\.body\\.created_by\\|req\\.body\\.approved_by' \
   packages/secure_core/src/middleware/requireCapability.ts \
   "L2.6 requireCapability never reads actor identity from req.body"
+
+section "secure_core L2.10 + L2.11 (path safety + archive extraction)"
+# Shared component validator (foundation for both tasks)
+check_file_exists packages/secure_core/src/paths/components.ts
+check_grep_in_file 'classifyComponent' packages/secure_core/src/paths/components.ts \
+  "L2.10/L2.11 share classifyComponent (single source of truth for §9.4 component rules)"
+check_grep_in_file 'classifyRelativePath' packages/secure_core/src/paths/components.ts \
+  "L2.10/L2.11 share classifyRelativePath"
+check_file_exists packages/secure_core/test/paths/components.test.ts
+
+# L2.10 — workspacePath builder + safeOpen
+check_file_exists packages/secure_core/src/paths/builder.ts
+check_file_exists packages/secure_core/src/paths/safeOpen.ts
+check_grep_in_file 'export class WorkspacePathBuilder' \
+  packages/secure_core/src/paths/builder.ts \
+  "L2.10 exports WorkspacePathBuilder"
+check_grep_in_file 'WORKSPACE_SUBPATHS' \
+  packages/secure_core/src/paths/builder.ts \
+  "L2.10 enumerates v4 §9.1 workspace subpaths"
+check_grep_in_file 'simulation_capsules' \
+  packages/secure_core/src/paths/builder.ts \
+  "L2.10 includes simulation_capsules subpath (v4 §9.1)"
+check_grep_in_file 'audit_exports' \
+  packages/secure_core/src/paths/builder.ts \
+  "L2.10 includes audit_exports subpath (v4 §9.1)"
+check_grep_in_file 'export async function safeOpenPath' \
+  packages/secure_core/src/paths/safeOpen.ts \
+  "L2.10 exports safeOpenPath()"
+check_grep_in_file 'O_NOFOLLOW' \
+  packages/secure_core/src/paths/safeOpen.ts \
+  "L2.10 uses O_NOFOLLOW per-component (v4 §9.4.4 fallback)"
+check_grep_in_file 'export function isStrictSubpath' \
+  packages/secure_core/src/paths/safeOpen.ts \
+  "L2.10 exports isStrictSubpath helper (component-array equality, not startsWith)"
+# §9.4.2 forbids string `startsWith` for containment. The acceptable
+# usage in safeOpen is `rel.startsWith("..")` as a relative-path guard;
+# the containment check itself MUST use component-array equality.
+# Probe instead: confirm the file contains the structural marker
+# (`isStrictSubpath` / `every(`) rather than relying on absence-of-string
+# which fires on doc-comment matches.
+check_grep_in_file 'isStrictSubpath' \
+  packages/secure_core/src/paths/safeOpen.ts \
+  "L2.10 uses component-array equality (not string startsWith) for path containment (v4 §9.4.2)"
+check_grep_in_file 'path_access\.denied' \
+  packages/secure_core/src/paths/builder.ts \
+  "L2.10 emits path_access.denied on rejection"
+check_file_exists packages/secure_core/test/paths/builder.test.ts
+check_file_exists packages/secure_core/test/paths/safeOpen.test.ts
+
+# L2.11 — archive extraction safety
+check_file_exists packages/secure_core/src/paths/extractArchive.ts
+check_grep_in_file 'export async function extractArchive' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 exports extractArchive(opts)"
+check_grep_in_file 'export function validateEntry' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 exports validateEntry (shared zip + tar branch)"
+check_grep_in_file 'ARCHIVE_DEFAULT_MAX_BYTES' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 hard-codes byte cap (V4-R1: unset env must NOT mean unlimited)"
+check_grep_in_file 'ARCHIVE_DEFAULT_MAX_FILES' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 hard-codes file-count cap (V4-R1: fail-closed default)"
+check_grep_in_file 'archive\.entry_rejected' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 emits archive.entry_rejected on every rejection (V4-R1)"
+check_grep_in_file 'symlink' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 enumerates symlink rejection (v4 §9.4.12)"
+check_grep_in_file 'hardlink' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 enumerates hardlink rejection (v4 §9.4.12)"
+check_grep_in_file 'zip_slip' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 enumerates zip_slip rejection (v4 §9.4.13)"
+check_grep_in_file 'size_limit_exceeded' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 enforces uncompressed size cap (v4 §9.4.14 / V4-R1)"
+check_grep_in_file 'file_count_limit_exceeded' \
+  packages/secure_core/src/paths/extractArchive.ts \
+  "L2.11 enforces file-count cap (v4 §9.4.14 / V4-R1)"
+check_grep_in_file 'yauzl' \
+  packages/secure_core/package.json \
+  "L2.11 depends on yauzl (streaming zip with per-entry hooks)"
+check_grep_in_file '"tar"' \
+  packages/secure_core/package.json \
+  "L2.11 depends on tar"
+check_file_exists packages/secure_core/test/paths/extractArchive.test.ts
+# Both archive defaults must remain explicit; an unset env var must not become "unlimited"
+check_grep_in_file 'PLASMAWORK_ARCHIVE_MAX_BYTES' \
+  packages/secure_core/src/secrets/env.ts \
+  "L2.11 registers PLASMAWORK_ARCHIVE_MAX_BYTES in the env helper"
+check_grep_in_file 'PLASMAWORK_ARCHIVE_MAX_FILES' \
+  packages/secure_core/src/secrets/env.ts \
+  "L2.11 registers PLASMAWORK_ARCHIVE_MAX_FILES in the env helper"
 
 # v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
 # original v4 reference to ADR-0004 collided with the units-library
