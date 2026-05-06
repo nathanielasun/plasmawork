@@ -248,6 +248,17 @@ export class AuditLogger {
       );
     }
 
+    // Actor / user-id consistency rules per v4 §19.1 + V4-R3:
+    //   - `unauthenticated` MUST carry actor_user_id = null (V4-R3
+    //     login.failed / csrf.failed / origin.mismatch shapes).
+    //   - `human`, `ai_agent`, `operator` MUST carry a non-null user
+    //     id — these represent specific named principals.
+    //   - `worker` MAY have either: workers act on behalf of the
+    //     run requester (preferred — pass that user id), but
+    //     system-issued worker events (e.g. an unattributed worker
+    //     process exit beacon) accept null. The schema's
+    //     `audit_events.actor_user_id` is nullable per v4 §12, so
+    //     we don't tighten beyond what the spec requires.
     if (event.actorType === "unauthenticated") {
       if (event.actorUserId !== null) {
         throw new RedactionError(
@@ -255,7 +266,11 @@ export class AuditLogger {
           "actorUserId must be null when actorType === 'unauthenticated'",
         );
       }
-    } else {
+    } else if (
+      event.actorType === "human" ||
+      event.actorType === "ai_agent" ||
+      event.actorType === "operator"
+    ) {
       if (event.actorUserId === null) {
         throw new RedactionError(
           "audit.invalid_metadata_shape",
@@ -263,6 +278,7 @@ export class AuditLogger {
         );
       }
     }
+    // `worker`: no constraint beyond the schema's own.
 
     if (typeof event.requestId !== "string" || event.requestId.length === 0) {
       throw new RedactionError(

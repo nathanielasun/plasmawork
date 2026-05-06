@@ -183,16 +183,17 @@ export class AuditDbWriter {
    * matching log table. `null` for an empty table — the chain's first
    * write.
    *
-   * Ordering: `created_at DESC, id DESC`. The secondary `id DESC`
-   * disambiguates rows that share a microsecond-truncated timestamp
-   * (Postgres TIMESTAMPTZ has microsecond precision; the logger
-   * generates millisecond-precision timestamps, so collisions are
-   * possible under load when multiple writers hold the lock briefly).
+   * Ordering: `audit_events` and `provenance_events` use
+   * `(created_at DESC, id DESC)`; `operator_events` has no `created_at`
+   * column per v4 §12 — its chronological column is `started_at`. The
+   * `id DESC` tiebreaker survives microsecond-truncated timestamp
+   * collisions when multiple writers hold the lock briefly.
    */
   public prevHashGetter = async (): Promise<string | null> => {
+    const orderColumn = this.logType === "operator" ? "started_at" : "created_at";
     const rows = await this.pool.sql.unsafe<{ row_hash: string }[]>(
       `SELECT row_hash FROM ${this.tableName} ` +
-        `ORDER BY created_at DESC, id DESC LIMIT 1`,
+        `ORDER BY ${orderColumn} DESC, id DESC LIMIT 1`,
     );
     if (rows.length === 0) {
       return null;

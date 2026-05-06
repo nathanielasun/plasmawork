@@ -15,6 +15,7 @@ export {
 
 export {
   SafeFetcher,
+  makePinnedLookup,
   type SafeFetcherOptions,
   type SafeFetchOptions,
 } from "./fetcher.js";

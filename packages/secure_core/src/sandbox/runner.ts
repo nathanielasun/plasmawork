@@ -101,8 +101,45 @@ export class SandboxRunner {
       env: opts.env,
     };
 
-    // 3. Transition to running. The state machine enforces the legal
-    //    transition graph and emits run.launched.
+    // 3. Launch FIRST. Spec validation + spawn happen here. Refusing
+    //    after a `queued → running` transition would leave the run
+    //    stuck running with no container; do the side-effect-prone
+    //    work first so transition only fires on a successful launch.
+    let handle: SandboxHandle;
+    try {
+      handle = await this.#runtime.launch(spec);
+    } catch (err) {
+      // Move to failed so the run doesn't stick in queued. The
+      // expectedFromState is `queued` because we never advanced past
+      // it. AuditLogger emits run.failed via the state machine.
+      await this.#stateMachine.transition({
+        runId: opts.runId,
+        workspaceId: opts.workspaceId,
+        expectedFromState: "queued",
+        toState: "failed",
+        actorUserId: opts.actorUserId,
+        actorType: "human",
+        requestId: opts.requestId,
+        failureMessage: "Sandbox launch refused.",
+      });
+      // Sandbox spec rejection IS a security violation per ADR-0009;
+      // emit so reviewers see it.
+      await this.#auditLogger.write({
+        workspaceId: opts.workspaceId,
+        actorUserId: opts.actorUserId,
+        actorType: "human",
+        action: "sandbox.violation",
+        result: "denied",
+        requestId: opts.requestId,
+        metadata: { denied_reason: "spec_refused" },
+      });
+      throw err;
+    }
+    this.#handles.set(opts.runId, handle);
+
+    // 4. Now that the container is live, transition queued → running
+    //    so the state in DB reflects the actual sandbox state. State
+    //    machine enforces the legal transition + emits run.launched.
     await this.#stateMachine.transition({
       runId: opts.runId,
       workspaceId: opts.workspaceId,
@@ -113,21 +150,16 @@ export class SandboxRunner {
       requestId: opts.requestId,
     });
 
-    let handle: SandboxHandle | null = null;
     let result: SandboxExitResult;
     try {
-      handle = await this.#runtime.launch(spec);
-      this.#handles.set(opts.runId, handle);
       result = await this.#runtime.wait(handle);
     } finally {
-      if (handle !== null) {
-        try {
-          await handle.close();
-        } catch {
-          // already closed; ignore
-        }
-        this.#handles.delete(opts.runId);
+      try {
+        await handle.close();
+      } catch {
+        // already closed; ignore
       }
+      this.#handles.delete(opts.runId);
     }
 
     // 4. Map terminationReason → state transition + audit.
@@ -148,9 +180,14 @@ export class SandboxRunner {
         break;
       }
       case "violation": {
+        // The worker exited with a security violation. The L1.7
+        // logger allows actor_user_id=null with actorType="worker"
+        // (workers act on behalf of a user but the violation itself
+        // is the worker process); use the run's launching user when
+        // we know it for accountability.
         await this.#auditLogger.write({
           workspaceId: opts.workspaceId,
-          actorUserId: null,
+          actorUserId: opts.actorUserId,
           actorType: "worker",
           action: "sandbox.violation",
           result: "denied",

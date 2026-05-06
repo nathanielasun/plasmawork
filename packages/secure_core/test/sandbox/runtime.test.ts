@@ -25,6 +25,12 @@ const BASE_LIMITS = {
   diskBytes: 1024 * 1024 * 1024,
 };
 
+/**
+ * Mount source allowlist for the test spec — covers the canonical
+ * `/snapshot` capsule snapshot prefix + the per-run writable root.
+ */
+const TEST_ALLOWED_SOURCE_ROOTS = ["/snapshot", "/tmp/rootfs"] as const;
+
 function baseSpec(over: Partial<SandboxLaunchSpec> = {}): SandboxLaunchSpec {
   return {
     runId: "11111111-1111-4111-8111-111111111111",
@@ -40,13 +46,17 @@ function baseSpec(over: Partial<SandboxLaunchSpec> = {}): SandboxLaunchSpec {
   };
 }
 
+const VALIDATION_OPTS = {
+  allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS,
+};
+
 describe("validateLaunchSpec", () => {
   it("accepts a clean spec", () => {
-    expect(validateLaunchSpec(baseSpec())).toBeNull();
+    expect(validateLaunchSpec(baseSpec(), VALIDATION_OPTS)).toBeNull();
   });
 
   it("rejects empty entrypoint", () => {
-    expect(validateLaunchSpec(baseSpec({ entrypoint: [] }))).toBe(
+    expect(validateLaunchSpec(baseSpec({ entrypoint: [] }), VALIDATION_OPTS)).toBe(
       "empty_entrypoint",
     );
   });
@@ -55,6 +65,7 @@ describe("validateLaunchSpec", () => {
     expect(
       validateLaunchSpec(
         baseSpec({ egress: { mode: "uds_proxy", socketPath: "" } }),
+        VALIDATION_OPTS,
       ),
     ).toBe("egress_socket_missing");
   });
@@ -70,6 +81,7 @@ describe("validateLaunchSpec", () => {
     expect(
       validateLaunchSpec(
         baseSpec({ limits: { ...BASE_LIMITS, [k]: v } as never }),
+        VALIDATION_OPTS,
       ),
     ).toBe("limit_non_positive");
   });
@@ -78,8 +90,9 @@ describe("validateLaunchSpec", () => {
     expect(
       validateLaunchSpec(
         baseSpec({
-          writableMounts: [{ source: "/x", target: "relative/dir" }],
+          writableMounts: [{ source: "/tmp/rootfs/x", target: "relative/dir" }],
         }),
+        VALIDATION_OPTS,
       ),
     ).toBe("mount_target_relative");
   });
@@ -88,10 +101,39 @@ describe("validateLaunchSpec", () => {
     expect(
       validateLaunchSpec(
         baseSpec({
-          writableMounts: [{ source: "/x", target: "/work/../etc" }],
+          writableMounts: [{ source: "/tmp/rootfs/x", target: "/work/../etc" }],
         }),
+        VALIDATION_OPTS,
       ),
     ).toBe("mount_outside_rootfs");
+  });
+
+  it("rejects mount source outside the allowlist (defense in depth)", () => {
+    expect(
+      validateLaunchSpec(
+        baseSpec({
+          writableMounts: [{ source: "/etc/passwd", target: "/work" }],
+        }),
+        VALIDATION_OPTS,
+      ),
+    ).toBe("mount_source_not_allowed");
+  });
+
+  it("rejects mount source containing ..", () => {
+    expect(
+      validateLaunchSpec(
+        baseSpec({
+          writableMounts: [{ source: "/tmp/rootfs/../etc", target: "/work" }],
+        }),
+        VALIDATION_OPTS,
+      ),
+    ).toBe("mount_source_traversal");
+  });
+
+  it("rejects all mounts when allowlist is empty (hermetic-only)", () => {
+    expect(
+      validateLaunchSpec(baseSpec(), { allowedSourceRoots: [] }),
+    ).toBe("mount_source_not_allowed");
   });
 
   it.each([
@@ -106,12 +148,12 @@ describe("validateLaunchSpec", () => {
     "PGPASSWORD",
   ])("strips forbidden env key %s", (key) => {
     expect(
-      validateLaunchSpec(baseSpec({ env: { [key]: "x" } })),
+      validateLaunchSpec(baseSpec({ env: { [key]: "x" } }), VALIDATION_OPTS),
     ).toBe("env_forbidden_key");
   });
 
   it("rejects non-absolute rootfs", () => {
-    expect(validateLaunchSpec(baseSpec({ rootfsPath: "rootfs" }))).toBe(
+    expect(validateLaunchSpec(baseSpec({ rootfsPath: "rootfs" }), VALIDATION_OPTS)).toBe(
       "rootfs_not_absolute",
     );
   });
@@ -119,25 +161,25 @@ describe("validateLaunchSpec", () => {
 
 describe("RunscSandboxRuntime.assembleArgv", () => {
   it("always includes --network=none", () => {
-    const r = new RunscSandboxRuntime();
+    const r = new RunscSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const argv = r.assembleArgv(baseSpec());
     expect(argv).toContain("--network=none");
   });
 
   it("never includes --privileged", () => {
-    const r = new RunscSandboxRuntime();
+    const r = new RunscSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const argv = r.assembleArgv(baseSpec());
     expect(argv.some((a) => a.includes("privileged"))).toBe(false);
   });
 
   it("includes --no-new-privs", () => {
-    const r = new RunscSandboxRuntime();
+    const r = new RunscSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const argv = r.assembleArgv(baseSpec());
     expect(argv).toContain("--no-new-privs");
   });
 
   it("encodes mounts as bind type", () => {
-    const r = new RunscSandboxRuntime();
+    const r = new RunscSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const argv = r.assembleArgv(baseSpec());
     expect(
       argv.some((a) => a === "--mount=type=bind,src=/snapshot,dst=/capsule,ro"),
@@ -150,7 +192,7 @@ describe("RunscSandboxRuntime.assembleArgv", () => {
   });
 
   it("encodes uds_proxy egress when configured", () => {
-    const r = new RunscSandboxRuntime();
+    const r = new RunscSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const argv = r.assembleArgv(
       baseSpec({ egress: { mode: "uds_proxy", socketPath: "/run/proxy.sock" } }),
     );
@@ -158,7 +200,7 @@ describe("RunscSandboxRuntime.assembleArgv", () => {
   });
 
   it("encodes resource limits in millicores → cores", () => {
-    const r = new RunscSandboxRuntime();
+    const r = new RunscSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const argv = r.assembleArgv(
       baseSpec({
         limits: { ...BASE_LIMITS, cpuQuotaMillicores: 2500 },
@@ -171,7 +213,7 @@ describe("RunscSandboxRuntime.assembleArgv", () => {
 describe("RunscSandboxRuntime.launch", () => {
   it("refuses bad specs before reaching spawn", async () => {
     const fakeSpawn = vi.fn() as unknown as SpawnFn;
-    const r = new RunscSandboxRuntime({ spawn: fakeSpawn });
+    const r = new RunscSandboxRuntime({ spawn: fakeSpawn, allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     await expect(r.launch(baseSpec({ entrypoint: [] }))).rejects.toBeInstanceOf(
       SandboxViolationError,
     );
@@ -186,7 +228,7 @@ describe("RunscSandboxRuntime.launch", () => {
         kill: vi.fn(),
         killed: false,
       }) as unknown as SpawnFn;
-    const r = new RunscSandboxRuntime({ spawn: fakeSpawn });
+    const r = new RunscSandboxRuntime({ spawn: fakeSpawn, allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     await r.launch(baseSpec());
     const fakeSpawnMock = fakeSpawn as unknown as ReturnType<typeof vi.fn>;
     const argv = fakeSpawnMock.mock.calls[0][1] as string[];
@@ -196,7 +238,7 @@ describe("RunscSandboxRuntime.launch", () => {
 
 describe("StubSandboxRuntime", () => {
   it("records launches and refuses bad specs", async () => {
-    const r = new StubSandboxRuntime();
+    const r = new StubSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     await expect(r.launch(baseSpec({ entrypoint: [] }))).rejects.toBeInstanceOf(
       SandboxViolationError,
     );
@@ -204,7 +246,7 @@ describe("StubSandboxRuntime", () => {
   });
 
   it("returns scripted exit results", async () => {
-    const r = new StubSandboxRuntime();
+    const r = new StubSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const handle = await r.launch(baseSpec());
     r.setNextResult(handle.id, {
       exitCode: 1,
@@ -217,7 +259,7 @@ describe("StubSandboxRuntime", () => {
   });
 
   it("kill flips wait result to killed", async () => {
-    const r = new StubSandboxRuntime();
+    const r = new StubSandboxRuntime({ allowedSourceRoots: TEST_ALLOWED_SOURCE_ROOTS });
     const handle = await r.launch(baseSpec());
     await r.kill(handle);
     const result = await r.wait(handle);

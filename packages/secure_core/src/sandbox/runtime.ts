@@ -120,10 +120,46 @@ export type SandboxSpecRefusal =
   | "limit_non_positive"
   | "mount_target_relative"
   | "mount_outside_rootfs"
+  | "mount_source_not_absolute"
+  | "mount_source_traversal"
+  | "mount_source_not_allowed"
   | "env_forbidden_key"
   | "rootfs_not_absolute";
 
-export function validateLaunchSpec(spec: SandboxLaunchSpec): SandboxSpecRefusal | null {
+/**
+ * Allowlist of host-path prefixes from which bind-mount SOURCES may
+ * be drawn. Caller (the runner) constructs sources via the L2.10
+ * `WorkspacePathBuilder`, so the SourceRoots are the workspace
+ * storage roots configured at deploy time. Empty array means
+ * "deny all bind mounts" (which forces the spec to have no mounts;
+ * useful for hermetic-only runs).
+ */
+export interface SpecValidationOptions {
+  readonly allowedSourceRoots: ReadonlyArray<string>;
+}
+
+function mountSourceRefusal(
+  source: string,
+  allowedRoots: ReadonlyArray<string>,
+): SandboxSpecRefusal | null {
+  if (!source.startsWith("/")) return "mount_source_not_absolute";
+  if (source.includes("..")) return "mount_source_traversal";
+  if (allowedRoots.length === 0) return "mount_source_not_allowed";
+  for (const root of allowedRoots) {
+    // Normalise both ends so a trailing slash on the allowed root
+    // doesn't cause a false miss; require strict subpath OR equality.
+    const r = root.endsWith("/") ? root.slice(0, -1) : root;
+    if (source === r || isStrictSubpath(r, source)) {
+      return null;
+    }
+  }
+  return "mount_source_not_allowed";
+}
+
+export function validateLaunchSpec(
+  spec: SandboxLaunchSpec,
+  opts?: SpecValidationOptions,
+): SandboxSpecRefusal | null {
   if (!spec.rootfsPath.startsWith("/")) return "rootfs_not_absolute";
   if (spec.entrypoint.length === 0) return "empty_entrypoint";
   if (spec.egress.mode === "uds_proxy" && spec.egress.socketPath.length === 0) {
@@ -138,20 +174,18 @@ export function validateLaunchSpec(spec: SandboxLaunchSpec): SandboxSpecRefusal 
   ]) {
     if (!Number.isInteger(v) || v <= 0) return "limit_non_positive";
   }
+  // Targets MUST be absolute paths inside the container's namespace
+  // and MUST NOT contain `..`. Sources MUST be absolute, MUST NOT
+  // contain `..`, and MUST be inside one of the allowed source roots
+  // (defense in depth — the runner constructs sources through the
+  // L2.10 path builder, but the runtime refuses anything that didn't
+  // come through the same allowlist).
+  const sourceRoots = opts?.allowedSourceRoots ?? [];
   for (const m of [...spec.readonlyMounts, ...spec.writableMounts]) {
     if (!m.target.startsWith("/")) return "mount_target_relative";
     if (m.target.includes("..")) return "mount_outside_rootfs";
-    // Targets must live INSIDE the rootfs (or BE the rootfs).
-    // `isStrictSubpath` requires distinct parent + child; allow target
-    // === rootfsPath to support "/" mount.
-    if (m.target !== spec.rootfsPath && !isStrictSubpath(spec.rootfsPath, m.target)) {
-      // The rootfs is the container's `/`; mounts target paths in
-      // that namespace, so any absolute target whose first component
-      // is reasonable is acceptable. Allow targets that don't share
-      // the rootfs prefix — they're inside the container's root.
-      // Pure containment within rootfsPath is over-restrictive.
-      // Only refuse when the target tries to traverse via `..`.
-    }
+    const r = mountSourceRefusal(m.source, sourceRoots);
+    if (r !== null) return r;
   }
   for (const k of Object.keys(spec.env)) {
     if (envKeyForbidden(k)) return "env_forbidden_key";
@@ -183,10 +217,20 @@ class StubHandle implements SandboxHandle {
   }
 }
 
+export interface StubSandboxRuntimeOptions {
+  /** Mount source allowlist (workspace storage roots). */
+  readonly allowedSourceRoots: ReadonlyArray<string>;
+}
+
 export class StubSandboxRuntime implements SandboxRuntime {
   readonly #launches: StubLaunchRecord[] = [];
   readonly #scripts = new Map<string, SandboxExitResult>();
+  readonly #allowedSourceRoots: ReadonlyArray<string>;
   #counter = 0;
+
+  public constructor(opts: StubSandboxRuntimeOptions = { allowedSourceRoots: [] }) {
+    this.#allowedSourceRoots = opts.allowedSourceRoots;
+  }
 
   public records(): ReadonlyArray<StubLaunchRecord> {
     return this.#launches;
@@ -198,7 +242,9 @@ export class StubSandboxRuntime implements SandboxRuntime {
   }
 
   public async launch(spec: SandboxLaunchSpec): Promise<SandboxHandle> {
-    const r = validateLaunchSpec(spec);
+    const r = validateLaunchSpec(spec, {
+      allowedSourceRoots: this.#allowedSourceRoots,
+    });
     if (r !== null) rejectSpec(r);
     this.#counter += 1;
     const id = `stub-${this.#counter}`;
@@ -230,6 +276,8 @@ export interface RunscOptions {
   readonly runscBinary?: string;
   /** Spawn injectable so tests can capture the assembled argv. */
   readonly spawn?: SpawnFn;
+  /** Mount source allowlist; required in production. */
+  readonly allowedSourceRoots?: ReadonlyArray<string>;
 }
 
 interface RunscHandle extends SandboxHandle {
@@ -239,10 +287,12 @@ interface RunscHandle extends SandboxHandle {
 export class RunscSandboxRuntime implements SandboxRuntime {
   readonly #binary: string;
   readonly #spawn: SpawnFn;
+  readonly #allowedSourceRoots: ReadonlyArray<string>;
 
   public constructor(opts: RunscOptions = {}) {
     this.#binary = opts.runscBinary ?? "runsc";
     this.#spawn = opts.spawn ?? nodeSpawn;
+    this.#allowedSourceRoots = opts.allowedSourceRoots ?? [];
   }
 
   /**
@@ -280,7 +330,9 @@ export class RunscSandboxRuntime implements SandboxRuntime {
   }
 
   public async launch(spec: SandboxLaunchSpec): Promise<SandboxHandle> {
-    const r = validateLaunchSpec(spec);
+    const r = validateLaunchSpec(spec, {
+      allowedSourceRoots: this.#allowedSourceRoots,
+    });
     if (r !== null) rejectSpec(r);
     const argv = this.assembleArgv(spec);
     const child = this.#spawn(this.#binary, argv, {

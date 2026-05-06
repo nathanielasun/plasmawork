@@ -845,3 +845,47 @@ Commit: `db040b6` (`Bootstrap Phase 0: governance, docs, bug memory, and autonom
 
 ### Agent warning
 Do not generalize a `build/` ignore rule across the whole tree. Project directories whose name happens to be `build` exist deliberately. Anchor build-output ignores to the place they are produced, or use specific patterns like `apps/*/build/`.
+
+## 2026-05-07: Layer-3 Group C audit findings (9 issues)
+
+### Affected subsystem
+`packages/secure_core/src/{audit,sandbox,workers,outbound}/`
+
+### Symptoms
+Post-Group-C review surfaced 9 real issues: 2 critical, 6 high, 1 medium.
+
+1. **Critical** — `scripts/test/security.sh` was a stub; v4 §29 sandbox tests #38–43 / #67 (network-egress probes, syscall block, quota trips) had no implementation. ADR-0009 requires real gVisor probes; the spec-level invariants we ship don't substitute for them, but no spec-level coverage existed either.
+2. **Critical** — `SandboxRunner.runJob` transitioned the run to `running` BEFORE calling `runtime.launch`. A spec-rejection or container-spawn failure left the run stuck in `running` with no live container — the state machine had no way back without operator intervention.
+3. **High** — `validateLaunchSpec` only checked mount **target** paths; it permitted any absolute mount **source**. A miswired runner could bind-mount `/etc` (or `/`!) read-only into the sandbox.
+4. **High** — `uploadRoute` passed `claims.run_id` as `storage_reservations.requested_by`. The schema FK targets `users.id`, so every successful worker upload would fail at the DB INSERT.
+5. **High** — Worker upload + sandbox-violation audits emitted `actorType: "worker"` with `actorUserId: null`, but the L1.7 logger refused null user_id for any actor type other than `unauthenticated`. Every worker-originated audit row would throw.
+6. **High** — `uploadRoute` reserved bytes against `declared_size` but used `maxUploadBytes` as the streaming cap. A worker could declare 1 KiB and stream up to 200 MiB — bypass of the stored-byte quota once the FK was fixed.
+7. **High** — `artifact_kind === "archive"` uploads wrote bytes directly + committed the reservation without ever calling `extractArchive`. ADR-0012 step 6 requires archive validation through the §9.4.11–13 zip/symlink defense before commit.
+8. **High** — `AuditDbWriter.prevHashGetter` and `AuditChainVerifier.fetchFrom` ordered chain rows by `created_at`, but `operator_events` has no `created_at` column (uses `started_at` per v4 §12). Operator chain SQL would fail.
+9. **Medium** — `SafeFetcher` resolved the host once for the SSRF check, then handed the URL to the native `fetch` which re-resolves. A name-server flapping between public and private answers could return a public IP at validate-time and a private IP at connect-time (DNS rebinding).
+
+### Root cause
+Cross-cutting: the L3 sub-agents implemented their slices in isolation and didn't catch contract drift across boundaries. The L1.7 logger constraint, the `users.id` FK on `storage_reservations`, the `operator_events` column shape, and the ADR-0012 archive-validation step are all upstream-of-L3 contracts the workers and sandbox sub-agents needed to honor — they were either never read or partially read.
+
+### Fix
+1. **§29 spec-level invariants shipped.** `packages/secure_core/test/security/sandbox.test.ts` covers v4 §29 #38, #39, #40, #41, #42, #43, #67 at the runtime-spec layer (no `--privileged`, network=none default-deny, UDS proxy gating, mount allowlist, env strip). Live-runtime probes (six tests) are env-gated on `PLASMAWORK_RUNSC_PROBES=1` for the gVisor CI lane. `scripts/test/security.sh` now actually runs `vitest run test/security` instead of exiting 0 with a stub message.
+2. **Runner ordering.** `runJob` now `runtime.launch`s first; on launch failure transitions `queued → failed` and emits `sandbox.violation { denied_reason: "spec_refused" }`. Only after a successful launch does it transition to `running`.
+3. **Mount source allowlist.** `validateLaunchSpec` accepts `SpecValidationOptions { allowedSourceRoots }` and refuses sources outside the allowlist with new reasons `mount_source_not_absolute`, `mount_source_traversal`, `mount_source_not_allowed`. `RunscSandboxRuntime` and `StubSandboxRuntime` accept `allowedSourceRoots` and pass it to every `validateLaunchSpec` call.
+4. **`requested_by_user_id` on `WorkerClaims`.** L3.8 token issuer now requires `run.requestedByUserId` at issuance and pins it in the claims. `uploadRoute` uses `claims.requested_by_user_id` for the storage reservation's `requested_by` and for every worker-originated audit's `actor_user_id` — the FK target is real, accountability is preserved.
+5. **L1.7 logger relaxation.** Constraint changed from a strict bidirectional `actor_user_id === null ⇔ actor_type === 'unauthenticated'` to: `unauthenticated` MUST be null; `human`/`ai_agent`/`operator` MUST be non-null; `worker` MAY be null (system-issued worker events) or non-null (run-bound worker events). Schema's nullable column already permits this; the logger no longer adds a stricter constraint.
+6. **Streaming cap = declared.** `ByteLimitTransform` is constructed with `Number(declared)`, not `maxUploadBytes`. Declared size > maxUploadBytes refuses up front with `oversize`. A worker that under-declares hits the byte cap on the wire.
+7. **Archive validation routed through L2.11.** When `kind === "archive"`, after the streaming write completes, `extractArchive` validates the file (zip or tar inferred from artifact_name suffix). On any rejection: archive deleted, reservation released, `worker.upload_denied { archive_unsafe }` emitted.
+8. **Operator column fix.** `AuditDbWriter.prevHashGetter` selects `started_at` for `operator`, `created_at` for the others. `AuditChainVerifier.fetchFrom` does the same in its boundary SELECT. The downstream `fetchAllOperator` already used `started_at` — the bug was strictly in the `created_at`-assuming code paths.
+9. **DNS-rebinding TOCTOU closed.** `SafeFetcher.fetch` builds a one-off `undici.Agent` per request whose `connect.lookup` returns the IP the SsrfGuard validated. The fetcher passes the agent as the `dispatcher` extension to `fetch`. Native re-resolution of the host name is bypassed; SNI / Host header preserved.
+
+### Regression protection
+- 7 §29 spec-level invariants land in `test/security/sandbox.test.ts`; the CI gate (`scripts/test/security.sh`) refuses to pass without them.
+- Convention checker grew 1051 → 1054 with assertions that the security suite exists and is wired (`vitest run test/security`).
+- 3 new sandbox-runtime tests pin the mount allowlist (`mount_source_not_allowed`, `mount_source_traversal`, hermetic-only empty-allowlist).
+- The L1.7 logger constraint test was already covered by the L3.5 storage-reservation sweep emission; the new shape (worker + null) now passes that gate.
+
+### Agent warning
+- L3 sub-agents must read the L1.7 audit-actor constraint AND the L1.8 schema FK targets before emitting audits or inserting rows that reference users.
+- `validateLaunchSpec` callers MUST pass `allowedSourceRoots` (production) or accept hermetic-only enforcement (empty allowlist).
+- Never transition a run to a "live" state before the live thing is actually live. Order of state changes matters when failures land between them.
+- Streaming-write byte caps must be derived from the smaller of declared and configured-max; never use the bigger value as the cap.

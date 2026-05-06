@@ -67,6 +67,13 @@ export interface WorkerClaims {
   readonly workspace_id: string;
   readonly capsule_id: string;
   readonly capsule_version_id: string;
+  /**
+   * The human user who requested this run. Workers act on behalf of
+   * this user, so worker-originated audit rows + storage reservations
+   * carry this id (workers themselves have no `users` row). Pinned at
+   * issuance time from `simulation_runs.requested_by`.
+   */
+  readonly requested_by_user_id: string;
   /** Closed capability set; every entry must be in `WORKER_CAPABILITIES`. */
   readonly capabilities: ReadonlyArray<WorkerCapability>;
   /** Unix seconds. */
@@ -82,6 +89,8 @@ export interface IssueTokenOptions {
     readonly workspaceId: string;
     readonly capsuleId: string;
     readonly capsuleVersionId: string;
+    /** users.id of the human who requested the run. Required (FK target). */
+    readonly requestedByUserId: string;
   };
   /** Override default capabilities (must be a subset of WORKER_CAPABILITIES). */
   readonly capabilities?: ReadonlyArray<WorkerCapability>;
@@ -157,6 +166,7 @@ export function issueWorkerToken(opts: IssueTokenOptions): IssuedWorkerToken {
     workspace_id: opts.run.workspaceId,
     capsule_id: opts.run.capsuleId,
     capsule_version_id: opts.run.capsuleVersionId,
+    requested_by_user_id: opts.run.requestedByUserId,
     capabilities: Object.freeze([...requested]),
     issued_at: nowSec,
     expires_at: nowSec + ttl,
@@ -213,6 +223,7 @@ function parseClaims(canonical: string): WorkerClaims | null {
     typeof c.workspace_id !== "string" ||
     typeof c.capsule_id !== "string" ||
     typeof c.capsule_version_id !== "string" ||
+    typeof c.requested_by_user_id !== "string" ||
     !Array.isArray(c.capabilities) ||
     typeof c.issued_at !== "number" ||
     typeof c.expires_at !== "number"

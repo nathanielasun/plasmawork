@@ -1904,9 +1904,14 @@ check_grep_in_file 'Secure Multi-User Development Requirements' AGENTS.md \
   "AGENTS.md carries v4 §1.1 insert"
 check_grep_in_file 'Security Rules for Multi-User Workbench Work' CLAUDE.md \
   "CLAUDE.md carries v4 §1.2 insert"
-check_file_executable scripts/test/security.sh "scripts/test/security.sh stub"
-check_grep_in_file 'STUB' scripts/test/security.sh \
-  "security.sh stub announces itself as a stub"
+check_file_executable scripts/test/security.sh "scripts/test/security.sh runs §29 spec-level invariants"
+check_grep_in_file 'vitest run test/security' scripts/test/security.sh \
+  "security.sh actually runs the §29 suite under packages/secure_core/test/security/"
+check_file_exists packages/secure_core/test/security/sandbox.test.ts
+check_grep_in_file '§29 #38' packages/secure_core/test/security/sandbox.test.ts \
+  "§29 #38 (egress default-deny) covered by spec-level invariant"
+check_grep_in_file 'PLASMAWORK_RUNSC_PROBES' packages/secure_core/test/security/sandbox.test.ts \
+  "§29 live-runtime probes are env-gated for the gVisor CI lane"
 check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh stub"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped

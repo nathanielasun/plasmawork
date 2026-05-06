@@ -356,30 +356,32 @@ export class AuditChainVerifier {
   private async fetchFrom(
     anchorRowId: string,
   ): Promise<readonly FetchedRow[]> {
-    // Rows whose (created_at, id) is strictly greater than the
-    // anchored row's. We need the anchored row's created_at + id to
-    // form the boundary; fetch it inline.
+    // Rows whose (timestamp, id) is strictly greater than the anchored
+    // row's. The chronological column differs by log type per v4 §12:
+    // audit_events / provenance_events use `created_at`;
+    // operator_events uses `started_at`.
+    const tsColumn = this.logType === "operator" ? "started_at" : "created_at";
     const boundary = await this.pool.sql.unsafe<
-      { created_at: Date; id: string }[]
+      Array<{ ts: Date; id: string }>
     >(
-      `SELECT created_at, id FROM ${this.tableName} WHERE id = $1`,
+      `SELECT ${tsColumn} AS ts, id FROM ${this.tableName} WHERE id = $1`,
       [anchorRowId],
     );
     if (boundary.length === 0) {
       return [];
     }
-    const { created_at, id } = boundary[0];
+    const { ts, id } = boundary[0];
     switch (this.logType) {
       case "audit":
-        return this.fetchAllAudit({ afterCreatedAt: created_at, afterId: id });
+        return this.fetchAllAudit({ afterCreatedAt: ts, afterId: id });
       case "provenance":
         return this.fetchAllProvenance({
-          afterCreatedAt: created_at,
+          afterCreatedAt: ts,
           afterId: id,
         });
       case "operator":
         return this.fetchAllOperator({
-          afterCreatedAt: created_at,
+          afterCreatedAt: ts,
           afterId: id,
         });
     }

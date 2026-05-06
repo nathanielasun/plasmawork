@@ -50,6 +50,7 @@ import {
   WorkerUploadDeniedError,
   SecureCoreError,
 } from "../errors/shapes.js";
+import { extractArchive, type ArchiveFormat } from "../paths/extractArchive.js";
 
 const WORKER_AUTH_HEADER = "x-worker-token";
 /** Default per-upload cap. Override via plugin opts. */
@@ -258,10 +259,14 @@ export const workerUploadRoute: FastifyPluginAsync<
         "reason" in err.details
           ? (err.details as { reason: string }).reason
           : "scope_mismatch";
+      // Token rejected before claims could be parsed — we don't know
+      // who the principal is. Emit as unauthenticated rather than
+      // worker (the L1.7 logger requires actor_user_id to be null
+      // exactly when actorType === "unauthenticated").
       await opts.auditLogger.write({
         workspaceId: null,
         actorUserId: null,
-        actorType: "worker",
+        actorType: "unauthenticated",
         action: "worker.upload_denied",
         result: "denied",
         requestId: req.requestId,
@@ -287,7 +292,7 @@ export const workerUploadRoute: FastifyPluginAsync<
       file.file.resume();
       await opts.auditLogger.write({
         workspaceId: claims.workspace_id,
-        actorUserId: null,
+        actorUserId: claims.requested_by_user_id,
         actorType: "worker",
         action: "worker.upload_denied",
         result: "denied",
@@ -297,15 +302,55 @@ export const workerUploadRoute: FastifyPluginAsync<
       throw err;
     }
 
-    // (4) reserve quota for the declared size BEFORE opening the file.
+    // (4) reserve quota for the declared size BEFORE opening the
+    // file. The streaming byte cap is min(declared, maxUploadBytes)
+    // so a worker that under-declares its size hits oversize before
+    // it can write past its own reservation. Without this clamp the
+    // worker could declare 1 KiB and stream maxUploadBytes — bypassing
+    // the stored-byte quota.
+    const maxUploadBytes = opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
     const declared = fields.declared_size
       ? BigInt(fields.declared_size)
-      : BigInt(opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES);
+      : BigInt(maxUploadBytes);
+    if (declared <= 0n) {
+      file.file.resume();
+      await opts.auditLogger.write({
+        workspaceId: claims.workspace_id,
+        actorUserId: claims.requested_by_user_id,
+        actorType: "worker",
+        action: "worker.upload_denied",
+        result: "denied",
+        requestId: req.requestId,
+        metadata: { denied_reason: "oversize" },
+      });
+      throw new WorkerUploadDeniedError("Declared size must be positive.", {
+        reason: "oversize",
+      });
+    }
+    if (declared > BigInt(maxUploadBytes)) {
+      file.file.resume();
+      await opts.auditLogger.write({
+        workspaceId: claims.workspace_id,
+        actorUserId: claims.requested_by_user_id,
+        actorType: "worker",
+        action: "worker.upload_denied",
+        result: "denied",
+        requestId: req.requestId,
+        metadata: { denied_reason: "oversize" },
+      });
+      throw new WorkerUploadDeniedError("Declared size exceeds upload cap.", {
+        reason: "oversize",
+      });
+    }
+
     let reservation: { reservationId: string; expiresAt: Date } | null = null;
     try {
       reservation = await opts.storageReservations.reserveBytes({
         workspaceId: claims.workspace_id,
-        requestedBy: claims.run_id, // workers don't have a user id; pin to run
+        // The reservation FK targets users.id. Workers act on behalf
+        // of the run requester (pinned in the token at issuance time
+        // per L3.8 WorkerClaims.requested_by_user_id).
+        requestedBy: claims.requested_by_user_id,
         bytes: declared,
         requestId: req.requestId,
       });
@@ -313,7 +358,7 @@ export const workerUploadRoute: FastifyPluginAsync<
       file.file.resume();
       await opts.auditLogger.write({
         workspaceId: claims.workspace_id,
-        actorUserId: null,
+        actorUserId: claims.requested_by_user_id,
         actorType: "worker",
         action: "worker.upload_denied",
         result: "denied",
@@ -325,9 +370,11 @@ export const workerUploadRoute: FastifyPluginAsync<
       });
     }
 
-    // (3) streaming write through the byte-limited transform.
-    const max = opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
-    const limiter = new ByteLimitTransform(max);
+    // (3) streaming write through the byte-limited transform. The
+    // limiter caps at min(declared, maxUploadBytes); exceeding aborts
+    // the pipeline with a WorkerUploadDeniedError{oversize}.
+    const streamCap = Number(declared);
+    const limiter = new ByteLimitTransform(streamCap);
     await mkdir(dirname(destinationPath), { recursive: true });
     const out = createWriteStream(destinationPath, { flags: "wx", mode: 0o600 });
     try {
@@ -359,7 +406,7 @@ export const workerUploadRoute: FastifyPluginAsync<
           : "oversize";
       await opts.auditLogger.write({
         workspaceId: claims.workspace_id,
-        actorUserId: null,
+        actorUserId: claims.requested_by_user_id,
         actorType: "worker",
         action: "worker.upload_denied",
         result: "denied",
@@ -367,6 +414,64 @@ export const workerUploadRoute: FastifyPluginAsync<
         metadata: { denied_reason: reason as "oversize" | "archive_unsafe" },
       });
       throw err;
+    }
+
+    // (5) Archive validation per ADR-0012 step 6 / v4 §9.4.11–§9.4.13.
+    // For artifact_kind === "archive", the bytes we just wrote are an
+    // archive that MUST pass extractArchive's per-entry validation
+    // (symlink / hardlink / device / zip-slip / size + count caps /
+    // dotfile rejection) before we commit the reservation.
+    if (kind === "archive") {
+      const archiveFormat: ArchiveFormat = fields.artifact_name.endsWith(".tar")
+        || fields.artifact_name.endsWith(".tar.gz")
+        || fields.artifact_name.endsWith(".tgz")
+        ? "tar"
+        : "zip";
+      const extractDir = `${destinationPath}.extracted`;
+      try {
+        await mkdir(extractDir, { recursive: true });
+        await extractArchive({
+          archivePath: destinationPath,
+          destinationDir: extractDir,
+          format: archiveFormat,
+          auditLogger: opts.auditLogger,
+          workspaceId: claims.workspace_id,
+          actorUserId: claims.requested_by_user_id,
+          requestId: req.requestId,
+        });
+      } catch (err) {
+        // Cleanup: archive itself + extracted dir + reservation.
+        try {
+          await unlink(destinationPath);
+        } catch {
+          // ignore
+        }
+        try {
+          if (reservation !== null) {
+            await opts.storageReservations.releaseReservation({
+              reservationId: reservation.reservationId,
+              workspaceId: claims.workspace_id,
+              requestId: req.requestId,
+            });
+          }
+        } catch {
+          // sweep
+        }
+        await opts.auditLogger.write({
+          workspaceId: claims.workspace_id,
+          actorUserId: claims.requested_by_user_id,
+          actorType: "worker",
+          action: "worker.upload_denied",
+          result: "denied",
+          requestId: req.requestId,
+          metadata: { denied_reason: "archive_unsafe" },
+        });
+        // Re-shape the underlying error to a uniform WORKER_UPLOAD_DENIED.
+        if (err instanceof WorkerUploadDeniedError) throw err;
+        throw new WorkerUploadDeniedError("Archive failed validation.", {
+          reason: "archive_unsafe",
+        });
+      }
     }
 
     // Commit the reservation against the actual bytes written.
@@ -392,7 +497,7 @@ export const workerUploadRoute: FastifyPluginAsync<
 
     await opts.auditLogger.write({
       workspaceId: claims.workspace_id,
-      actorUserId: null,
+      actorUserId: claims.requested_by_user_id,
       actorType: "worker",
       action: "worker.uploaded",
       result: "succeeded",

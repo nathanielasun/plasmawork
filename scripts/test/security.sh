@@ -2,42 +2,45 @@
 #
 # scripts/test/security.sh
 #
-# Phase 0.5 — secure multi-user regression suite (`secure_multi_user_scaffolding_plan_v4.md` §29).
+# Phase 0.5 — secure multi-user regression suite (§29 of v4).
 #
-# Status: STUB. The §29 suite of 84 tests lands in Layer 5 of the
-# Phase 0.5 implementation plan. Until then, this script:
-#   - exits 0 (does not break CI),
-#   - prints a clear notice that the security suite is not yet shipped,
-#   - prints the path to the implementation plan for anyone curious.
+# Runs the spec-level §29 invariants under `packages/secure_core/test/
+# security/`. These prove the structural contracts the runtime
+# enforces (no --privileged, no forbidden env keys, mount allowlist,
+# audit-actor consistency, etc.). They run on any dev host.
 #
-# When Layer 5 begins, replace the body of this script with:
-#   1. invocation of the secure_core test runner under
-#      packages/secure_core/test/security/,
-#   2. a static-analysis sweep that fails on forbidden logging
-#      patterns (per v4 §19.4),
-#   3. integration tests that spin up an ephemeral DB + the runtime
-#      role separation per v4 §12.1.1.
+# Live runtime probes (gVisor sandbox, DB role separation against a
+# real PostgreSQL, S3 Object Lock anchor invariants) are gated on
+# deployment-side env vars and skip cleanly when those aren't set:
+#   - PLASMAWORK_RUNSC_PROBES=1   sandbox live probes
+#   - PLASMAWORK_TEST_DB_URL=...  DB role-privilege probes
+#   - PLASMAWORK_ANCHOR_S3_*      anchor probes
+# Layer 5 wires those vars in the dedicated CI lane.
 #
-# The Phase 0.5 close-out gate (§30 item #23) requires this script to
-# fail the PR on any §29 regression. Until Layer 5 ships, "no §29
-# tests yet" is a structural truth — not a bypass.
+# This script is a hard gate: a failure fails CI. The §30 item #23
+# close-out criterion requires this — until the live-runtime CI lane
+# is up, we still gate on the spec-level tests, which catch any
+# argv-emission / forbidden-env / actor-shape regression.
 set -euo pipefail
 
-cat <<'EOF'
-[security] §29 security regression suite is not yet shipped.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-  Phase 0.5 (secure multi-user scaffolding) is in Layer-0 drafting; the
-  §29 suite of 84 tests lands in Layer 5 per the implementation plan.
+cd "$REPO_ROOT/packages/secure_core"
 
-  Until Layer 1 begins, this script is a stub that exits 0. The
-  workbench is single-user and local-only; nothing is enforced or
-  protected by these tests yet.
+# Vitest scoped to the security suite. The full secure_core suite
+# remains gated by scripts/test/secure_core.sh; this script targets
+# only test/security/ so a failure there is unambiguous.
+echo "[security] running v4 §29 spec-level invariants..."
+npx vitest run test/security
 
-  Plan:    program_development/phase_05_security_implementation_plan.md
-  Design:  secure_multi_user_scaffolding_plan_v4.md
-  Review:  security_review_v4_and_decomposability.md
-EOF
-
-# When Layer 5 ships, the next line becomes:
-#   exec node packages/secure_core/test/security/run.js
-exit 0
+if [[ -n "${PLASMAWORK_RUNSC_PROBES:-}" ]]; then
+  echo "[security] runsc live probes enabled (PLASMAWORK_RUNSC_PROBES=$PLASMAWORK_RUNSC_PROBES)"
+else
+  echo "[security] runsc live probes SKIPPED — set PLASMAWORK_RUNSC_PROBES=1 in CI to enable"
+fi
+if [[ -n "${PLASMAWORK_TEST_DB_URL:-}" ]]; then
+  echo "[security] DB role probes will fire against PLASMAWORK_TEST_DB_URL"
+else
+  echo "[security] DB role probes SKIPPED — set PLASMAWORK_TEST_DB_URL to enable"
+fi
