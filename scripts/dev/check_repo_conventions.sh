@@ -1730,6 +1730,39 @@ check_grep_in_file 'ByteLimitTransform' \
   "L3.9 enforces a streaming byte cap (no buffering full payload)"
 check_file_exists packages/secure_core/test/workers/deriveArtifactPath.test.ts
 
+# L3.7 — sandbox runner abstraction (ADR-0009 + v4 §15)
+check_file_exists packages/secure_core/src/sandbox/runtime.ts
+check_file_exists packages/secure_core/src/sandbox/runner.ts
+check_file_exists packages/secure_core/src/sandbox/index.ts
+check_grep_in_file 'export class StubSandboxRuntime' \
+  packages/secure_core/src/sandbox/runtime.ts \
+  "L3.7 ships StubSandboxRuntime for tests"
+check_grep_in_file 'export class RunscSandboxRuntime' \
+  packages/secure_core/src/sandbox/runtime.ts \
+  "L3.7 ships RunscSandboxRuntime production adapter (ADR-0009)"
+check_grep_in_file 'export class SandboxRunner' \
+  packages/secure_core/src/sandbox/runner.ts \
+  "L3.7 exports SandboxRunner that drives state transitions"
+check_grep_in_file '"--network=none"' \
+  packages/secure_core/src/sandbox/runtime.ts \
+  "L3.7 always passes --network=none (v4 §15.3 default-deny)"
+# Positive marker: the runscBinary argv always carries --no-new-privs.
+# (Banning the substring "privileged" in the source would false-trip on
+# the file's own docstring; the test suite asserts the argv shape.)
+check_grep_in_file '"--no-new-privs"' \
+  packages/secure_core/src/sandbox/runtime.ts \
+  "L3.7 always passes --no-new-privs (v4 §15.1 / ADR-0009)"
+check_grep_in_file 'sandbox\.violation' \
+  packages/secure_core/src/sandbox/runner.ts \
+  "L3.7 emits sandbox.violation only on real violations (not OOM/timeout)"
+check_grep_in_file 'FORBIDDEN_ENV_PREFIXES' \
+  packages/secure_core/src/sandbox/runtime.ts \
+  "L3.7 strips forbidden env keys (PLASMAWORK_*, AWS_*, *PASSWORD, etc.)"
+check_grep_in_file 'validateLaunchSpec' \
+  packages/secure_core/src/sandbox/runtime.ts \
+  "L3.7 validates spec at the top of launch (no spawn before validation)"
+check_file_exists packages/secure_core/test/sandbox/runtime.test.ts
+
 # L3.10 — SSRF-safe URL guard + fetcher + webhook signer (v4 §26)
 check_file_exists packages/secure_core/src/outbound/ssrf.ts
 check_file_exists packages/secure_core/src/outbound/fetcher.ts
