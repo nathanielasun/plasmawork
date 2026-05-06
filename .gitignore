@@ -87,6 +87,11 @@ simulation_capsules/*
 *.local.json
 .vercel
 
+# Secrets store (ADR-0011 L1.6). Defense in depth: `*.local.json` above
+# already matches this path, and `local_cache/*` ignores the whole directory.
+# This explicit rule survives any future relaxation of the broader rules.
+local_cache/secrets/secrets.local.json
+
 # IDE / editor
 .vscode/
 .idea/

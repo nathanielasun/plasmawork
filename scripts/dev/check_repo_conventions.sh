@@ -1209,6 +1209,79 @@ check_file_executable scripts/test/secure_core.sh \
   "scripts/test/secure_core.sh runs typecheck + vitest"
 check_grep_in_file 'secure_core.sh' scripts/test/all.sh \
   "scripts/test/all.sh runs the secure_core suite"
+
+section "secure_core Layer-1 modules (L1.2..L1.8)"
+# L1.2 — JCS canonicalization
+check_file_exists packages/secure_core/src/crypto/jcs.ts
+check_grep_in_file 'CANONICALIZATION_VERSION' packages/secure_core/src/crypto/jcs.ts \
+  "L1.2 exports the canonicalization-version constant"
+check_grep_in_file 'canonicalize' packages/secure_core/src/crypto/jcs.ts \
+  "L1.2 exports canonicalize()"
+check_grep_in_file '@truestamp/canonify' packages/secure_core/package.json \
+  "L1.2 depends on the tested JCS library (V4-R9 mandate)"
+check_file_exists packages/secure_core/test/crypto/jcs.test.ts
+# L1.3 — token + HMAC utilities
+check_file_exists packages/secure_core/src/crypto/tokens.ts
+check_file_exists packages/secure_core/src/crypto/hmac.ts
+check_grep_in_file 'mintToken' packages/secure_core/src/crypto/tokens.ts \
+  "L1.3 exports mintToken()"
+check_grep_in_file 'compareTokenConstantTime' packages/secure_core/src/crypto/tokens.ts \
+  "L1.3 exports constant-time comparison"
+check_grep_in_file 'hmacSha256' packages/secure_core/src/crypto/hmac.ts \
+  "L1.3 exports keyed HMAC-SHA-256"
+check_file_exists packages/secure_core/test/crypto/tokens.test.ts
+check_file_exists packages/secure_core/test/crypto/hmac.test.ts
+# L1.4 — error shape contract
+check_file_exists packages/secure_core/src/errors/shapes.ts
+check_file_exists packages/secure_core/src/errors/mapper.ts
+check_grep_in_file 'ERROR_CODES' packages/secure_core/src/errors/shapes.ts \
+  "L1.4 exports the closed ErrorCode tuple"
+check_grep_in_file 'toHttpResponse' packages/secure_core/src/errors/mapper.ts \
+  "L1.4 exports toHttpResponse mapper"
+check_grep_in_file 'NOT_FOUND' packages/secure_core/src/errors/shapes.ts \
+  "L1.4 carries NOT_FOUND for v4 §4.4 uniform-404 invariant"
+check_file_exists packages/secure_core/test/errors/shapes.test.ts
+# L1.6 — secrets client wrapper
+check_file_exists packages/secure_core/src/secrets/allowlist.ts
+check_file_exists packages/secure_core/src/secrets/redacted.ts
+check_file_exists packages/secure_core/src/secrets/client.ts
+check_grep_in_file 'SECRET_NAMES' packages/secure_core/src/secrets/allowlist.ts \
+  "L1.6 exports the allowlisted secret names"
+check_grep_in_file 'SecretsClient' packages/secure_core/src/secrets/client.ts \
+  "L1.6 exports the SecretsClient class"
+check_grep_in_file 'RedactedSecret' packages/secure_core/src/secrets/redacted.ts \
+  "L1.6 exports the redacted-secret wrapper"
+check_file_exists packages/secure_core/test/secrets/client.test.ts
+# L1.7 — audit logger
+check_file_exists packages/secure_core/src/audit/logger.ts
+check_file_exists packages/secure_core/src/audit/redaction.ts
+check_grep_in_file 'class AuditLogger' packages/secure_core/src/audit/logger.ts \
+  "L1.7 exports the AuditLogger class"
+check_grep_in_file 'METADATA_ALLOWLIST' packages/secure_core/src/audit/redaction.ts \
+  "L1.7 enforces a metadata allowlist (v4 §19.4)"
+check_grep_in_file 'canonicalize' packages/secure_core/src/audit/logger.ts \
+  "L1.7 hashes through L1.2's canonicalize() (cross-task wiring)"
+check_file_exists packages/secure_core/test/audit/logger.test.ts
+# L1.8 — schema migrations
+check_file_exists packages/secure_core/drizzle.config.ts
+check_file_exists packages/secure_core/src/db/schema.ts
+check_file_exists packages/secure_core/src/db/migrate.ts
+check_file_exists packages/secure_core/src/db/pool.ts
+check_file_exists packages/secure_core/src/db/migrations/0000_init_schema.sql
+check_file_exists packages/secure_core/src/db/migrations/0001_create_roles.sql
+check_file_exists packages/secure_core/src/db/migrations/0002_seed_capabilities.sql
+check_file_exists packages/secure_core/src/db/migrations/0003_seed_role_permissions.sql
+check_grep_in_file 'drizzle-orm' packages/secure_core/package.json \
+  "L1.8 depends on drizzle-orm (per ADR-0008)"
+check_grep_in_file 'secure_core_migrator' packages/secure_core/src/db/migrations/0001_create_roles.sql \
+  "L1.8 creates the migrator role (v4 §12.1)"
+check_grep_in_file 'secure_core_app' packages/secure_core/src/db/migrations/0001_create_roles.sql \
+  "L1.8 creates the application role (v4 §12.1.1)"
+check_grep_in_file 'secure_core_audit_read' packages/secure_core/src/db/migrations/0001_create_roles.sql \
+  "L1.8 creates the audit-read role (v4 §12.1.3 Option A)"
+check_grep_in_file 'secure_core_anchor_writer' packages/secure_core/src/db/migrations/0001_create_roles.sql \
+  "L1.8 creates the anchor-writer role (v4 §12.1.4)"
+check_file_exists packages/secure_core/test/db/schema.test.ts
 # v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
 # original v4 reference to ADR-0004 collided with the units-library
 # ADR and was renumbered during round-2 review).
