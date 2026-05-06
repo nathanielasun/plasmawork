@@ -1282,6 +1282,54 @@ check_grep_in_file 'secure_core_audit_read' packages/secure_core/src/db/migratio
 check_grep_in_file 'secure_core_anchor_writer' packages/secure_core/src/db/migrations/0001_create_roles.sql \
   "L1.8 creates the anchor-writer role (v4 §12.1.4)"
 check_file_exists packages/secure_core/test/db/schema.test.ts
+# L1.5 — test fixtures + per-test DB cleanup
+check_file_exists packages/secure_core/test/fixtures/factories.ts
+check_file_exists packages/secure_core/test/fixtures/index.ts
+check_file_exists packages/secure_core/test/fixtures/smoke.test.ts
+check_file_exists packages/secure_core/test/helpers/db.ts
+check_grep_in_file 'export async function makeUser' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exports makeUser factory"
+check_grep_in_file 'export async function makeWorkspace' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exports makeWorkspace factory"
+check_grep_in_file 'export async function makeMember' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exports makeMember factory"
+check_grep_in_file 'export async function makeCapsule' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exports makeCapsule factory"
+check_grep_in_file 'export async function makeRun' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exports makeRun factory"
+check_grep_in_file 'export async function makeApprovalToken' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exports makeApprovalToken factory"
+check_grep_in_file 'export async function makeStorageReservation' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exports makeStorageReservation factory"
+check_grep_in_file 'export function bindFactories' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 exposes bindFactories(sql) ergonomic bundle"
+check_grep_in_file 'resetTestDb' \
+  packages/secure_core/test/helpers/db.ts \
+  "L1.5 ships per-test resetTestDb cleanup helper"
+check_grep_in_file 'createScratchDb' \
+  packages/secure_core/test/helpers/db.ts \
+  "L1.5 ships per-file createScratchDb lifecycle helper"
+# Manifest §4 hard rule: factories MUST NOT write to immutable log
+# tables (audit_events / provenance_events / operator_events). Any
+# direct INSERT into those tables from factories.ts is a contract
+# violation; AuditLogger is the only legal writer.
+check_grep_absent_in_file 'INSERT INTO audit_events' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 factories do NOT INSERT into audit_events (manifest §4)"
+check_grep_absent_in_file 'INSERT INTO provenance_events' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 factories do NOT INSERT into provenance_events (manifest §4)"
+check_grep_absent_in_file 'INSERT INTO operator_events' \
+  packages/secure_core/test/fixtures/factories.ts \
+  "L1.5 factories do NOT INSERT into operator_events (manifest §4)"
 # v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
 # original v4 reference to ADR-0004 collided with the units-library
 # ADR and was renumbered during round-2 review).
