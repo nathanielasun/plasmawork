@@ -1602,6 +1602,113 @@ check_grep_in_file '"enforceRateLimit"' \
   "L2.12 slot exists in MIDDLEWARE_ORDER between requireRequestId and requireAuth"
 check_file_exists packages/secure_core/test/middleware/enforceRateLimit.test.ts
 
+section "secure_core Layer-3 services (L3.1, L3.3, L3.4, L3.5, L3.6)"
+# L3.1 — audit/provenance/operator chain DB writer + verifier
+check_file_exists packages/secure_core/src/audit/dbWriter.ts
+check_file_exists packages/secure_core/src/audit/verifier.ts
+check_file_exists packages/secure_core/src/audit/index.ts
+check_grep_in_file 'class AuditDbWriter' \
+  packages/secure_core/src/audit/dbWriter.ts \
+  "L3.1 wires AuditLogger's DI'd writer to a Drizzle/postgres-js insert"
+check_grep_in_file 'class AuditChainVerifier' \
+  packages/secure_core/src/audit/verifier.ts \
+  "L3.1 ships AuditChainVerifier (verifyAll + verifyFromAnchor)"
+check_grep_in_file 'tail_truncation' \
+  packages/secure_core/src/audit/verifier.ts \
+  "L3.1 detects tail truncation per v4 §19.3"
+check_grep_in_file 'log_chain_anchors' \
+  packages/secure_core/src/audit/verifier.ts \
+  "L3.1 consults log_chain_anchors for the trust point"
+check_file_exists packages/secure_core/test/audit/dbWriter.test.ts
+check_file_exists packages/secure_core/test/audit/verifier.test.ts
+
+# L3.3 — approval system (request/issue/consume/deny/revoke)
+check_file_exists packages/secure_core/src/approvals/service.ts
+check_file_exists packages/secure_core/src/approvals/index.ts
+check_grep_in_file 'class ApprovalService' \
+  packages/secure_core/src/approvals/service.ts \
+  "L3.3 exports ApprovalService"
+check_grep_in_file 'consumeToken' \
+  packages/secure_core/src/approvals/service.ts \
+  "L3.3 implements atomic consumeToken (v4 §16.4)"
+check_grep_in_file 'token_context_hash' \
+  packages/secure_core/src/approvals/service.ts \
+  "L3.3 binds tokens via token_context_hash (v4 §16.3)"
+check_grep_in_file 'approval\.token_context_mismatch' \
+  packages/secure_core/src/approvals/service.ts \
+  "L3.3 emits approval.token_context_mismatch on context drift"
+check_grep_in_file 'used_at IS NULL' \
+  packages/secure_core/src/approvals/service.ts \
+  "L3.3 uses §16.4 atomic UPDATE conditional clauses"
+# L3.3 hard rule: no req.body actor reads (defense-in-depth grep — service is post-middleware
+# but the lint should still hold)
+check_grep_absent_in_file 'req\.body\.\(actor\|user_id\|created_by\|approved_by\)' \
+  packages/secure_core/src/approvals/service.ts \
+  "L3.3 ApprovalService never reads actor identity from req.body (v4 §19.1)"
+check_file_exists packages/secure_core/test/approvals/service.test.ts
+
+# L3.4 — capsule version + lock
+check_file_exists packages/secure_core/src/capsules/versionLock.ts
+check_grep_in_file 'class CapsuleVersionLockService' \
+  packages/secure_core/src/capsules/versionLock.ts \
+  "L3.4 exports CapsuleVersionLockService"
+check_grep_in_file 'updateCapsule' \
+  packages/secure_core/src/capsules/versionLock.ts \
+  "L3.4 implements If-Match-style updateCapsule with VERSION_CONFLICT (v4 §20)"
+check_grep_in_file 'forkCapsule' \
+  packages/secure_core/src/capsules/versionLock.ts \
+  "L3.4 implements forkCapsule"
+check_grep_in_file 'acquireLock' \
+  packages/secure_core/src/capsules/versionLock.ts \
+  "L3.4 implements acquireLock"
+check_file_exists packages/secure_core/test/capsules/versionLock.test.ts
+
+# L3.5 — quota counters + storage reservations
+check_file_exists packages/secure_core/src/quotas/counters.ts
+check_file_exists packages/secure_core/src/quotas/storageReservations.ts
+check_grep_in_file 'class QuotaCounterService' \
+  packages/secure_core/src/quotas/counters.ts \
+  "L3.5 exports QuotaCounterService with atomic conditional UPDATE (v4 §21.2)"
+check_grep_in_file 'class StorageReservationService' \
+  packages/secure_core/src/quotas/storageReservations.ts \
+  "L3.5 exports StorageReservationService"
+check_grep_in_file 'expireOverdueReservations' \
+  packages/secure_core/src/quotas/storageReservations.ts \
+  "L3.5 ships the §21.3 periodic reservation expiry sweep"
+check_grep_in_file 'quota\.exceeded' \
+  packages/secure_core/src/quotas/counters.ts \
+  "L3.5 emits quota.exceeded on counter rejection"
+check_grep_in_file 'quota\.reservation_expired' \
+  packages/secure_core/src/quotas/storageReservations.ts \
+  "L3.5 emits quota.reservation_expired per V4-R5"
+check_grep_in_file 'current_value' \
+  packages/secure_core/src/quotas/counters.ts \
+  "L3.5 uses §21.2 atomic conditional UPDATE pattern (current_value)"
+check_file_exists packages/secure_core/test/quotas/counters.test.ts
+check_file_exists packages/secure_core/test/quotas/storageReservations.test.ts
+
+# L3.6 — run state machine + persistence
+check_file_exists packages/secure_core/src/runs/stateMachine.ts
+check_grep_in_file 'class RunStateMachine' \
+  packages/secure_core/src/runs/stateMachine.ts \
+  "L3.6 exports RunStateMachine"
+check_grep_in_file 'RUN_TRANSITIONS' \
+  packages/secure_core/src/runs/stateMachine.ts \
+  "L3.6 encodes the §14 state-graph (RUN_TRANSITIONS)"
+check_grep_in_file 'isLegalTransition' \
+  packages/secure_core/src/runs/stateMachine.ts \
+  "L3.6 validates transitions via isLegalTransition before any DB call"
+check_grep_in_file 'AND status = ' \
+  packages/secure_core/src/runs/stateMachine.ts \
+  "L3.6 uses atomic conditional UPDATE on simulation_runs (race protection via WHERE status = expectedFromState)"
+check_grep_in_file 'run\.launched' \
+  packages/secure_core/src/runs/stateMachine.ts \
+  "L3.6 emits run.launched lifecycle audit"
+check_grep_in_file 'run\.completed' \
+  packages/secure_core/src/runs/stateMachine.ts \
+  "L3.6 emits run.completed lifecycle audit"
+check_file_exists packages/secure_core/test/runs/stateMachine.test.ts
+
 # v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
 # original v4 reference to ADR-0004 collided with the units-library
 # ADR and was renumbered during round-2 review).
