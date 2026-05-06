@@ -1642,6 +1642,42 @@ check_grep_in_file 'log_chain_anchors' \
 check_file_exists packages/secure_core/test/audit/dbWriter.test.ts
 check_file_exists packages/secure_core/test/audit/verifier.test.ts
 
+# L3.2 — external WORM anchor committer
+check_file_exists packages/secure_core/src/audit/anchor.ts
+check_file_exists packages/secure_core/src/audit/s3Provider.ts
+check_grep_in_file 'class AnchorCommitter' \
+  packages/secure_core/src/audit/anchor.ts \
+  "L3.2 exports AnchorCommitter"
+check_grep_in_file 'class AwsS3AnchorProvider' \
+  packages/secure_core/src/audit/s3Provider.ts \
+  "L3.2 ships an AWS S3 provider with Object Lock COMPLIANCE (ADR-0010)"
+check_grep_in_file 'class FakeS3AnchorProvider' \
+  packages/secure_core/src/audit/s3Provider.ts \
+  "L3.2 ships an in-memory provider for tests"
+check_grep_in_file 'ObjectLockMode' \
+  packages/secure_core/src/audit/s3Provider.ts \
+  "L3.2 sets Object Lock per ADR-0010"
+check_grep_in_file 'COMPLIANCE' \
+  packages/secure_core/src/audit/s3Provider.ts \
+  "L3.2 uses COMPLIANCE retention mode (not GOVERNANCE)"
+check_grep_in_file 'verifyFromAnchor' \
+  packages/secure_core/src/audit/anchor.ts \
+  "L3.2 re-verifies the chain segment after committing the anchor"
+check_grep_in_file 'log_chain\.anchor_committed' \
+  packages/secure_core/src/audit/anchor.ts \
+  "L3.2 emits log_chain.anchor_committed audit on success"
+check_grep_in_file 'versionId=' \
+  packages/secure_core/src/audit/anchor.ts \
+  "L3.2 constructs URI with versionId= marker (L1.8 CHECK + ADR-0010)"
+check_grep_in_file '@aws-sdk/client-s3' \
+  packages/secure_core/package.json \
+  "L3.2 depends on @aws-sdk/client-s3"
+check_file_exists packages/secure_core/test/audit/anchor.test.ts
+# L3.2 hard rule: no actor identity from req.body
+check_grep_absent_in_file 'req\.body\.\(actor\|created_by\|approved_by\)' \
+  packages/secure_core/src/audit/anchor.ts \
+  "L3.2 AnchorCommitter never reads actor identity from req.body"
+
 # L3.3 — approval system (request/issue/consume/deny/revoke)
 check_file_exists packages/secure_core/src/approvals/service.ts
 check_file_exists packages/secure_core/src/approvals/index.ts

@@ -45,3 +45,18 @@ export {
   type VerifyFailureReason,
   type VerifyReport,
 } from "./verifier.js";
+
+export {
+  AnchorCommitter,
+  type AnchorCommitterOptions,
+  type CommitTipOptions,
+  type LogChainAnchorRow,
+} from "./anchor.js";
+
+export {
+  AwsS3AnchorProvider,
+  FakeS3AnchorProvider,
+  type S3AnchorProvider,
+  type S3PutResult,
+  type AwsS3ProviderOptions,
+} from "./s3Provider.js";

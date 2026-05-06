@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1043.0",
     "@aws-sdk/client-secrets-manager": "^3.1043.0",
     "@fastify/cookie": "^11.0.2",
     "@truestamp/canonify": "^2.1.0",
