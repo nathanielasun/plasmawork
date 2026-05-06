@@ -49,6 +49,12 @@ export {
   type EnforceObjectScopeDeps,
   type ObjectScopeKind,
 } from "./enforceObjectWorkspaceScope.js";
+export {
+  requireApprovalIfHighRisk,
+  APPROVAL_TOKEN_HEADER,
+  type RequireApprovalDeps,
+  type ApprovalConsumeResult,
+} from "./requireApprovalIfHighRisk.js";
 
 export type {
   ActorType,

@@ -1602,6 +1602,26 @@ check_grep_in_file '"enforceRateLimit"' \
   "L2.12 slot exists in MIDDLEWARE_ORDER between requireRequestId and requireAuth"
 check_file_exists packages/secure_core/test/middleware/enforceRateLimit.test.ts
 
+# L2.9 — requireApprovalIfHighRisk middleware (unblocked by L3.3)
+check_file_exists packages/secure_core/src/middleware/requireApprovalIfHighRisk.ts
+check_grep_in_file 'export function requireApprovalIfHighRisk' \
+  packages/secure_core/src/middleware/requireApprovalIfHighRisk.ts \
+  "L2.9 exports requireApprovalIfHighRisk(deps) factory"
+check_grep_in_file 'APPROVAL_TOKEN_HEADER' \
+  packages/secure_core/src/middleware/requireApprovalIfHighRisk.ts \
+  "L2.9 reads token from X-Approval-Token header (v4 §16.1)"
+check_grep_in_file 'TOKEN_LEAK_PATTERNS' \
+  packages/secure_core/src/middleware/requireApprovalIfHighRisk.ts \
+  "L2.9 refuses tokens in URL path / query string (v4 §16.1)"
+check_grep_in_file 'approval\.required' \
+  packages/secure_core/src/middleware/requireApprovalIfHighRisk.ts \
+  "L2.9 emits approval.required when token is missing or in URL"
+# L2.9 hard rule: token NEVER from req.body (defense in depth grep)
+check_grep_absent_in_file 'req\.body\.\(approval_token\|approvalToken\|x_approval_token\|x-approval-token\)' \
+  packages/secure_core/src/middleware/requireApprovalIfHighRisk.ts \
+  "L2.9 never reads approval token from req.body (v4 §16.1 transport rule)"
+check_file_exists packages/secure_core/test/middleware/requireApprovalIfHighRisk.test.ts
+
 section "secure_core Layer-3 services (L3.1, L3.3, L3.4, L3.5, L3.6)"
 # L3.1 — audit/provenance/operator chain DB writer + verifier
 check_file_exists packages/secure_core/src/audit/dbWriter.ts
@@ -1719,7 +1739,7 @@ check_grep_in_file 'ADR-0013-secure-multi-user-foundation' \
 section "v4 §1 inserts + security stub"
 check_grep_in_file 'Secure Multi-User Development Requirements' AGENTS.md \
   "AGENTS.md carries v4 §1.1 insert"
-check_grep_in_file 'Claude Code Security Rules' CLAUDE.md \
+check_grep_in_file 'Security Rules for Multi-User Workbench Work' CLAUDE.md \
   "CLAUDE.md carries v4 §1.2 insert"
 check_file_executable scripts/test/security.sh "scripts/test/security.sh stub"
 check_grep_in_file 'STUB' scripts/test/security.sh \
