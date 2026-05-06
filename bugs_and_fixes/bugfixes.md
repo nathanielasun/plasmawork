@@ -32,6 +32,51 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-06: Secure-core Layer-1 ADR audit fixes
+
+### Affected subsystem
+- `packages/secure_core/src/secrets`
+- `packages/secure_core/src/db`
+- `packages/secure_core/src/errors`
+- `scripts/dev/check_repo_conventions.sh`
+- Phase 0.5 ADR / limitation status documentation
+
+### Symptoms
+The Layer-1 implementation mostly existed, but several accepted-ADR
+invariants were present only in prose or were missing from the hard gate:
+the secrets provider still had a production stub path, one database role
+had broader access than its contract, anchor rows were not forced to carry
+a version-pinned external reference, and error details could echo unsafe
+keys. Dependency audit also found outdated secure-core Node tooling below
+patched advisory lines.
+
+### Root cause
+The close relied on file-existence checks and status prose instead of
+negative probes against the actual enforcement layer: provider dispatch,
+SQL GRANTs, schema CHECKs, error-envelope mapping, and convention-checker
+coverage.
+
+### Fix
+Implemented the missing secrets provider paths, centralized environment
+reads under the secrets package, made the anchor URI check executable in
+schema and migration SQL, narrowed the anchor-writer grant, sanitized
+error details at the HTTP mapper, ratcheted the convention checker for
+L1.6/L1.8, upgraded the secure-core Node dependency tree to patched
+release lines, and corrected high-level status/documentation drift.
+
+### Regression protection
+Updated `packages/secure_core/test/secrets/client.test.ts`,
+`packages/secure_core/test/db/schema.test.ts`,
+`packages/secure_core/test/errors/shapes.test.ts`,
+`packages/secure_core/test/config/constants.test.ts`, and
+`scripts/dev/check_repo_conventions.sh`. Also ran
+`npm --prefix packages/secure_core audit`.
+
+### Agent warning
+Security invariants do not count until the enforcement layer and a
+negative test both carry them. Comments, accepted ADRs, and role names
+are not enforcement.
+
 ## 2026-05-04: Phase 10 round-2 audit — six legitimate review findings
 
 ### Affected subsystem

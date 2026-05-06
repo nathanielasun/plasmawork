@@ -1,7 +1,7 @@
 /**
  * Drizzle schema — Phase 0.5 Layer-1 (L1.8).
  *
- * 28 tables from `secure_multi_user_scaffolding_plan_v4.md` §11/§12.
+ * 26 tables from `secure_multi_user_scaffolding_plan_v4.md` §11/§12.
  * Column types, NOT NULL, CHECK constraints, foreign keys, partial
  * unique indexes, and the V4-R3/R6/R7 fixes match v4 column-by-column.
  *
@@ -624,6 +624,10 @@ export const logChainAnchors = pgTable(
       "log_chain_anchors_log_type_check",
       sql`${t.logType} IN ('audit_events', 'provenance_events', 'operator_events')`,
     ),
+    externalAnchorUriVersionCheck: check(
+      "log_chain_anchors_external_anchor_uri_has_version_id",
+      sql`${t.externalAnchorUri} LIKE '%versionId=%'`,
+    ),
   }),
 );
 
@@ -797,14 +801,18 @@ export const ALL_TABLE_NAMES = [
 
 /**
  * Tables on which `secure_core_app` has INSERT-only privileges
- * per v4 §12.1.2 / §12.1.4. The §29 #51–54 tests assert this.
+ * per v4 §12.1.2. ADR-0010 removes `log_chain_anchors` from this
+ * app-writable set; only `secure_core_anchor_writer` may insert anchors.
  */
 export const APPEND_ONLY_TABLES = [
   "audit_events",
   "provenance_events",
   "operator_events",
-  "log_chain_anchors",
   "workspace_membership_events",
+] as const;
+
+export const ANCHOR_WRITER_ONLY_TABLES = [
+  "log_chain_anchors",
 ] as const;
 
 /**

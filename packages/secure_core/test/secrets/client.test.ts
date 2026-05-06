@@ -31,6 +31,7 @@ import { resolve } from "node:path";
 import {
   SecretsClient,
   SecretNotAllowedError,
+  envVarNameForSecret,
   type SecretRotatedEvent,
 } from "../../src/secrets/client.js";
 import { RedactedSecret } from "../../src/secrets/redacted.js";
@@ -83,6 +84,8 @@ const ENV_KEYS = [
   "SIMWORKBENCH_REPO_ROOT",
   "PLASMAWORK_SECRETS_PROVIDER",
   "PLASMAWORK_SECRETS_LOCAL_PATH",
+  "PLASMAWORK_SECRETS_AWS_PREFIX",
+  "PLASMAWORK_SECRET_DB_PASSWORD_APP",
   "AWS_REGION",
 ];
 
@@ -217,30 +220,81 @@ describe("SecretsClient — rotateSecret (local provider)", () => {
     expect(events[0]?.audit_event).toBe("secret.rotated");
     expect(events[0]?.name).toBe("db.password.app");
     expect(events[0]?.provider).toBe("local");
+    expect(events[0]?.version_id).toBeUndefined();
     expect(typeof events[0]?.at).toBe("string");
 
     const after = await client.getSecret("db.password.app");
     expect(after.reveal()).toBe(ROTATED_CLEARTEXT);
   });
+
+  it("includes provider version_id when the provider returns one", async () => {
+    const events: SecretRotatedEvent[] = [];
+    const client = new SecretsClient({
+      silent: true,
+      onRotated: (e) => events.push(e),
+      provider: {
+        kind: "aws",
+        source: "aws-secrets-manager:test",
+        async read() {
+          return CLEARTEXT;
+        },
+        async write() {
+          return { versionId: "version-123" };
+        },
+      },
+    });
+
+    await client.rotateSecret("db.password.app", ROTATED_CLEARTEXT);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      audit_event: "secret.rotated",
+      name: "db.password.app",
+      provider: "aws",
+      version_id: "version-123",
+    });
+  });
 });
 
-describe("SecretsClient — AWS provider stub", () => {
-  it("throws the documented 'not yet wired' error on getSecret", async () => {
-    process.env.PLASMAWORK_SECRETS_PROVIDER = "aws";
-    process.env.AWS_REGION = "us-west-2";
-    const client = new SecretsClient();
-    await expect(client.getSecret("db.password.app")).rejects.toThrow(
-      /AWS provider not yet wired/,
+describe("SecretsClient — env provider", () => {
+  it("maps allowlisted names to deterministic PLASMAWORK_SECRET_* env vars", () => {
+    expect(envVarNameForSecret("db.password.app")).toBe(
+      "PLASMAWORK_SECRET_DB_PASSWORD_APP",
     );
   });
 
-  it("startup banner names the region but contains no secret", async () => {
+  it("reads CI secrets from environment without logging cleartext", async () => {
+    process.env.PLASMAWORK_SECRETS_PROVIDER = "env";
+    process.env.PLASMAWORK_SECRET_DB_PASSWORD_APP = CLEARTEXT;
+    const client = new SecretsClient();
+    const secret = await client.getSecret("db.password.app");
+    expect(secret.reveal()).toBe(CLEARTEXT);
+    expect(consoleCapture.captured.error.join("\n")).toContain(
+      "provider=env",
+    );
+  });
+
+  it("is read-only so CI rotation cannot mutate process.env", async () => {
+    process.env.PLASMAWORK_SECRETS_PROVIDER = "env";
+    process.env.PLASMAWORK_SECRET_DB_PASSWORD_APP = CLEARTEXT;
+    const client = new SecretsClient();
+    await expect(
+      client.rotateSecret("db.password.app", ROTATED_CLEARTEXT),
+    ).rejects.toThrow(/read-only/);
+    expect(process.env.PLASMAWORK_SECRET_DB_PASSWORD_APP).toBe(CLEARTEXT);
+  });
+});
+
+describe("SecretsClient — AWS provider", () => {
+  it("startup banner names the region and prefix but contains no secret", async () => {
     process.env.PLASMAWORK_SECRETS_PROVIDER = "aws";
     process.env.AWS_REGION = "us-west-2";
+    process.env.PLASMAWORK_SECRETS_AWS_PREFIX = "plasmawork/test";
     new SecretsClient();
     const banner = consoleCapture.captured.error.join("\n");
     expect(banner).toContain("provider=aws");
     expect(banner).toContain("us-west-2");
+    expect(banner).toContain("plasmawork/test");
     expect(banner).not.toContain(CLEARTEXT);
   });
 });

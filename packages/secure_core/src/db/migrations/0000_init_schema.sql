@@ -1,7 +1,7 @@
 -- Phase 0.5 / Layer-1 / L1.8 — initial schema migration.
 --
 -- Source of truth: secure_multi_user_scaffolding_plan_v4.md §11/§12.
--- 28 tables with v4 column types, CHECKs, FKs, partial unique index,
+-- 26 tables with v4 column types, CHECKs, FKs, partial unique index,
 -- and the V4-R3/R6/R7 fixes embedded.
 --
 -- This migration is owned by `secure_core_migrator`. The `0001_create_roles.sql`
@@ -360,7 +360,9 @@ CREATE TABLE "log_chain_anchors" (
   "committed_at" timestamp with time zone NOT NULL DEFAULT now(),
   "canonicalization_version" text NOT NULL DEFAULT 'jcs-v1',
   CONSTRAINT "log_chain_anchors_log_type_check"
-    CHECK ("log_type" IN ('audit_events', 'provenance_events', 'operator_events'))
+    CHECK ("log_type" IN ('audit_events', 'provenance_events', 'operator_events')),
+  CONSTRAINT "log_chain_anchors_external_anchor_uri_has_version_id"
+    CHECK ("external_anchor_uri" LIKE '%versionId=%')
 );
 
 CREATE TABLE "operator_events" (

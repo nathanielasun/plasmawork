@@ -28,6 +28,7 @@ import postgres, { type Sql } from "postgres";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import * as schema from "./schema.js";
+import { readSecureCoreEnv, type SecureCoreEnvVar } from "../secrets/env.js";
 
 export type SecureCoreRole =
   | "app"
@@ -35,7 +36,7 @@ export type SecureCoreRole =
   | "anchor_writer"
   | "migrator";
 
-const ROLE_ENV: Record<SecureCoreRole, string> = {
+const ROLE_ENV: Record<SecureCoreRole, SecureCoreEnvVar> = {
   app: "PLASMAWORK_DB_URL_APP",
   audit_read: "PLASMAWORK_DB_URL_AUDIT_READ",
   anchor_writer: "PLASMAWORK_DB_URL_ANCHOR_WRITER",
@@ -57,11 +58,11 @@ export interface SecureCorePool {
 }
 
 function resolveUrl(role: SecureCoreRole): string {
-  const specific = process.env[ROLE_ENV[role]];
+  const specific = readSecureCoreEnv(ROLE_ENV[role]);
   if (specific && specific.length > 0) {
     return specific;
   }
-  const fallback = process.env.PLASMAWORK_DB_URL;
+  const fallback = readSecureCoreEnv("PLASMAWORK_DB_URL");
   if (fallback && fallback.length > 0) {
     // Dev / local-test fallback. Production deployments set the four
     // role-specific URLs and never trigger this branch.

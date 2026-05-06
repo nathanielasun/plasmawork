@@ -13,6 +13,8 @@
  * Adding a new high-risk action requires an ADR per v4 §5.6.
  */
 
+import type { Capability } from "./capabilities.js";
+
 export const HIGH_RISK_ACTIONS = [
   // Compute
   "expensive_run",
@@ -68,7 +70,7 @@ export function isHighRiskAction(value: unknown): value is HighRiskAction {
  * capabilities; sharing one capability between them was rejected.
  */
 export const HIGH_RISK_APPROVER_CAPABILITY: Readonly<
-  Record<HighRiskAction, string>
+  Record<HighRiskAction, Capability>
 > = Object.freeze({
   expensive_run: "run:approve_expensive",
   hpc_submission: "run:approve_hpc",

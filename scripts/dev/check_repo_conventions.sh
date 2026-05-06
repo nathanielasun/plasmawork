@@ -1245,12 +1245,33 @@ check_file_exists packages/secure_core/test/errors/shapes.test.ts
 check_file_exists packages/secure_core/src/secrets/allowlist.ts
 check_file_exists packages/secure_core/src/secrets/redacted.ts
 check_file_exists packages/secure_core/src/secrets/client.ts
+check_file_exists packages/secure_core/src/secrets/env.ts
 check_grep_in_file 'SECRET_NAMES' packages/secure_core/src/secrets/allowlist.ts \
   "L1.6 exports the allowlisted secret names"
 check_grep_in_file 'SecretsClient' packages/secure_core/src/secrets/client.ts \
   "L1.6 exports the SecretsClient class"
 check_grep_in_file 'RedactedSecret' packages/secure_core/src/secrets/redacted.ts \
   "L1.6 exports the redacted-secret wrapper"
+check_grep_in_file 'readSecureCoreEnv' packages/secure_core/src/secrets/env.ts \
+  "L1.6 centralizes process.env access"
+check_grep_in_file 'EnvSecretsProvider' packages/secure_core/src/secrets/client.ts \
+  "L1.6 implements the ADR-0011 CI env provider"
+check_grep_in_file 'SecretsManagerClient' packages/secure_core/src/secrets/client.ts \
+  "L1.6 implements the ADR-0011 AWS Secrets Manager provider"
+check_grep_in_file '@aws-sdk/client-secrets-manager' packages/secure_core/package.json \
+  "L1.6 depends on the AWS Secrets Manager SDK"
+check_grep_in_file '^local_cache/secrets/secrets\.local\.json$' .gitignore \
+  "L1.6 local secrets file is explicitly gitignored"
+check_grep_absent_in_file 'AWS provider not yet wired' packages/secure_core/src/secrets/client.ts \
+  "L1.6 AWS provider is not a stub"
+env_hits=$(grep -R -n 'process\.env' packages/secure_core/src --exclude='env.ts' || true)
+if [[ -z "$env_hits" ]]; then
+  PASS=$((PASS+1))
+  note "L1.6 owns all process.env reads under packages/secure_core/src"
+else
+  FAIL=$((FAIL+1))
+  fail "process.env reads outside L1.6 env helper: $env_hits"
+fi
 check_file_exists packages/secure_core/test/secrets/client.test.ts
 # L1.7 — audit logger
 check_file_exists packages/secure_core/src/audit/logger.ts
@@ -1281,6 +1302,14 @@ check_grep_in_file 'secure_core_audit_read' packages/secure_core/src/db/migratio
   "L1.8 creates the audit-read role (v4 §12.1.3 Option A)"
 check_grep_in_file 'secure_core_anchor_writer' packages/secure_core/src/db/migrations/0001_create_roles.sql \
   "L1.8 creates the anchor-writer role (v4 §12.1.4)"
+check_grep_in_file 'external_anchor_uri_has_version_id' packages/secure_core/src/db/migrations/0000_init_schema.sql \
+  "L1.8 enforces ADR-0010 version-pinned anchor URIs"
+check_grep_in_file 'REVOKE INSERT, UPDATE, DELETE ON TABLE "log_chain_anchors" FROM secure_core_app' \
+  packages/secure_core/src/db/migrations/0001_create_roles.sql \
+  "L1.8 app role cannot mutate log_chain_anchors (ADR-0010)"
+check_grep_absent_in_file 'GRANT INSERT, SELECT ON TABLE "log_chain_anchors" TO secure_core_anchor_writer' \
+  packages/secure_core/src/db/migrations/0001_create_roles.sql \
+  "L1.8 anchor writer is INSERT-only on log_chain_anchors"
 check_file_exists packages/secure_core/test/db/schema.test.ts
 # L1.5 — test fixtures + per-test DB cleanup
 check_file_exists packages/secure_core/test/fixtures/factories.ts
@@ -1345,6 +1374,7 @@ check_grep_in_file 'Claude Code Security Rules' CLAUDE.md \
 check_file_executable scripts/test/security.sh "scripts/test/security.sh stub"
 check_grep_in_file 'STUB' scripts/test/security.sh \
   "security.sh stub announces itself as a stub"
+check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh stub"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.

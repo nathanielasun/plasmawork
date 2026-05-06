@@ -23,14 +23,19 @@
  *      record. L1.7's logger will consume this; for now the class
  *      accepts an optional `onRotated` callback so tests can observe.
  *
- * Two providers, selected by `PLASMAWORK_SECRETS_PROVIDER`:
+ * Three providers, selected by `PLASMAWORK_SECRETS_PROVIDER`:
  *   - `local` (default): JSON file at `local_cache/secrets/secrets.local.json`,
  *     mode-checked to refuse anything more permissive than 0o600.
- *   - `aws`: stubbed; throws a clear error pointing at the follow-up
- *     wiring task. Adding the AWS SDK as a dependency is intentionally
- *     deferred so offline / sandboxed environments aren't blocked.
+ *   - `env`: CI fallback; reads `PLASMAWORK_SECRET_<NAME>` variables
+ *     and is intentionally read-only.
+ *   - `aws`: production provider backed by AWS Secrets Manager.
  */
 
+import {
+  GetSecretValueCommand,
+  PutSecretValueCommand,
+  SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -38,6 +43,7 @@ import {
   isSecretName,
   type SecretName,
 } from "./allowlist.js";
+import { readSecretValueEnv, readSecureCoreEnv } from "./env.js";
 import { RedactedSecret } from "./redacted.js";
 import { repoRoot } from "./repoRoot.js";
 
@@ -64,7 +70,7 @@ export class SecretNotAllowedError extends Error {
 
 interface SecretsProvider {
   /** Provider tag for the startup banner. */
-  readonly kind: "local" | "aws";
+  readonly kind: "local" | "env" | "aws";
   /**
    * Human-readable identifier of where secrets come from (file path
    * or AWS region). Safe to log — never contains a secret value.
@@ -73,7 +79,11 @@ interface SecretsProvider {
   /** Fetch and return the cleartext for a (validated) secret name. */
   read(name: SecretName): Promise<string>;
   /** Persist a new value for a (validated) secret name. */
-  write(name: SecretName, value: string): Promise<void>;
+  write(name: SecretName, value: string): Promise<SecretWriteResult>;
+}
+
+interface SecretWriteResult {
+  readonly versionId?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -141,7 +151,7 @@ class LocalFileProvider implements SecretsProvider {
     return value;
   }
 
-  async write(name: SecretName, value: string): Promise<void> {
+  async write(name: SecretName, value: string): Promise<SecretWriteResult> {
     this.assertMode();
     const raw = readFileSync(this.source, "utf-8");
     let parsed: Record<string, unknown>;
@@ -163,34 +173,95 @@ class LocalFileProvider implements SecretsProvider {
       encoding: "utf-8",
       mode: 0o600,
     });
+    return {};
   }
 }
 
 /* ------------------------------------------------------------------ */
-/* AWS provider stub                                                   */
+/* CI environment provider                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Convert an allowlisted secret name to the CI env var name from
+ * ADR-0011. Example: `db.password.app` →
+ * `PLASMAWORK_SECRET_DB_PASSWORD_APP`.
+ */
+export function envVarNameForSecret(name: SecretName): string {
+  return `PLASMAWORK_SECRET_${name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "_")}`;
+}
+
+class EnvSecretsProvider implements SecretsProvider {
+  readonly kind = "env" as const;
+  readonly source = "process-env:PLASMAWORK_SECRET_*";
+
+  async read(name: SecretName): Promise<string> {
+    const envName = envVarNameForSecret(name);
+    const value = readSecretValueEnv(envName);
+    if (value === undefined || value.length === 0) {
+      throw new Error(
+        `secret "${name}" not present in environment variable ${envName}`,
+      );
+    }
+    return value;
+  }
+
+  async write(_name: SecretName, _value: string): Promise<SecretWriteResult> {
+    throw new Error(
+      "env secrets provider is read-only; rotate the backing CI secret instead",
+    );
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* AWS provider                                                        */
 /* ------------------------------------------------------------------ */
 
 class AwsSecretsManagerProvider implements SecretsProvider {
   readonly kind = "aws" as const;
   readonly source: string;
+  private readonly client: SecretsManagerClient;
+  private readonly prefix: string;
 
-  constructor(region: string) {
-    this.source = `aws-secrets-manager:${region}`;
+  constructor(opts: { region?: string; prefix: string }) {
+    this.prefix = opts.prefix.replace(/\/+$/g, "");
+    this.client = new SecretsManagerClient(
+      opts.region ? { region: opts.region } : {},
+    );
+    this.source = opts.region
+      ? `aws-secrets-manager:${opts.region}:${this.prefix}`
+      : `aws-secrets-manager:default-region-chain:${this.prefix}`;
   }
 
-  // TODO(L1.6-aws): wire @aws-sdk/client-secrets-manager once the prod
-  // environment is provisioned. Keep the stub explicit so an offline
-  // dev environment that misconfigures the env var fails with a clear
-  // message instead of a network error.
-  async read(_name: SecretName): Promise<string> {
-    throw new Error(
-      "AWS provider not yet wired; needs L1.6 follow-up with @aws-sdk/client-secrets-manager",
-    );
+  private secretId(name: SecretName): string {
+    return `${this.prefix}/${name}`;
   }
-  async write(_name: SecretName, _value: string): Promise<void> {
-    throw new Error(
-      "AWS provider not yet wired; needs L1.6 follow-up with @aws-sdk/client-secrets-manager",
+
+  async read(name: SecretName): Promise<string> {
+    const out = await this.client.send(
+      new GetSecretValueCommand({ SecretId: this.secretId(name) }),
     );
+    if (typeof out.SecretString === "string") {
+      return out.SecretString;
+    }
+    if (out.SecretBinary !== undefined) {
+      return Buffer.from(out.SecretBinary).toString("utf8");
+    }
+    throw new Error(`AWS secret "${name}" returned no SecretString or SecretBinary`);
+  }
+
+  async write(
+    name: SecretName,
+    value: string,
+  ): Promise<SecretWriteResult> {
+    const out = await this.client.send(
+      new PutSecretValueCommand({
+        SecretId: this.secretId(name),
+        SecretString: value,
+      }),
+    );
+    return out.VersionId ? { versionId: out.VersionId } : {};
   }
 }
 
@@ -208,8 +279,9 @@ class AwsSecretsManagerProvider implements SecretsProvider {
 export interface SecretRotatedEvent {
   readonly audit_event: "secret.rotated";
   readonly name: SecretName;
-  readonly provider: "local" | "aws";
+  readonly provider: "local" | "env" | "aws";
   readonly at: string; // ISO-8601 timestamp
+  readonly version_id?: string;
 }
 
 export type SecretRotationListener = (event: SecretRotatedEvent) => void;
@@ -304,13 +376,14 @@ export class SecretsClient {
     if (!isSecretName(name)) {
       throw new SecretNotAllowedError(String(name));
     }
-    await this.provider.write(name, newValue);
+    const writeResult = await this.provider.write(name, newValue);
     this.invalidateCache(name);
     const event: SecretRotatedEvent = {
       audit_event: "secret.rotated",
       name,
       provider: this.provider.kind,
       at: new Date().toISOString(),
+      ...(writeResult.versionId ? { version_id: writeResult.versionId } : {}),
     };
     if (this.onRotated) {
       this.onRotated(event);
@@ -335,21 +408,27 @@ export class SecretsClient {
 /* ------------------------------------------------------------------ */
 
 function buildProviderFromEnv(): SecretsProvider {
-  const choice = (process.env.PLASMAWORK_SECRETS_PROVIDER ?? "local")
+  const choice = (readSecureCoreEnv("PLASMAWORK_SECRETS_PROVIDER") ?? "local")
     .trim()
     .toLowerCase();
   if (choice === "local") {
-    const override = process.env.PLASMAWORK_SECRETS_LOCAL_PATH;
+    const override = readSecureCoreEnv("PLASMAWORK_SECRETS_LOCAL_PATH");
     const path = override
       ? resolve(override)
       : resolve(repoRoot(), "local_cache/secrets/secrets.local.json");
     return new LocalFileProvider(path);
   }
+  if (choice === "env") {
+    return new EnvSecretsProvider();
+  }
   if (choice === "aws") {
-    const region = process.env.AWS_REGION ?? "unknown-region";
-    return new AwsSecretsManagerProvider(region);
+    const region = readSecureCoreEnv("AWS_REGION");
+    const prefix =
+      readSecureCoreEnv("PLASMAWORK_SECRETS_AWS_PREFIX")?.trim() ||
+      "plasmawork/dev";
+    return new AwsSecretsManagerProvider({ region, prefix });
   }
   throw new Error(
-    `unknown PLASMAWORK_SECRETS_PROVIDER="${choice}"; expected "local" or "aws"`,
+    `unknown PLASMAWORK_SECRETS_PROVIDER="${choice}"; expected "local", "env", or "aws"`,
   );
 }

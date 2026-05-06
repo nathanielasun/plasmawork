@@ -39,6 +39,7 @@ import {
 } from "../../src/errors/shapes";
 import {
   ERROR_CODE_TO_HTTP_STATUS,
+  sanitizeErrorDetails,
   toHttpResponse,
 } from "../../src/errors/mapper";
 
@@ -289,6 +290,33 @@ describe("toHttpResponse", () => {
     expect(res.body.error.details).toEqual({
       expected_version_id: "a",
       actual_version_id: "b",
+    });
+  });
+
+  it("redacts expected-error details with forbidden secret-shaped keys", () => {
+    const err = new InputInvalidError("bad input", {
+      field: "csrf",
+      nested: { approval_token: "cleartext-token" },
+    });
+    const res = toHttpResponse(err, "req_secret");
+    expect(res.status).toBe(400);
+    expect(res.body.error.details).toEqual({ redacted: true });
+    expect(JSON.stringify(res.body)).not.toContain("cleartext-token");
+  });
+
+  it("sanitizeErrorDetails preserves safe JSON-shaped detail fields", () => {
+    expect(
+      sanitizeErrorDetails({
+        expected_version_id: "a",
+        actual_version_id: "b",
+        retry_after_seconds: 5,
+        conflicts: ["capsule"],
+      }),
+    ).toEqual({
+      expected_version_id: "a",
+      actual_version_id: "b",
+      retry_after_seconds: 5,
+      conflicts: ["capsule"],
     });
   });
 

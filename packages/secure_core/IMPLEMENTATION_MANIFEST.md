@@ -26,7 +26,7 @@ packages/secure_core/
       high_risk_actions.ts              ← HighRiskAction literal-union (§5.6)
       rate_limits.ts
     db/
-      schema.ts                         ← Drizzle table defs; all 28 tables
+      schema.ts                         ← Drizzle table defs; all 26 tables
       migrate.ts
       pool.ts                           ← role-aware connection factory
       transactions.ts                   ← SET LOCAL helpers for §12.1.3 RLS

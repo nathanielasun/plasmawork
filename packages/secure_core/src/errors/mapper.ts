@@ -79,6 +79,79 @@ export interface HttpResponse {
 }
 
 const GENERIC_INTERNAL_MESSAGE = "Internal server error.";
+const REDACTED_DETAILS: Readonly<Record<string, true>> = Object.freeze({
+  redacted: true,
+});
+
+const FORBIDDEN_DETAIL_KEY_PARTS = [
+  "authorization",
+  "cookie",
+  "password",
+  "secret",
+  "session_hash",
+  "stack",
+  "token",
+] as const;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function detailKeyIsForbidden(key: string): boolean {
+  const lowered = key.toLowerCase();
+  return FORBIDDEN_DETAIL_KEY_PARTS.some((part) => lowered.includes(part));
+}
+
+function cloneSafeDetailValue(value: unknown): unknown {
+  if (value === null) {
+    return null;
+  }
+  const t = typeof value;
+  if (t === "string" || t === "boolean") {
+    return value;
+  }
+  if (t === "number") {
+    return Number.isFinite(value) ? value : REDACTED_DETAILS;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneSafeDetailValue(item));
+  }
+  if (!isPlainObject(value)) {
+    return REDACTED_DETAILS;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (detailKeyIsForbidden(key)) {
+      return REDACTED_DETAILS;
+    }
+    const cloned = cloneSafeDetailValue(nested);
+    if (cloned === REDACTED_DETAILS) {
+      return REDACTED_DETAILS;
+    }
+    out[key] = cloned;
+  }
+  return out;
+}
+
+/**
+ * Expected errors may carry details, but the HTTP boundary still owns
+ * the no-leak invariant. A buggy call site that puts token/password/
+ * cookie/stack-shaped data into details gets a terse redacted marker
+ * instead of a client-visible secret.
+ */
+export function sanitizeErrorDetails(
+  details: Record<string, unknown>,
+): Record<string, unknown> {
+  const cloned = cloneSafeDetailValue(details);
+  if (!isPlainObject(cloned)) {
+    return { ...REDACTED_DETAILS };
+  }
+  return cloned;
+}
 
 /**
  * Map an arbitrary thrown value to `{ status, body }`. Always succeeds:
@@ -101,7 +174,7 @@ export function toHttpResponse(
       request_id: requestId,
     };
     if (err.details !== undefined) {
-      inner.details = err.details;
+      inner.details = sanitizeErrorDetails(err.details);
     }
     return { status, body: { error: inner } };
   }

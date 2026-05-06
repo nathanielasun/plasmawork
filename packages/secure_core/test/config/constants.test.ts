@@ -173,7 +173,7 @@ describe("high-risk actions", () => {
     for (const action of HIGH_RISK_ACTIONS) {
       const required = HIGH_RISK_APPROVER_CAPABILITY[action];
       expect(
-        CAPABILITY_SET.has(required as Capability),
+        CAPABILITY_SET.has(required),
         `${action} requires capability ${required!} which is not in CAPABILITY_SET`,
       ).toBe(true);
     }

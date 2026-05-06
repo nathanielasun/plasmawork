@@ -3,9 +3,11 @@
 Secure multi-user authentication, workspace isolation, sandbox, and audit
 substrate for the Scientific Simulation Workbench.
 
-**Status:** unimplemented. This directory is the destination for Phase 0.5
-work; until Layer-1 begins it contains only the manifest that pins the
-project's conventions.
+**Status:** Layer-1 primitives implemented. The package contains the
+accepted ADR-backed constants, cryptography helpers, error envelope,
+test fixtures, secrets wrapper, audit logger, and schema/migration
+substrate. Layer-2 middleware and the secure HTTP server are not yet
+implemented.
 
 ## Reading order for incoming agents
 
@@ -15,14 +17,12 @@ project's conventions.
 3. `program_development/phase_05_security_implementation_plan.md` — the
    task graph, gates, review checks, and Definition of Done.
 4. `program_development/architectural_decisions/ADR-0008` through `ADR-0012`
-   — the five Layer-0 architectural decisions (Proposed; flip to Accepted
-   before Layer-1 starts).
+   — the five accepted Layer-0 architectural decisions.
 5. `IMPLEMENTATION_MANIFEST.md` — project layout, error shape, fixture
    conventions, per-endpoint canonical recipe.
 
-## Why empty
+## Current boundary
 
-Layer 0 (the five ADRs + this manifest + the v4 residual fixes) must be
-Accepted by the human owner before Layer 1 begins. The artifacts exist;
-the implementation does not. Per the implementation plan §2, Layer 1
-starts after Gate G2 closes.
+This package is a parallel secure-core substrate. The existing FastAPI
+workbench remains the active single-user API until the later middleware,
+route, and cut-over layers land.

@@ -28,12 +28,15 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { readSecureCoreEnv } from "../secrets/env.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 function migratorUrl(): string {
   const url =
-    process.env.PLASMAWORK_DB_URL_MIGRATOR ?? process.env.PLASMAWORK_DB_URL;
+    readSecureCoreEnv("PLASMAWORK_DB_URL_MIGRATOR") ??
+    readSecureCoreEnv("PLASMAWORK_DB_URL");
   if (!url || url.length === 0) {
     throw new Error(
       "secure_core/migrate: set PLASMAWORK_DB_URL_MIGRATOR (or PLASMAWORK_DB_URL for dev) to a Postgres URL.",

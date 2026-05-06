@@ -22,6 +22,8 @@
  *     and DELETE are rejected with permission denied.
  *   - As secure_core_audit_read: SELECT on audit_events succeeds;
  *     INSERT is rejected.
+ *   - As secure_core_anchor_writer: INSERT into log_chain_anchors
+ *     succeeds; SELECT/UPDATE/DELETE are rejected.
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "vitest";
@@ -56,6 +58,7 @@ describe.skipIf(!SHOULD_RUN)("L1.8 — schema, seed, and role privileges", () =>
   // Per-role clients connected once migrations + roles exist.
   let appClient: ReturnType<typeof postgres> | null = null;
   let auditReadClient: ReturnType<typeof postgres> | null = null;
+  let anchorWriterClient: ReturnType<typeof postgres> | null = null;
   let migratorClient: ReturnType<typeof postgres> | null = null;
 
   beforeAll(async () => {
@@ -93,11 +96,20 @@ describe.skipIf(!SHOULD_RUN)("L1.8 — schema, seed, and role privileges", () =>
       max: 1,
       prepare: false,
     });
+
+    const anchorUrl = new URL(scratchUrl);
+    anchorUrl.username = "secure_core_anchor_writer";
+    anchorUrl.password = "";
+    anchorWriterClient = postgres(anchorUrl.toString(), {
+      max: 1,
+      prepare: false,
+    });
   }, 60_000);
 
   afterAll(async () => {
     await appClient?.end({ timeout: 5 });
     await auditReadClient?.end({ timeout: 5 });
+    await anchorWriterClient?.end({ timeout: 5 });
     await migratorClient?.end({ timeout: 5 });
     if (superClient) {
       // Terminate any lingering backends, then drop scratch DB.
@@ -249,6 +261,34 @@ describe.skipIf(!SHOULD_RUN)("L1.8 — schema, seed, and role privileges", () =>
     ).rejects.toThrow(/audit_event_id/);
   });
 
+  it("ADR-0010: log_chain_anchors requires a version-pinned external URI", async () => {
+    await expect(
+      migratorClient!.unsafe(
+        `INSERT INTO log_chain_anchors
+          (id, log_type, anchor_hash, anchored_row_id, external_anchor_uri)
+         VALUES (
+          '${randomUUID()}',
+          'audit_events',
+          'hash-no-version',
+          '${randomUUID()}',
+          's3://simworkbench-worm-dev/anchors/audit/no-version.json'
+         )`,
+      ),
+    ).rejects.toThrow(/external_anchor_uri_has_version_id/);
+
+    await migratorClient!.unsafe(
+      `INSERT INTO log_chain_anchors
+        (id, log_type, anchor_hash, anchored_row_id, external_anchor_uri)
+       VALUES (
+        '${randomUUID()}',
+        'audit_events',
+        'hash-with-version',
+        '${randomUUID()}',
+        's3://simworkbench-worm-dev/anchors/audit/ok.json?versionId=v1'
+       )`,
+    );
+  });
+
   it("workspace_memberships_active_unique forbids duplicate active rows", async () => {
     const userId = randomUUID();
     const wsId = randomUUID();
@@ -315,6 +355,22 @@ describe.skipIf(!SHOULD_RUN)("L1.8 — schema, seed, and role privileges", () =>
     ).rejects.toThrow(/permission denied/i);
   });
 
+  it("ADR-0010: secure_core_app cannot INSERT log_chain_anchors", async () => {
+    await expect(
+      appClient!.unsafe(
+        `INSERT INTO log_chain_anchors
+          (id, log_type, anchor_hash, anchored_row_id, external_anchor_uri)
+         VALUES (
+          '${randomUUID()}',
+          'audit_events',
+          'app-role-anchor-attempt',
+          '${randomUUID()}',
+          's3://simworkbench-worm-dev/anchors/audit/app.json?versionId=v1'
+         )`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
   it("secure_core_audit_read may SELECT audit_events but cannot INSERT", async () => {
     const rows = await auditReadClient!.unsafe(
       `SELECT count(*)::int AS n FROM audit_events`,
@@ -326,6 +382,37 @@ describe.skipIf(!SHOULD_RUN)("L1.8 — schema, seed, and role privileges", () =>
         `INSERT INTO audit_events
           (id, actor_type, action, result, row_hash)
          VALUES ('${randomUUID()}', 'human', 'forbidden', 'denied', 'aa')`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("secure_core_anchor_writer may INSERT log_chain_anchors but cannot read or mutate them", async () => {
+    const id = randomUUID();
+    await anchorWriterClient!.unsafe(
+      `INSERT INTO log_chain_anchors
+        (id, log_type, anchor_hash, anchored_row_id, external_anchor_uri)
+       VALUES (
+        '${id}',
+        'audit_events',
+        'anchor-writer-hash',
+        '${randomUUID()}',
+        's3://simworkbench-worm-dev/anchors/audit/${id}.json?versionId=v1'
+       )`,
+    );
+
+    await expect(
+      anchorWriterClient!.unsafe(`SELECT 1 FROM log_chain_anchors LIMIT 1`),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      anchorWriterClient!.unsafe(
+        `UPDATE log_chain_anchors SET anchor_hash = 'changed' WHERE id = '${id}'`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      anchorWriterClient!.unsafe(
+        `DELETE FROM log_chain_anchors WHERE id = '${id}'`,
       ),
     ).rejects.toThrow(/permission denied/i);
   });

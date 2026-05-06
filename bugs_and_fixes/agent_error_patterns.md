@@ -21,6 +21,39 @@ How to spot the mistake — grep pattern, code review heuristic, or test.
 
 ---
 
+## Error Pattern: Security invariant lives in docs but not in the enforcement layer
+
+### Why it is bad
+Security docs often use strong language like "insert-only",
+"version-pinned", or "provider-backed". If the migration, provider
+dispatch, or mapper does not enforce that statement directly, the system
+ships a documentation promise instead of a security property. File
+existence and status checks do not catch this class of bug.
+
+### Required behavior
+- Every security invariant has an enforcement point in code or SQL, not
+  just a comment or ADR sentence.
+- Every enforcement point has a negative test that attempts the forbidden
+  action and asserts refusal.
+- The convention checker carries at least one assertion for the invariant
+  so future refactors cannot remove the enforcement silently.
+
+### Detection
+- Compare accepted ADR wording against the exact code path that enforces
+  it: provider construction, SQL GRANTs, CHECK constraints, mapper
+  output, middleware order.
+- Grep for words like `stub`, `not yet wired`, `INSERT-only`,
+  `versionId`, `redacted`, and `must` in security code and docs. Each
+  match needs a nearby test or checker assertion.
+
+### Bug log
+- 2026-05-06 *Secure-core Layer-1 ADR audit fixes*: provider dispatch,
+  DB-role grants, anchor-row constraints, and error-details redaction
+  had enforcement/test drift. Fix: move the invariants into executable
+  code/SQL and add negative tests plus checker assertions.
+
+---
+
 ## Initial set of warnings (Phase 0 — pre-emptive based on plan §22 and §16.3)
 
 The patterns below are not yet observed; they are pre-emptive guardrails encoded from the plan. Expand them as real patterns appear.

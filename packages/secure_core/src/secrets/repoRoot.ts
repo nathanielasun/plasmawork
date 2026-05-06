@@ -17,6 +17,8 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readSecureCoreEnv } from "./env.js";
+
 /**
  * Resolve the repository root by walking up from this module's file
  * location until both `AGENTS.md` and `CLAUDE.md` are present in a
@@ -27,7 +29,7 @@ import { fileURLToPath } from "node:url";
  * resolution.
  */
 export function repoRoot(): string {
-  const override = process.env.SIMWORKBENCH_REPO_ROOT;
+  const override = readSecureCoreEnv("SIMWORKBENCH_REPO_ROOT");
   if (override) {
     if (!existsSync(override) || !statSync(override).isDirectory()) {
       throw new Error(

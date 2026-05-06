@@ -119,14 +119,17 @@ TO secure_core_app;
 -- ADR makes run_events strictly append-only at the DB level, REVOKE here.
 
 -- ---------------------------------------------------------------------------
--- 4. secure_core_app — INSERT-only on append-only log tables (§12.1.2 / .4).
+-- 4. secure_core_app — INSERT-only on append-only log tables (§12.1.2).
+--
+-- ADR-0010 narrows log_chain_anchors further: only the anchor-writer
+-- role may INSERT anchor rows. The app role emits audit/provenance/
+-- operator/membership events, but never commits external anchors.
 -- ---------------------------------------------------------------------------
 
 GRANT INSERT ON TABLE
   "audit_events",
   "provenance_events",
   "operator_events",
-  "log_chain_anchors",
   "workspace_membership_events"
 TO secure_core_app;
 
@@ -134,8 +137,8 @@ TO secure_core_app;
 -- operator. Reads route through secure_core_audit_read after capability
 -- check. The app role does need SELECT on workspace_membership_events
 -- (§12.1.2 calls it append-only but read is allowed for the app) and on
--- log_chain_anchors (read is allowed; only WRITES come from the anchor
--- committer per §12.1.4).
+-- log_chain_anchors (read is allowed for verification/cache inspection;
+-- only WRITES come from the anchor committer per ADR-0010).
 GRANT SELECT ON TABLE
   "workspace_membership_events",
   "log_chain_anchors"
@@ -158,6 +161,8 @@ REVOKE SELECT ON TABLE
   "provenance_events",
   "operator_events"
 FROM secure_core_app;
+
+REVOKE INSERT, UPDATE, DELETE ON TABLE "log_chain_anchors" FROM secure_core_app;
 
 -- ---------------------------------------------------------------------------
 -- 5. secure_core_audit_read — SELECT-only on audit/provenance/operator/anchor.
@@ -190,9 +195,9 @@ FROM secure_core_audit_read;
 -- "anchor committer".
 -- ---------------------------------------------------------------------------
 
-GRANT INSERT, SELECT ON TABLE "log_chain_anchors" TO secure_core_anchor_writer;
+GRANT INSERT ON TABLE "log_chain_anchors" TO secure_core_anchor_writer;
 
-REVOKE UPDATE, DELETE ON TABLE "log_chain_anchors" FROM secure_core_anchor_writer;
+REVOKE SELECT, UPDATE, DELETE ON TABLE "log_chain_anchors" FROM secure_core_anchor_writer;
 
 -- ---------------------------------------------------------------------------
 -- 7. The migrator role does NOT receive LOGIN here; whoever bootstraps the

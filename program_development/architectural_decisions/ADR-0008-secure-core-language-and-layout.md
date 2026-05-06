@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Phase 0.5 (`program_development/phase_05_security_implementation_plan.md`) turns `secure_multi_user_scaffolding_plan_v4.md` into a structural rebuild of the platform's identity, authorization, persistence, and sandbox substrate. The implementation plan names this ADR as Layer-0 gate `G1.L0.1`: pin the language, the HTTP framework, the database access layer, the project layout, and the integration shape (Shape A parallel new package, Shape B retrofit-in-place, Shape C fresh repo) before any Layer-1 work begins. Without this decision the downstream tasks (28-table migration set, capability-typed middleware stack, JCS canonicalization, sandbox runner, audit chain, approval system) cannot be assigned.
+Phase 0.5 (`program_development/phase_05_security_implementation_plan.md`) turns `secure_multi_user_scaffolding_plan_v4.md` into a structural rebuild of the platform's identity, authorization, persistence, and sandbox substrate. The implementation plan names this ADR as Layer-0 gate `G1.L0.1`: pin the language, the HTTP framework, the database access layer, the project layout, and the integration shape (Shape A parallel new package, Shape B retrofit-in-place, Shape C fresh repo) before any Layer-1 work begins. Without this decision the downstream tasks (26-table migration set, capability-typed middleware stack, JCS canonicalization, sandbox runner, audit chain, approval system) cannot be assigned.
 
 The decision is forced by four converging constraints:
 
@@ -19,7 +19,7 @@ The decision is forced by four converging constraints:
    - The plan can be ported to another language but every port introduces an opportunity for the middleware order to drift from the contract.
 
 2. **The schema is large and CHECK-constraint heavy.**
-   - v4 §11 enumerates 28 tables.
+   - v4 §11 enumerates 26 tables.
    - §12 specifies CHECK constraints, GRANT statements that distinguish a restricted application role from an admin role, and Postgres RLS Option A/B.
    - Migration tooling that makes the constraints, GRANTs, and seed data first-class — not free-text SQL strings — is load-bearing for the audit (and for the convention-checker assertions Phase 0.5 will add).
 3. **The repository already ships substantial TypeScript.** ADR-0005 committed the workbench UI to a Vite + React stack and `docs_site/` shares it. The concrete signals enumerated from `apps/workbench-ui/package.json` and `apps/workbench-ui/tsconfig.json` are:
@@ -50,7 +50,7 @@ Specifically:
   - Built-in JSON-schema validation (`fastify.addSchema` + per-route `schema: { body, params, querystring, headers }`) maps directly to v4 §4.1's "allowlist input schemas" requirement; rejecting unexpected fields and emitting the v4 §19.5 `request.unexpected_field` audit event are framework-level rather than handler-level concerns.
   - Built-in hooks (`onRequest`, `preParsing`, `preValidation`, `preHandler`, `onSend`) compose cleanly into the v4 §6.2 middleware order without forcing the order to be re-declared per route.
   - The typed plugin system gives a place to expose `requireCapability`, `loadWorkspace`, `enforceUniformNotFound`, etc. as first-class decorators rather than ad-hoc closures, so reviewers can grep for `fastify.decorate("requireCapability", ...)` and find the single definition.
-- **ORM / query layer: Drizzle ORM** with `drizzle-kit` for migrations and `node-postgres` (`pg`) as the driver:
+- **ORM / query layer: Drizzle ORM** with `drizzle-kit` for migrations and `postgres-js` (`postgres`) as the driver:
   - Drizzle's TypeScript-first schema declaration carries CHECK constraints, indexes, and foreign keys as code; the schema compiles or the build fails.
   - `drizzle-kit generate` produces deterministic SQL migrations that can be reviewed and replayed; the SQL is plain-text and version-controlled, not hidden behind a vendor format.
   - Raw SQL is available where v4's GRANTs and RLS policies (`GRANT INSERT ON audit_events TO app_role; REVOKE UPDATE, DELETE ON audit_events FROM app_role;`) need it. Drizzle does not pretend SQL doesn't exist; for a security substrate, that visibility is the point.
@@ -76,7 +76,7 @@ Specifically:
   - FastAPI's dependency-injection model is excellent for request-scoped resolution but the v4 §6.2 strict ordering (`requireAuth → enforceCsrfForStateChange → validateInputSchema → attachAuditActor → loadWorkspace → enforceUniformNotFound → requireWorkspaceMembership → requireCapability → enforceObjectWorkspaceScope → requireApprovalIfHighRisk`) is not naturally expressed as a DI graph; agents would re-derive it per endpoint, which is the exact pattern v4 §6.2 prohibits.
   - The workbench UI is already TypeScript; a TS server lets the wire types (`ApprovalRequest`, `Capsule`, `Run`, etc.) be generated from the Drizzle schema and consumed verbatim by the UI, removing a class of drift the existing FastAPI / `apps/workbench-ui/src/api/client.ts` boundary suffers from.
 
-- **TypeScript + Hono + Kysely.** Hono is lighter than Fastify and Kysely is a thinner query builder than Drizzle. Rejected. Hono's hook/middleware story is less battle-tested for the strict-ordering use case, and Kysely does not own a migration tool the way Drizzle does — Phase 0.5 needs the migration set (28 tables, GRANTs, seed data, CHECK constraints) to be a first-class artifact, not a hand-curated SQL directory.
+- **TypeScript + Hono + Kysely.** Hono is lighter than Fastify and Kysely is a thinner query builder than Drizzle. Rejected. Hono's hook/middleware story is less battle-tested for the strict-ordering use case, and Kysely does not own a migration tool the way Drizzle does — Phase 0.5 needs the migration set (26 tables, GRANTs, seed data, CHECK constraints) to be a first-class artifact, not a hand-curated SQL directory.
 
 - **Shape B — retrofit secure-core into `simworkbench.api.server`.** Considered against Shape A. Rejected for three compounding reasons:
   - Every existing handler would need to grow auth, workspace scoping, capability checks, approval gates, audit emission, and sandbox enforcement in lockstep with the rebuild.
@@ -90,7 +90,7 @@ Specifically:
 **Positive**
 
 - **Middleware contract is direct.** v4 §6.1 / §6.2 maps to Fastify hooks one-for-one; reviewers comparing handler code to v4 read the same shape in both places, so the cross-cutting review check from implementation plan §8.2 ("every state-changing endpoint has a `requireCapability` call") is a `grep` away.
-- **Schema is typed end-to-end.** Drizzle's typed schema makes the 28 tables, CHECK constraints, GRANTs, and seed data (capabilities from v4 §13, default roles, default rate limits) first-class TypeScript that compiles or fails to compile. The migration set requested by Layer-1 task L1.8 ships as `drizzle-kit generate` output reviewable as plain SQL.
+- **Schema is typed end-to-end.** Drizzle's typed schema makes the 26 tables, CHECK constraints, GRANTs, and seed data (capabilities from v4 §13, default roles, default rate limits) first-class TypeScript that compiles or fails to compile. The migration set requested by Layer-1 task L1.8 ships as `drizzle-kit generate` output reviewable as plain SQL.
 - **Allowlist input schemas have a native home.** Fastify's built-in JSON-schema validation is the natural home for v4 §4.1 allowlist schemas; the Layer-2 task L2.3 (`validateInputSchema` framework) becomes a thin typed wrapper rather than a parser. Unexpected fields are rejected at the framework boundary and the `request.unexpected_field` audit event from v4 §19.5 is emitted automatically.
 - **Wire types stop drifting.** Wire types between secure-core and `apps/workbench-ui/` can be generated from Drizzle's schema (via `drizzle-zod` or equivalent), removing the existing FastAPI ↔ `apps/workbench-ui/src/api/client.ts` drift class that `CLAUDE.md` calls out.
 - **Cut-over is atomic.** Shape A keeps the existing FastAPI workbench unbroken until secure_core reaches parity; the cut-over is one explicit deletion + redirect commit rather than a multi-week interleaved rebuild that would be impossible to review.
@@ -119,9 +119,9 @@ Specifically:
 
 ## Implementation notes
 
-- This ADR's `Status` is `Proposed`. Per `CLAUDE.md` only the human owner can flip it to `Accepted`. Implementation plan gate `G1` requires the flip before Layer-1 starts; this ADR is one of the five `G1` deliverables (`G1.L0.1`).
+- This ADR's `Status` is `Accepted`. Reverting it requires a deliberate successor ADR because Layer-1 code now depends on the selected language, ORM, and layout.
 - The Layer-0 implementation manifest (`G2` in the implementation plan) pins the directory tree, error-shape envelope, test fixture conventions, migration framework details, logging conventions, and per-endpoint canonical recipe inside `packages/secure_core/`. This ADR does not own those details; it owns the language / framework / ORM / shape choice they presuppose.
-- Layer-1 task L1.8 (schema migration package) is the first place this ADR becomes load-bearing: the 28-table migration set, the GRANT statements, the CHECK constraints (including the V4-R3, V4-R6, V4-R7 fixes from `G0`), and the seed data (capabilities from v4 §13, default roles, default rate limits) all ship as Drizzle schema files plus `drizzle-kit generate` output. The migration is idempotent on a clean DB or fails loudly with a deterministic error.
+- Layer-1 task L1.8 (schema migration package) is the first place this ADR becomes load-bearing: the 26-table migration set, the GRANT statements, the CHECK constraints (including the V4-R3, V4-R6, V4-R7 fixes from `G0`), and the seed data (capabilities from v4 §13, default roles, default rate limits) all ship as Drizzle schema files plus `drizzle-kit generate` output. The migration is idempotent on a clean DB or fails loudly with a deterministic error.
 - Layer-1 task L1.2 (JCS canonicalization) wraps `@truestamp/canonify` for TypeScript with the version pinned in a single constant. If any worker is implemented in Python, the matching `rfc8785` library is mandated and a cross-language byte-equality test ships in Layer-3 / L3.1 covering at minimum: unicode normalization, integer-vs-float distinction, NULL handling, key ordering, escaped characters.
 - Fastify hooks map to v4 §6.2 ordering as follows. The manifest codifies this in a `composeMiddleware()` helper rather than per-route copy-paste:
   - `onRequest` → `requireAuth`.
@@ -148,7 +148,7 @@ Specifically:
 ## References
 
 - Implementation plan: `program_development/phase_05_security_implementation_plan.md` §1, §2 (Gate G1.L0.1), §3 (Layer 1).
-- Design contract: `secure_multi_user_scaffolding_plan_v4.md` §4.1 (allowlist input schemas), §6.1 / §6.2 (middleware list + ordering), §11 (28 tables), §12 (schema, CHECK constraints, GRANTs, RLS), §16 (approval system), §19.3 (RFC 8785 JCS), §29 (73-test security suite).
+- Design contract: `secure_multi_user_scaffolding_plan_v4.md` §4.1 (allowlist input schemas), §6.1 / §6.2 (middleware list + ordering), §11 (26 tables), §12 (schema, CHECK constraints, GRANTs, RLS), §16 (approval system), §19.3 (RFC 8785 JCS), §29 (73-test security suite).
 - ADR-0005 (UI framework — Vite + React) for the existing TypeScript repo signals.
 - ADR-0006 (determinism policy) for the structural-not-free-text discipline applied here to the cross-language JCS contract.
 - ADR-0001 (project scope) — the workbench remains the same product; this ADR rebuilds its substrate.
