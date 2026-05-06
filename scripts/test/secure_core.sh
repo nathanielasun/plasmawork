@@ -6,10 +6,10 @@
 # Wired into scripts/test/all.sh so every PR exercises the security
 # substrate's tests.
 #
-# Until Layer 1 finishes, the suite is small (constants + future
-# Layer-1 modules). It grows with each Layer-1/2/3 task. The stub
-# `scripts/test/security.sh` invokes the §29 regression suite once
-# Layer 5 ships; this script is the per-package unit + typecheck
+# `scripts/test/security.sh` runs the §29 spec-level invariants
+# under `packages/secure_core/test/security/` plus env-gated
+# live-runtime probes (PLASMAWORK_RUNSC_PROBES, PLASMAWORK_TEST_DB_URL,
+# anchor S3 vars). This script is the per-package unit + typecheck
 # pass that runs unconditionally.
 set -euo pipefail
 

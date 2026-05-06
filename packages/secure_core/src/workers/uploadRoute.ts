@@ -23,7 +23,7 @@
  */
 
 import { createWriteStream } from "node:fs";
-import { unlink, mkdir } from "node:fs/promises";
+import { unlink, mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -417,10 +417,18 @@ export const workerUploadRoute: FastifyPluginAsync<
     }
 
     // (5) Archive validation per ADR-0012 step 6 / v4 §9.4.11–§9.4.13.
-    // For artifact_kind === "archive", the bytes we just wrote are an
+    // For artifact_kind === "archive" the bytes we just wrote are an
     // archive that MUST pass extractArchive's per-entry validation
     // (symlink / hardlink / device / zip-slip / size + count caps /
     // dotfile rejection) before we commit the reservation.
+    //
+    // Quota accounting: extracted files take real disk space and
+    // MUST be counted against the workspace's stored-byte quota.
+    // The archive's reservation covers `declared` bytes (the archive
+    // file). The extracted bytes are charged on TOP of that — if the
+    // total exceeds the original reservation, we abort the upload
+    // (release + audit) so a worker can't ship a tiny zip-bomb that
+    // expands past quota.
     if (kind === "archive") {
       const archiveFormat: ArchiveFormat = fields.artifact_name.endsWith(".tar")
         || fields.artifact_name.endsWith(".tar.gz")
@@ -428,9 +436,10 @@ export const workerUploadRoute: FastifyPluginAsync<
         ? "tar"
         : "zip";
       const extractDir = `${destinationPath}.extracted`;
+      let extractedBytes = 0n;
       try {
         await mkdir(extractDir, { recursive: true });
-        await extractArchive({
+        const result = await extractArchive({
           archivePath: destinationPath,
           destinationDir: extractDir,
           format: archiveFormat,
@@ -439,12 +448,21 @@ export const workerUploadRoute: FastifyPluginAsync<
           actorUserId: claims.requested_by_user_id,
           requestId: req.requestId,
         });
+        extractedBytes = BigInt(result.bytesWritten);
       } catch (err) {
-        // Cleanup: archive itself + extracted dir + reservation.
+        // Rejection cleanup: archive itself + extracted dir +
+        // reservation. The extractor's own per-entry walk may have
+        // partially populated extractDir; rm -rf cleans the whole
+        // thing.
         try {
           await unlink(destinationPath);
         } catch {
-          // ignore
+          // archive already absent — ignore
+        }
+        try {
+          await rm(extractDir, { recursive: true, force: true });
+        } catch {
+          // partial dir — ignore; sweep handles orphans
         }
         try {
           if (reservation !== null) {
@@ -471,6 +489,55 @@ export const workerUploadRoute: FastifyPluginAsync<
         throw new WorkerUploadDeniedError("Archive failed validation.", {
           reason: "archive_unsafe",
         });
+      }
+
+      // Charge extracted bytes against quota. The original reservation
+      // covered `declared` (the archive); extracted bytes are extra
+      // disk usage. If total > declared, refuse + clean up.
+      if (extractedBytes > 0n) {
+        try {
+          await opts.storageReservations.reserveBytes({
+            workspaceId: claims.workspace_id,
+            requestedBy: claims.requested_by_user_id,
+            bytes: extractedBytes,
+            requestId: req.requestId,
+          });
+        } catch {
+          // Quota exhausted by the extracted content. Roll back the
+          // archive + extracted tree + the original reservation.
+          try {
+            await unlink(destinationPath);
+          } catch {
+            // ignore
+          }
+          try {
+            await rm(extractDir, { recursive: true, force: true });
+          } catch {
+            // ignore
+          }
+          try {
+            await opts.storageReservations.releaseReservation({
+              reservationId: reservation.reservationId,
+              workspaceId: claims.workspace_id,
+              requestId: req.requestId,
+            });
+          } catch {
+            // sweep
+          }
+          await opts.auditLogger.write({
+            workspaceId: claims.workspace_id,
+            actorUserId: claims.requested_by_user_id,
+            actorType: "worker",
+            action: "worker.upload_denied",
+            result: "denied",
+            requestId: req.requestId,
+            metadata: { denied_reason: "quota_exceeded" },
+          });
+          throw new WorkerUploadDeniedError(
+            "Extracted archive would exceed workspace quota.",
+            { reason: "quota_exceeded" },
+          );
+        }
       }
     }
 

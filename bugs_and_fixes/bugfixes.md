@@ -889,3 +889,36 @@ Cross-cutting: the L3 sub-agents implemented their slices in isolation and didn'
 - `validateLaunchSpec` callers MUST pass `allowedSourceRoots` (production) or accept hermetic-only enforcement (empty allowlist).
 - Never transition a run to a "live" state before the live thing is actually live. Order of state changes matters when failures land between them.
 - Streaming-write byte caps must be derived from the smaller of declared and configured-max; never use the bigger value as the cap.
+
+## 2026-05-07: Layer-3 Group C round-2 audit (4 findings)
+
+### Affected subsystem
+`packages/secure_core/{src/workers,test/security,test/sandbox,test/workers}`, `scripts/test/security.sh`, `CLAUDE.md`, `scripts/test/secure_core.sh`
+
+### Symptoms
+A second-pass audit caught residue from round-1: live runsc probes still surfaced "not implemented" failures when env-gated; archive uploads leaked extracted files + bypassed quota for the extracted bytes; the most-sensitive code paths lacked direct regression tests; some docs still called the security script a stub.
+
+1. **High** — `PLASMAWORK_RUNSC_PROBES=1 scripts/test/security.sh` failed on 6 `expect.fail("not implemented (Layer 5)")` lines in `test/security/sandbox.test.ts`. The env-gate was meant to enable real probes; instead it surfaced placeholders that always failed.
+2. **High** — `uploadRoute` extracted archives to `${destinationPath}.extracted` but the rejection path only unlinked the archive, leaving the `.extracted` tree on disk; on success the reservation was committed for the archive's declared bytes only, while the extracted bytes (real disk usage) were never accounted for. A worker shipping a small zip-bomb that expands past quota would write past the reservation invisibly.
+3. **Medium** — No direct regression tests for: `SandboxRunner` launch-before-running ordering (audit fix #2), `workerUploadRoute` requested-by FK target (#4), declared-size streaming cap (#6), archive rejection cleanup (#7), worker audit actor identity (#5).
+4. **Minor** — `CLAUDE.md:120` and `scripts/test/secure_core.sh:9` still described `scripts/test/security.sh` as a stub, contradicting the round-1 fix that wired it to a real test runner.
+
+### Root cause
+Round-1 prioritized landing fixes; this round addresses the gaps the fixes themselves opened. The `expect.fail` placeholders existed because real gVisor probes need a Linux + runsc CI lane that doesn't exist yet — but `expect.fail` makes the env-gate worse than useless. The archive-extraction fix routed validation through `extractArchive` but didn't update the quota model to account for the additional disk footprint. Regression coverage of the round-1 fixes was implicit (caller code exercises the fixed paths) but not direct.
+
+### Fix
+1. **Live probes detect runsc presence.** `detectRunscAvailable()` checks `PLASMAWORK_RUNSC_PROBES=1` AND a successful `spawnSync('runsc', ['--version'])`. Both true → probes enabled; either false → `it.skipIf` skips them. Probe bodies are now `it.todo` markers (no `expect.fail`); a future PR ships gVisor in CI and replaces each todo with a real probe one at a time. `scripts/test/security.sh` no longer fails on dev hosts even with `PLASMAWORK_RUNSC_PROBES=1` set.
+2. **Archive quota + cleanup.** On rejection: `rm -rf` the `.extracted` directory in addition to unlinking the archive. On success: after `extractArchive` returns `{filesWritten, bytesWritten}`, `reserveBytes(extractedBytes)` is called against the workspace quota — extracted disk usage is charged on top of the archive's original reservation. If the second reservation fails (quota exhausted by extraction), the archive + `.extracted` tree are removed and the original reservation is released; `worker.upload_denied { quota_exceeded }` emitted.
+3. **Direct regression tests.** New `test/sandbox/runner.test.ts` (3 cases) pins launch-before-running ordering: spec-rejection path transitions `queued → failed` only (never running), spawn-failure path same, happy path order is `running → completed`. New `test/workers/uploadRoute.test.ts` (7 cases) pins FK target = `claims.requested_by_user_id` (not `run_id`); audit `actorUserId` matches; underdeclared bytes rejected mid-stream as `oversize`; `declared_size > maxUploadBytes` rejected up front (no reservation attempted); zip-slip archive rejected with `archive_unsafe`, archive + `.extracted` dir unlinked, reservation released; clean zip success extracts and charges extracted bytes via a second `reserveBytes` call.
+4. **Stale docs corrected.** `CLAUDE.md` security-checks block updated to describe what `security.sh` actually does (runs §29 spec-level invariants + env-gated live-runtime probes). `scripts/test/secure_core.sh` header comment updated to match.
+
+### Regression protection
+- 11 new tests across `test/sandbox/runner.test.ts` + `test/workers/uploadRoute.test.ts` — each maps to a numbered audit fix.
+- Convention checker grew 1054 → 1062 with assertions for: `detectRunscAvailable` presence in security.test, the new test files exist, and they grep-pin the §-fix concepts (`requested_by_user_id`, `declared_size`, `archive_unsafe`, `extracted`).
+- `PLASMAWORK_RUNSC_PROBES=1 scripts/test/security.sh` now exits 0 on dev hosts (no spurious failures); when a real runsc lands in CI, the `it.todo` reports surface what's missing without breaking the build.
+
+### Agent warning
+- `expect.fail("not implemented")` is worse than `it.todo`. Either implement the test or mark it as a todo — never plant a guaranteed-fail in an env-gated path.
+- When an upload writes A and then derives B from A, the quota reservation must cover both. Charging only A and leaving B uncharged is a quota bypass disguised as an accounting question.
+- Cleanup paths must remove EVERY artifact the failed code path created. `unlink(archive)` without `rm -rf(.extracted)` leaks. The cleanup should mirror the creation set.
+- Round-1 fixes need round-2 verification: each substantive fix should land with at least one direct regression test before the audit cycle closes.

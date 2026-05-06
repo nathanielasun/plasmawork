@@ -1912,6 +1912,29 @@ check_grep_in_file '§29 #38' packages/secure_core/test/security/sandbox.test.ts
   "§29 #38 (egress default-deny) covered by spec-level invariant"
 check_grep_in_file 'PLASMAWORK_RUNSC_PROBES' packages/secure_core/test/security/sandbox.test.ts \
   "§29 live-runtime probes are env-gated for the gVisor CI lane"
+# Live probes detect runsc presence and skip cleanly when missing
+# (the env-gate doesn't surface 'not implemented' failures on dev).
+check_grep_in_file 'detectRunscAvailable' \
+  packages/secure_core/test/security/sandbox.test.ts \
+  "§29 live probes detect runsc binary presence + skip cleanly when missing"
+# Regression tests for post-Group-C audit fixes
+check_file_exists packages/secure_core/test/sandbox/runner.test.ts
+check_grep_in_file 'launch ordering' \
+  packages/secure_core/test/sandbox/runner.test.ts \
+  "SandboxRunner ordering regression test (audit fix #2)"
+check_file_exists packages/secure_core/test/workers/uploadRoute.test.ts
+check_grep_in_file 'requested_by_user_id' \
+  packages/secure_core/test/workers/uploadRoute.test.ts \
+  "workerUploadRoute FK regression test (audit fix #4)"
+check_grep_in_file 'declared_size' \
+  packages/secure_core/test/workers/uploadRoute.test.ts \
+  "workerUploadRoute declared-size cap regression test (audit fix #6)"
+check_grep_in_file 'archive_unsafe' \
+  packages/secure_core/test/workers/uploadRoute.test.ts \
+  "workerUploadRoute archive rejection cleanup regression test (audit fix #7)"
+check_grep_in_file 'extracted' \
+  packages/secure_core/test/workers/uploadRoute.test.ts \
+  "workerUploadRoute archive .extracted dir cleanup is asserted (audit fix #2)"
 check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh stub"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
