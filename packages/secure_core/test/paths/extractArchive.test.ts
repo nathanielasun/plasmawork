@@ -18,7 +18,14 @@
  * audit row metadata (`archive_reason`, `count`).
  */
 
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  rm,
+  stat,
+  symlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
@@ -245,6 +252,26 @@ describe("extractArchive — path/type rejections", () => {
     ]);
     const archivePath = await writeArchive("pct.tar", buf);
     await expectReject(archivePath, "tar", "zip_slip", 0);
+  });
+
+  it("rejects extraction through a pre-existing symlink directory", async () => {
+    const outsideDir = path.join(harness.workdir, "outside-target");
+    await mkdir(outsideDir);
+    try {
+      await symlink(outsideDir, path.join(harness.destDir, "linked"));
+    } catch {
+      // Restricted filesystems may disallow symlink creation.
+      return;
+    }
+
+    const buf = await buildTarBuffer([
+      { name: "linked/escape.txt", content: "evil" },
+    ]);
+    const archivePath = await writeArchive("dest-symlink.tar", buf);
+    await expectReject(archivePath, "tar", "zip_slip", 0);
+    await expect(stat(path.join(outsideDir, "escape.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });
 

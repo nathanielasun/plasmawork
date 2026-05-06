@@ -303,7 +303,7 @@ Before editing those subsystems:
 8. Inspect relevant security regression tests.
 9. Inspect `bugs_and_fixes/agent_error_patterns.md`.
 
-Never accept client-provided actor fields.
+Never accept client-provided server-derived fields. This includes `id`, `user_id`, `actor`, `actor_id`, `actor_user_id`, `created_by`, `updated_by`, `approved_by`, `decided_by`, `workspace_role`, `role_id`, `workspace_id`, `created_at`, `updated_at`, `current_version_id`, `status`, `disabled_at`, `storage_path`, `assurance_level`, `auth_method`, and any `*_hash` field at any nesting depth.
 
 Never write workspace artifacts outside the server-generated workspace path.
 
@@ -329,9 +329,9 @@ Status of these commands:
 
 - `scripts/dev/check_repo_conventions.sh` — exists, green at 744+ checks.
 - `scripts/test/security.sh` — empty stub (exits 0; reminds the caller that the §29 suite hasn't shipped yet). Becomes load-bearing during Layer 5.
-- `scripts/dev/check_workspace_paths.sh` / `check_security_headers.sh` / `check_security_schema.sh` — not yet created. They land alongside their corresponding Layer-2 / Layer-3 implementations and are referenced here so the agent reading this file knows the eventual contract.
+- `scripts/dev/check_workspace_paths.sh` / `check_security_headers.sh` / `check_security_schema.sh` — not yet created. They land alongside their corresponding follow-up layers and are referenced here so the agent reading this file knows the eventual contract.
 
-Phase 0.5 status (as of 2026-05-05): Layer-0 ADRs Proposed; only the human owner may flip them to Accepted. Layer-1 task assignment is blocked until that happens. See `program_development/phase_05_security_implementation_plan.md` for the full gate.
+Phase 0.5 status (as of 2026-05-06): Layer-0 ADRs Accepted; Layer-1 and Layer-2 slices L2.1-L2.8/L2.10/L2.11 are under implementation/audit. L2.9 remains pending. See `program_development/phase_05_security_implementation_plan.md` for the full gate.
 
 ---
 

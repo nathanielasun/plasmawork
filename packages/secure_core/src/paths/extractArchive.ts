@@ -43,8 +43,12 @@
  * partial output for triage).
  */
 
-import { createReadStream, type WriteStream } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import {
+  close as fsCloseCb,
+  createReadStream,
+  type WriteStream,
+} from "node:fs";
+import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -61,9 +65,13 @@ import {
   ARCHIVE_REJECTION_REASONS,
   type ArchiveRejectionReason,
 } from "../config/audit_events.js";
-import { ArchiveRejectedError } from "../errors/shapes.js";
+import {
+  ArchiveRejectedError,
+  PathInvalidError,
+} from "../errors/shapes.js";
 import { readSecureCoreEnv } from "../secrets/env.js";
 import { AuditLogger } from "../audit/logger.js";
+import { safeOpenPath } from "./safeOpen.js";
 
 /** §9.4.14 fail-closed default uncompressed-byte cap. */
 export const ARCHIVE_DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
@@ -236,6 +244,68 @@ function verifySubpath(
   return { ok: true, resolved };
 }
 
+function closeRawFd(fd: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    fsCloseCb(fd, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function pathInvalidToArchiveReason(err: PathInvalidError): ArchiveRejectionReason {
+  const reason = err.details?.["reason"];
+  if (reason === "leading_dot") return "dotfile";
+  return "zip_slip";
+}
+
+function parentRelativePath(fileName: string): string {
+  const parts = fileName.split("/");
+  parts.pop();
+  return parts.join("/");
+}
+
+async function ensureDirectoryInsideDestination(
+  destinationDir: string,
+  relativeDir: string,
+): Promise<{ ok: true } | { ok: false; reason: ArchiveRejectionReason }> {
+  if (relativeDir.length === 0 || relativeDir === ".") {
+    return { ok: true };
+  }
+
+  const sub = verifySubpath(destinationDir, relativeDir);
+  if (!sub.ok) return sub;
+
+  let current = destinationDir;
+  for (const component of relativeDir.split("/")) {
+    current = path.join(current, component);
+    try {
+      const existing = await lstat(current);
+      if (existing.isSymbolicLink() || !existing.isDirectory()) {
+        return { ok: false, reason: "zip_slip" };
+      }
+      continue;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw err;
+    }
+
+    try {
+      await mkdir(current, { mode: 0o700 });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") throw err;
+    }
+
+    const created = await lstat(current);
+    if (created.isSymbolicLink() || !created.isDirectory()) {
+      return { ok: false, reason: "zip_slip" };
+    }
+  }
+
+  return { ok: true };
+}
+
 interface NormalizedEntry {
   readonly fileName: string;
   readonly type: ArchiveEntryType;
@@ -305,14 +375,16 @@ async function processEntries(
     }
 
     if (entry.type === "directory") {
-      const sub = verifySubpath(opts.destinationDir, entry.fileName);
-      if (!sub.ok) {
-        await emitRejectionAudit(opts, sub.reason, runningFiles);
+      const dir = await ensureDirectoryInsideDestination(
+        opts.destinationDir,
+        entry.fileName,
+      );
+      if (!dir.ok) {
+        await emitRejectionAudit(opts, dir.reason, runningFiles);
         throw new ArchiveRejectedError("Archive entry rejected.", {
-          reason: sub.reason,
+          reason: dir.reason,
         });
       }
-      await mkdir(sub.resolved, { recursive: true });
       continue;
     }
 
@@ -322,24 +394,51 @@ async function processEntries(
       continue;
     }
 
-    const sub = verifySubpath(opts.destinationDir, entry.fileName);
-    if (!sub.ok) {
-      await emitRejectionAudit(opts, sub.reason, runningFiles);
+    const parentDir = await ensureDirectoryInsideDestination(
+      opts.destinationDir,
+      parentRelativePath(entry.fileName),
+    );
+    if (!parentDir.ok) {
+      await emitRejectionAudit(opts, parentDir.reason, runningFiles);
       throw new ArchiveRejectedError("Archive entry rejected.", {
-        reason: sub.reason,
+        reason: parentDir.reason,
       });
     }
 
-    await mkdir(path.dirname(sub.resolved), { recursive: true });
-
     const readable = await entry.openReadStream();
+    let fd: number | null = null;
     let writeStream: WriteStream | undefined;
     try {
-      writeStream = createWriteStream(sub.resolved, { flags: "wx" });
+      const opened = await safeOpenPath({
+        root: opts.destinationDir,
+        relativePath: entry.fileName,
+        mode: "write",
+      });
+      fd = opened.fd;
+      if (fd === null) {
+        throw new Error("safeOpenPath returned null fd for write mode");
+      }
+      writeStream = createWriteStream(opened.canonicalPath, {
+        fd,
+        autoClose: true,
+      });
+      fd = null;
       await pipeline(readable, writeStream);
+    } catch (err) {
+      if (err instanceof PathInvalidError) {
+        const reason = pathInvalidToArchiveReason(err);
+        await emitRejectionAudit(opts, reason, runningFiles);
+        throw new ArchiveRejectedError("Archive entry rejected.", {
+          reason,
+        });
+      }
+      throw err;
     } finally {
       if (writeStream && !writeStream.closed) {
         writeStream.destroy();
+      }
+      if (fd !== null) {
+        await closeRawFd(fd);
       }
     }
 
@@ -567,10 +666,15 @@ export async function extractArchive(
   }
   // Confirm destination exists; otherwise the first mkdir/createWriteStream
   // would silently create something the caller never approved.
+  const destLinkStat = await lstat(opts.destinationDir);
+  if (destLinkStat.isSymbolicLink()) {
+    throw new Error("destinationDir must not be a symlink");
+  }
   const destStat = await stat(opts.destinationDir);
   if (!destStat.isDirectory()) {
     throw new Error("destinationDir must be a directory");
   }
+  const destinationDir = await realpath(opts.destinationDir);
 
   const maxBytes = opts.maxBytes ?? RESOLVED_MAX_BYTES;
   const maxFiles = opts.maxFiles ?? RESOLVED_MAX_FILES;
@@ -598,7 +702,17 @@ export async function extractArchive(
   }
 
   if (opts.format === "zip") {
-    return processEntries(iterZipEntries(opts.archivePath), opts, maxBytes, maxFiles);
+    return processEntries(
+      iterZipEntries(opts.archivePath),
+      { ...opts, destinationDir },
+      maxBytes,
+      maxFiles,
+    );
   }
-  return processEntries(iterTarEntries(opts.archivePath), opts, maxBytes, maxFiles);
+  return processEntries(
+    iterTarEntries(opts.archivePath),
+    { ...opts, destinationDir },
+    maxBytes,
+    maxFiles,
+  );
 }

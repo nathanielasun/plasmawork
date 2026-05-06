@@ -4,14 +4,15 @@
  * Two defenses in one middleware:
  *
  *   1. v4 §4.1 forbidden-body scan. Independent of any route schema, the
- *      middleware refuses request bodies that contain server-derived
- *      fields (`actor`, `actor_user_id`, `user_id`, `created_by`,
- *      `updated_by`, `approved_by`, `workspace_id`, `status`,
- *      `storage_path`). These fields are derived from `req.auth`, the
- *      URL params, or an out-of-band approval token and MUST never be
- *      accepted from the body. The scan runs BEFORE the route's Ajv
- *      schema so even a non-strict schema catches them, and emits a
- *      `request.unexpected_field` audit row before the 400 returns.
+ *      middleware recursively refuses request bodies that contain
+ *      server-derived fields (`user_id`, `actor_id`, `role_id`,
+ *      `workspace_id`, `status`, `storage_path`, `assurance_level`,
+ *      any `*_hash`, etc.). These fields are derived from `req.auth`,
+ *      URL params, database state, or an out-of-band approval token and
+ *      MUST never be accepted from the body. The scan runs BEFORE the
+ *      route's Ajv schema so even a non-strict nested metadata schema
+ *      catches them, and emits a `request.unexpected_field` audit row
+ *      before the 400 returns.
  *
  *   2. JSON Schema validation via Ajv. The route hands the middleware a
  *      JSON Schema (Ajv-compatible). The schema is compiled once and
@@ -25,11 +26,11 @@
  * malformed types) before throwing so the audit trail captures the
  * rejection regardless of the matching error envelope.
  *
- * The middleware is intentionally tolerant about non-object bodies: if
- * `req.body` is `undefined` or a primitive (e.g. a route that accepts
- * a JSON array, or a route with no body), the forbidden-key scan
+ * The middleware is intentionally tolerant about primitive bodies: if
+ * `req.body` is `undefined` or a primitive, the forbidden-key scan
  * silently passes and Ajv's schema is the sole arbiter of the body's
- * shape.
+ * shape. Arrays are traversed because an array body can still contain
+ * object elements with server-derived field names.
  */
 
 import type { FastifyRequest, FastifyReply } from "fastify";
@@ -44,7 +45,9 @@ import type { MiddlewareHandler, NamedMiddleware } from "./compose.js";
 
 /**
  * v4 §4.1 forbidden body fields. Stored lowercased; the scan is
- * case-insensitive so that `Actor`, `ACTOR`, etc. are all rejected.
+ * case-insensitive and also checks camelCase-to-snake_case aliases
+ * so that `Actor`, `ACTOR`, `userId`, `sessionHash`, etc. are all
+ * rejected.
  *
  * `workspace_id` is on the list because the workspace is derived from
  * the URL (`/api/workspaces/:workspace_id/...`) — accepting it from the
@@ -56,15 +59,30 @@ import type { MiddlewareHandler, NamedMiddleware } from "./compose.js";
  * the lifecycle gate.
  */
 export const FORBIDDEN_BODY_FIELDS: readonly string[] = Object.freeze([
+  "id",
   "actor",
+  "actor_id",
   "actor_user_id",
   "user_id",
   "created_by",
   "updated_by",
   "approved_by",
+  "decided_by",
+  "workspace_role",
+  "role_id",
   "workspace_id",
+  "created_at",
+  "updated_at",
+  "current_version_id",
   "status",
+  "disabled_at",
+  "assurance_level",
+  "auth_method",
   "storage_path",
+  "session_hash",
+  "token_hash",
+  "row_hash",
+  "prev_hash",
 ]);
 
 const FORBIDDEN_BODY_FIELDS_LOWER: ReadonlySet<string> = new Set(
@@ -72,24 +90,65 @@ const FORBIDDEN_BODY_FIELDS_LOWER: ReadonlySet<string> = new Set(
 );
 
 /**
- * Return the first forbidden field present at the top level of `body`,
- * or `null` if the body has none. Case-insensitive match.
- *
- * Top-level only — nested object validation is the route schema's job.
- * The §4.1 forbidden list is specifically about the body envelope, not
- * arbitrary nested structure (though most route schemas use
- * `additionalProperties: false` which catches deeper drift too).
+ * Return the first forbidden field present anywhere in `body`, or
+ * `null` if the body has none. Case-insensitive match, with camelCase
+ * aliases normalized to snake_case. The returned string is the field
+ * path (`metadata.user_id`, `items[0].sessionHash`, etc.) so the audit
+ * row pinpoints the smuggling attempt without echoing values.
  */
 export function containsForbiddenField(body: unknown): string | null {
-  if (body === null || typeof body !== "object" || Array.isArray(body)) {
-    return null;
-  }
-  for (const key of Object.keys(body as Record<string, unknown>)) {
-    if (FORBIDDEN_BODY_FIELDS_LOWER.has(key.toLowerCase())) {
-      return key;
+  const stack: Array<{ value: unknown; path: string }> = [
+    { value: body, path: "" },
+  ];
+  const seen = new Set<object>();
+
+  while (stack.length > 0) {
+    const { value, path } = stack.pop() as { value: unknown; path: string };
+    if (value === null || typeof value !== "object") continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        stack.push({
+          value: item,
+          path: `${path}[${index}]`,
+        });
+      });
+      continue;
+    }
+
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      const keyPath = path.length === 0 ? key : `${path}.${key}`;
+      if (isForbiddenBodyFieldName(key)) {
+        return keyPath;
+      }
+      stack.push({
+        value: (value as Record<string, unknown>)[key],
+        path: keyPath,
+      });
     }
   }
+
   return null;
+}
+
+function toSnakeAlias(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[-\s]+/g, "_")
+    .toLowerCase();
+}
+
+function isForbiddenBodyFieldName(key: string): boolean {
+  const lowered = key.toLowerCase();
+  const snake = toSnakeAlias(key);
+  return (
+    FORBIDDEN_BODY_FIELDS_LOWER.has(lowered) ||
+    FORBIDDEN_BODY_FIELDS_LOWER.has(snake) ||
+    lowered.endsWith("_hash") ||
+    snake.endsWith("_hash")
+  );
 }
 
 /**

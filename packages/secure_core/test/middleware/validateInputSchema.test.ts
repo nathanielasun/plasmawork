@@ -4,11 +4,12 @@
  * Pins the v4 §4.1 + §3 contract:
  *
  *   1. Each forbidden body field name (`actor`, `actor_user_id`,
- *      `user_id`, `created_by`, `updated_by`, `approved_by`,
- *      `workspace_id`, `status`, `storage_path`) — present at the top
- *      level of the body — produces 400 + `UNEXPECTED_FIELD` and emits
- *      `request.unexpected_field` BEFORE the schema runs. Case is
- *      ignored (`ACTOR` is rejected too).
+ *      `user_id`, `actor_id`, `created_by`, `updated_by`, `approved_by`,
+ *      `role_id`, `workspace_id`, `status`, `storage_path`, any
+ *      `*_hash`, etc.) — present anywhere in the body — produces 400 +
+ *      `UNEXPECTED_FIELD` and emits `request.unexpected_field` BEFORE
+ *      the schema runs. Case is ignored (`ACTOR` is rejected too) and
+ *      camelCase aliases (`sessionHash`) are rejected too.
  *   2. A body that contains none of the forbidden names passes the
  *      forbidden-scan and is then evaluated against the route schema.
  *   3. Ajv `additionalProperties: false` rejection on an unknown
@@ -162,6 +163,47 @@ describe("validateInputSchema — forbidden-body scan (v4 §4.1)", () => {
     expect(audit.rows[0]!.metadata).toEqual({ rejected_field: "ACTOR" });
     await app.close();
   });
+
+  it("rejects forbidden fields recursively before Ajv schema validation", async () => {
+    const app = buildTestApp(audit);
+    const res = await app.inject({
+      method: "POST",
+      url: "/test",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({
+        name: "ok",
+        metadata: {
+          nested: {
+            role_id: "smuggled-role",
+          },
+        },
+      }),
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: { code: string } }).error.code).toBe(
+      "UNEXPECTED_FIELD",
+    );
+    expect(audit.rows[0]!.metadata).toEqual({
+      rejected_field: "metadata.nested.role_id",
+    });
+    await app.close();
+  });
+
+  it("rejects forbidden fields inside array bodies", () => {
+    expect(containsForbiddenField([{ ok: true }, { session_hash: "x" }])).toBe(
+      "[1].session_hash",
+    );
+  });
+
+  it("rejects camelCase aliases and wildcard *_hash fields", () => {
+    expect(containsForbiddenField({ sessionHash: "x" })).toBe("sessionHash");
+    expect(containsForbiddenField({ lock_token_hash: "x" })).toBe(
+      "lock_token_hash",
+    );
+    expect(containsForbiddenField({ nested: { tokenContextHash: "x" } })).toBe(
+      "nested.tokenContextHash",
+    );
+  });
 });
 
 describe("validateInputSchema — Ajv schema gate", () => {
@@ -257,14 +299,29 @@ describe("validateInputSchema — helpers", () => {
     expect([...FORBIDDEN_BODY_FIELDS].sort()).toEqual(
       [
         "actor",
+        "actor_id",
         "actor_user_id",
         "approved_by",
+        "assurance_level",
+        "auth_method",
+        "created_at",
         "created_by",
+        "current_version_id",
+        "decided_by",
+        "disabled_at",
+        "id",
+        "prev_hash",
+        "role_id",
+        "row_hash",
+        "session_hash",
         "status",
         "storage_path",
+        "token_hash",
+        "updated_at",
         "updated_by",
         "user_id",
         "workspace_id",
+        "workspace_role",
       ].sort(),
     );
   });

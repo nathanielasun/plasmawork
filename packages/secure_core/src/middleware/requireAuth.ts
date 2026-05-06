@@ -65,6 +65,16 @@ function isAssuranceLevel(v: string): v is AuthContext["assuranceLevel"] {
   return v === "aal1" || v === "aal2" || v === "aal3";
 }
 
+function hasBearerAuthorizationHeader(value: unknown): boolean {
+  if (typeof value === "string") {
+    return /^Bearer\s+\S+/i.test(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some((v) => hasBearerAuthorizationHeader(v));
+  }
+  return false;
+}
+
 async function loadSessionByHash(
   pool: SecureCorePool,
   sessionHash: string,
@@ -108,11 +118,23 @@ export function requireAuth(deps: RequireAuthDeps): NamedMiddleware {
   const handler: MiddlewareHandler = async (
     req: FastifyRequest,
   ): Promise<void> => {
+    if (hasBearerAuthorizationHeader(req.headers.authorization)) {
+      await auditLogger.write({
+        workspaceId: null,
+        actorUserId: null,
+        actorType: "unauthenticated",
+        action: "login.failed",
+        result: "denied",
+        requestId: req.requestId,
+      });
+      throw new UnauthenticatedError("Authentication required.");
+    }
+
     const cookies = req.cookies as Record<string, string | undefined>;
     const presented = cookies?.[cookieName];
 
     // Pre-auth, no actor: no audit emission. Authorization-bearer is
-    // refused implicitly — we never look at `req.headers.authorization`.
+    // refused above — we never use it as an alternate credential path.
     if (typeof presented !== "string" || presented.length === 0) {
       throw new UnauthenticatedError("Authentication required.");
     }

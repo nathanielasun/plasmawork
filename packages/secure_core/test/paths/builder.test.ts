@@ -27,6 +27,7 @@ import {
   WORKSPACE_SUBPATHS,
   type WorkspaceSubpath,
 } from "../../src/paths/builder.js";
+import { repoRoot } from "../../src/secrets/repoRoot.js";
 
 const VALID_WORKSPACE_ID = "0a3f2b21-4c81-4b42-9b6d-2e0f4a1c8b97"; // v4
 const OTHER_WORKSPACE_ID = "11112222-3333-4abc-9def-555566667777"; // v4
@@ -122,6 +123,13 @@ describe("WorkspacePathBuilder.workspaceRoot / workspaceSubpathRoot", () => {
         path.join(STORAGE_ROOT, "workspaces", VALID_WORKSPACE_ID, sub),
       );
     }
+  });
+
+  it("defaults to <repo>/local_cache/workspaces/<id> without duplicating workspaces", () => {
+    const defaultBuilder = new WorkspacePathBuilder({});
+    expect(defaultBuilder.workspaceRoot(VALID_WORKSPACE_ID)).toBe(
+      path.join(repoRoot(), "local_cache", "workspaces", VALID_WORKSPACE_ID),
+    );
   });
 });
 

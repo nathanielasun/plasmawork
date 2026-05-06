@@ -77,8 +77,10 @@ export interface WorkspacePathBuilderOptions {
    * Override the on-disk storage root for workspaces. In production
    * this is wired to a secrets-resolved value at boot; the constructor
    * takes the resolved string so this module never reads `process.env`
-   * directly. In dev / tests, leave this undefined and the builder
-   * falls back to `<repoRoot>/local_cache/workspaces`.
+   * directly. This is the parent that contains the `workspaces/`
+   * namespace. In dev / tests, leave this undefined and the builder
+   * falls back to `<repoRoot>/local_cache`, producing
+   * `<repoRoot>/local_cache/workspaces/<workspaceId>/...`.
    */
   readonly workspaceStorageRoot?: string;
   /**
@@ -115,7 +117,7 @@ export class WorkspacePathBuilder {
 
   public constructor(opts: WorkspacePathBuilderOptions) {
     this.storageRoot =
-      opts.workspaceStorageRoot ?? path.join(repoRoot(), "local_cache", "workspaces");
+      opts.workspaceStorageRoot ?? path.join(repoRoot(), "local_cache");
     if (!path.isAbsolute(this.storageRoot)) {
       throw new Error(
         `WorkspacePathBuilder: workspaceStorageRoot must be absolute, got "${this.storageRoot}"`,

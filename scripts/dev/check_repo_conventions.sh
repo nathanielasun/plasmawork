@@ -1371,12 +1371,16 @@ check_file_exists packages/secure_core/src/middleware/fastify_augment.ts
 check_file_exists packages/secure_core/src/middleware/compose.ts
 check_file_exists packages/secure_core/src/middleware/requireRequestId.ts
 check_file_exists packages/secure_core/src/middleware/index.ts
+check_file_exists packages/secure_core/test/middleware/compose.test.ts
 check_grep_in_file 'export const MIDDLEWARE_ORDER' \
   packages/secure_core/src/middleware/compose.ts \
   "L2 encodes the §6.2 middleware order in one place"
 check_grep_in_file 'export function composeMiddleware' \
   packages/secure_core/src/middleware/compose.ts \
   "L2 exposes composeMiddleware() helper"
+check_grep_in_file 'out-of-order middleware' \
+  packages/secure_core/test/middleware/compose.test.ts \
+  "L2 composeMiddleware rejects out-of-order route registration"
 check_grep_in_file 'fastify' packages/secure_core/package.json \
   "L2 depends on Fastify (per ADR-0008)"
 check_grep_in_file '@fastify/cookie' packages/secure_core/package.json \
@@ -1391,7 +1395,13 @@ check_grep_in_file 'export function requireAuth' \
 check_grep_in_file 'session\.revoked' \
   packages/secure_core/src/middleware/requireAuth.ts \
   "L2.1 emits session.revoked on revoked session"
+check_grep_in_file 'hasBearerAuthorizationHeader' \
+  packages/secure_core/src/middleware/requireAuth.ts \
+  "L2.1 refuses Authorization Bearer session-token path"
 check_file_exists packages/secure_core/test/middleware/requireAuth.test.ts
+check_grep_in_file 'Authorization Bearer' \
+  packages/secure_core/test/middleware/requireAuth.test.ts \
+  "L2.1 regression covers bearer header rejection"
 # L2.2 enforceCsrfForStateChange
 check_file_exists packages/secure_core/src/middleware/enforceCsrfForStateChange.ts
 check_grep_in_file 'export function enforceCsrfForStateChange' \
@@ -1412,6 +1422,12 @@ check_grep_in_file 'export function validateInputSchema' \
 check_grep_in_file 'FORBIDDEN_BODY_FIELDS' \
   packages/secure_core/src/middleware/validateInputSchema.ts \
   "L2.3 enumerates v4 §4.1 forbidden body fields"
+check_grep_in_file 'endsWith\("_hash"\)' \
+  packages/secure_core/src/middleware/validateInputSchema.ts \
+  "L2.3 rejects wildcard *_hash body fields"
+check_grep_in_file 'metadata\.nested\.role_id' \
+  packages/secure_core/test/middleware/validateInputSchema.test.ts \
+  "L2.3 regression covers recursive forbidden-field rejection"
 check_grep_in_file 'request\.unexpected_field' \
   packages/secure_core/src/middleware/validateInputSchema.ts \
   "L2.3 emits request.unexpected_field on rejection"
@@ -1509,7 +1525,13 @@ check_grep_in_file 'path_access\.denied' \
   packages/secure_core/src/paths/builder.ts \
   "L2.10 emits path_access.denied on rejection"
 check_file_exists packages/secure_core/test/paths/builder.test.ts
+check_grep_in_file 'without duplicating workspaces' \
+  packages/secure_core/test/paths/builder.test.ts \
+  "L2.10 default path root regression prevents workspaces/workspaces drift"
 check_file_exists packages/secure_core/test/paths/safeOpen.test.ts
+check_grep_in_file 'outside-created\.txt' \
+  packages/secure_core/test/paths/safeOpen.test.ts \
+  "L2.10 safeOpen regression proves traversal write has no outside side effect"
 
 # L2.11 — archive extraction safety
 check_file_exists packages/secure_core/src/paths/extractArchive.ts
@@ -1550,6 +1572,9 @@ check_grep_in_file '"tar"' \
   packages/secure_core/package.json \
   "L2.11 depends on tar"
 check_file_exists packages/secure_core/test/paths/extractArchive.test.ts
+check_grep_in_file 'pre-existing symlink directory' \
+  packages/secure_core/test/paths/extractArchive.test.ts \
+  "L2.11 regression covers destination-side symlink escape"
 # Both archive defaults must remain explicit; an unset env var must not become "unlimited"
 check_grep_in_file 'PLASMAWORK_ARCHIVE_MAX_BYTES' \
   packages/secure_core/src/secrets/env.ts \

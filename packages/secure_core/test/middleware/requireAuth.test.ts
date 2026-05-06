@@ -160,6 +160,24 @@ describe("requireAuth", () => {
     await app.close();
   });
 
+  it("rejects Authorization Bearer even when a valid cookie is also present", async () => {
+    const r = row();
+    const { app, mocks } = await buildTestApp([r]);
+    const res = await app.inject({
+      method: "GET",
+      url: "/whoami",
+      headers: { authorization: "Bearer js-readable-token" },
+      cookies: { secure_session: VALID_TOKEN },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("UNAUTHENTICATED");
+    expect(mocks.writes).toEqual([
+      { action: "login.failed", result: "denied", actorUserId: null },
+    ]);
+    expect(mocks.updateCalls.count).toBe(0);
+    await app.close();
+  });
+
   it("rejects revoked session with session.revoked audit", async () => {
     const r = row({ revokedAt: new Date(Date.now() - 60_000) });
     const { app, mocks } = await buildTestApp([r]);

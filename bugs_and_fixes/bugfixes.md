@@ -32,6 +32,58 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-06: Secure-core Layer-2 traversal and input-boundary hardening
+
+### Affected subsystem
+- `packages/secure_core/src/middleware`
+- `packages/secure_core/src/paths`
+- `scripts/dev/check_repo_conventions.sh`
+- `AGENTS.md` / `CLAUDE.md`
+
+### Symptoms
+Layer-2 audit found several implementation discrepancies against
+`secure_multi_user_scaffolding_plan_v4.md` and
+`program_development/phase_05_security_implementation_plan.md`: direct
+`safeOpenPath` callers could touch a `../outside` candidate before the
+final containment error; archive extraction trusted destination
+directories after validating archive entry names; the forbidden body
+field scan covered only a top-level subset of v4 §4.1; bearer
+authorization was documented as refused but not enforced; the workspace
+path builder's default root produced `workspaces/workspaces/<id>`; and
+`composeMiddleware` silently sorted out-of-order middleware.
+
+### Root cause
+The implementation proved happy-path structure and many negative cases,
+but missed the exact side-effect ordering and "all shapes" variants:
+direct safe-open calls vs. builder-mediated calls, destination-side
+symlinks vs. archive-entry symlinks, nested request-body fields vs.
+top-level fields, and registration-order enforcement vs. runtime sorting.
+
+### Fix
+Moved component validation ahead of any candidate filesystem open in
+`safeOpenPath`; routed archive file writes through `safeOpenPath` and
+added lstat-based destination directory traversal; expanded
+`validateInputSchema` to recursively reject the full v4 §4.1 field list,
+camelCase aliases, and wildcard `*_hash` fields; made `requireAuth`
+refuse `Authorization: Bearer`; corrected the workspace path builder's
+default root; and changed `composeMiddleware` to throw on out-of-order
+registration.
+
+### Regression protection
+- `packages/secure_core/test/paths/safeOpen.test.ts`
+- `packages/secure_core/test/paths/extractArchive.test.ts`
+- `packages/secure_core/test/middleware/validateInputSchema.test.ts`
+- `packages/secure_core/test/middleware/requireAuth.test.ts`
+- `packages/secure_core/test/middleware/compose.test.ts`
+- `packages/secure_core/test/paths/builder.test.ts`
+- `scripts/dev/check_repo_conventions.sh`
+
+### Agent warning
+Security helpers must reject before touching the filesystem, and tests
+must assert absence of side effects, not just the thrown error. Lists
+copied from the plan must be copied completely and applied recursively
+when the rule says "request bodies", not only at the top-level envelope.
+
 ## 2026-05-06: Secure-core Layer-1 ADR audit fixes
 
 ### Affected subsystem

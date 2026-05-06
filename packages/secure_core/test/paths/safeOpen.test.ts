@@ -102,6 +102,26 @@ describe("safeOpenPath — write mode", () => {
       );
     }
   });
+
+  it("rejects traversal before creating a file outside the workspace", async () => {
+    const outsidePath = path.join(TMP_ROOT, "outside-created.txt");
+    await fsPromises.rm(outsidePath, { force: true });
+
+    await expect(
+      safeOpenPath({
+        root: WORKSPACE_ROOT,
+        relativePath: "../outside-created.txt",
+        mode: "write",
+      }),
+    ).rejects.toMatchObject({
+      code: "PATH_INVALID",
+      details: { reason: "dot_or_dotdot" },
+    });
+
+    await expect(fsPromises.stat(outsidePath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
 });
 
 describe("safeOpenPath — verify mode", () => {
@@ -206,6 +226,7 @@ describe("SAFE_OPEN_FLAGS", () => {
   it("re-exports the O_NOFOLLOW + O_CREAT constants tests assert against", () => {
     expect(typeof SAFE_OPEN_FLAGS.O_NOFOLLOW).toBe("number");
     expect(typeof SAFE_OPEN_FLAGS.O_CREAT).toBe("number");
+    expect(typeof SAFE_OPEN_FLAGS.O_EXCL).toBe("number");
     expect(typeof SAFE_OPEN_FLAGS.O_RDONLY).toBe("number");
     expect(typeof SAFE_OPEN_FLAGS.O_WRONLY).toBe("number");
   });

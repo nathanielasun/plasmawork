@@ -54,6 +54,126 @@ existence and status checks do not catch this class of bug.
 
 ---
 
+## Error Pattern: Path containment check runs after a filesystem side effect
+
+### Why it is bad
+A "safe open" helper that opens or creates the candidate path first and
+only then realpaths/compares containment can still create or touch an
+outside file when given `../outside`. Returning an error after the
+side effect does not undo the security violation.
+
+### Required behavior
+- Validate relative path components (`NUL`, encoded separators, empty,
+  `.`, `..`, leading dot, trailing dot/space, regex) before any
+  filesystem call that can touch the candidate path.
+- Keep the final realpath containment check as defense-in-depth, but do
+  not rely on it as the first traversal gate.
+- Regression test write mode with `../outside` and assert the outside
+  file does not exist after rejection.
+
+### Detection
+- In safe-open helpers, inspect the order: component validation must
+  appear before `open`, `createWriteStream`, `mkdir`, or equivalent.
+- A test that asserts only "throws PATH_INVALID" is insufficient; it
+  must assert no outside side effect.
+
+### Bug log
+- 2026-05-06 *secure_core L2 audit*: `safeOpenPath` relied on final
+  realpath containment when called directly. Write mode could create an
+  outside candidate before throwing. Fix: validate `relativePath` with
+  the shared component classifier before candidate open.
+
+---
+
+## Error Pattern: Archive extraction validates entry names but trusts destination state
+
+### Why it is bad
+An archive extractor can reject `../escape`, symlink entries, and
+hardlink entries while still writing outside the destination if the
+destination already contains a symlinked directory (`dest/linked ->
+/outside`) and the archive entry is `linked/file.txt`. Lexical
+`path.resolve` checks prove the string is under `dest`; they do not
+prove the filesystem target is under `dest`.
+
+### Required behavior
+- Reject destination roots that are symlinks.
+- Create/traverse destination directories with `lstat` checks that
+  refuse existing symlinks and non-directories.
+- Open extracted files through the same symlink-safe safe-open helper
+  used by direct workspace writes.
+- Regression test a pre-existing destination symlink and assert the
+  outside target remains unwritten.
+
+### Detection
+- Grep archive extractors for `mkdir(..., { recursive: true })` and
+  `createWriteStream(path)` on destination paths. Each needs a
+  symlink-safe traversal/open wrapper.
+- Tests must cover destination-side symlinks, not only symlink entries
+  inside the archive.
+
+### Bug log
+- 2026-05-06 *secure_core L2 audit*: `extractArchive` validated entry
+  names but used normal `mkdir` and `createWriteStream`; a destination
+  symlink could redirect writes. Fix: lstat directory traversal and
+  `safeOpenPath` for extracted file writes.
+
+---
+
+## Error Pattern: Forbidden-field scan copies only a subset of the plan list
+
+### Why it is bad
+The v4 plan's forbidden request-body list is intentionally broad:
+identity, role, workspace, lifecycle, timestamp, path, status, and hash
+fields are server-derived. Copying only the first few names (`user_id`,
+`created_by`, `storage_path`) leaves mass-assignment lanes for fields
+like `role_id`, `assurance_level`, `session_hash`, or camelCase aliases.
+Scanning only the top level misses free-form nested metadata blobs.
+
+### Required behavior
+- Keep the forbidden-field constant aligned with v4 §4.1 and the
+  AGENTS/CLAUDE security rules.
+- Reject fields recursively, including array elements.
+- Normalize case and camelCase-to-snake_case aliases; reject any
+  `*_hash` field even when it is not explicitly listed.
+
+### Detection
+- Compare `FORBIDDEN_BODY_FIELDS` against `secure_multi_user_scaffolding_plan_v4.md` §4.1.
+- Regression tests must include a nested forbidden field, a field inside
+  an array body, a camelCase alias, and an unlisted `*_hash`.
+
+### Bug log
+- 2026-05-06 *secure_core L2 audit*: `validateInputSchema` enforced a
+  nine-field, top-level-only subset. Fix: full recursive list plus
+  camelCase and wildcard-hash matching.
+
+---
+
+## Error Pattern: Middleware composer silently repairs security order
+
+### Why it is bad
+If a route registers middleware out of order and the composer silently
+sorts it, code review sees one order while the runtime executes another.
+The route looks miswired, tests pass, and later refactors may bypass the
+composer because "the helper fixes it anyway." Security middleware order
+is a registration-time invariant, not a convenience sort.
+
+### Required behavior
+- `composeMiddleware` rejects unknown, duplicate, and out-of-order
+  middleware names at route registration.
+- Tests prove out-of-order input throws instead of being sorted.
+
+### Detection
+- Grep composers for `.sort(` on middleware lists. Sorting security
+  middleware should be treated as a review finding unless an ADR
+  explicitly allows it.
+
+### Bug log
+- 2026-05-06 *secure_core L2 audit*: `composeMiddleware` stable-sorted
+  out-of-order inputs despite its own docstring saying it would throw.
+  Fix: preserve caller order and raise `MiddlewareOrderError` on drift.
+
+---
+
 ## Initial set of warnings (Phase 0 — pre-emptive based on plan §22 and §16.3)
 
 The patterns below are not yet observed; they are pre-emptive guardrails encoded from the plan. Expand them as real patterns appear.

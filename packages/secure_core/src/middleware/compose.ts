@@ -74,11 +74,13 @@ export class MiddlewareOrderError extends Error {
 
 /**
  * Compose a list of middleware in v4 §6.2 order. The implementation
- * stable-sorts on the canonical order while refusing exact duplicates
- * — passing the same middleware name twice is a programmer error
- * (e.g. composing `requireCapability("a")` and `requireCapability("b")`
- * should be expressed by chaining one combined check, not by listing
- * the name twice).
+ * refuses out-of-order inputs instead of sorting them: silently
+ * rearranging a route hides review mistakes and can make an inline
+ * route look different from what Fastify actually runs. Exact
+ * duplicates are also refused — passing the same middleware name twice
+ * is a programmer error (e.g. composing `requireCapability("a")` and
+ * `requireCapability("b")` should be expressed by chaining one
+ * combined check, not by listing the name twice).
  *
  * Throws `MiddlewareOrderError` for unknown names so a typo at the
  * route registration site fails loud rather than silently dropping
@@ -88,6 +90,7 @@ export function composeMiddleware(
   middlewares: ReadonlyArray<NamedMiddleware>,
 ): MiddlewareHandler[] {
   const seen = new Set<MiddlewareName>();
+  let previousIndex = -1;
   for (const m of middlewares) {
     if (!(m.name in ORDER_INDEX)) {
       throw new MiddlewareOrderError(
@@ -100,9 +103,13 @@ export function composeMiddleware(
       );
     }
     seen.add(m.name);
+    const index = ORDER_INDEX[m.name];
+    if (index < previousIndex) {
+      throw new MiddlewareOrderError(
+        `Middleware ${m.name} is out of order. Expected §6.2 order: ${MIDDLEWARE_ORDER.join(" -> ")}`,
+      );
+    }
+    previousIndex = index;
   }
-  const sorted = [...middlewares].sort(
-    (a, b) => ORDER_INDEX[a.name] - ORDER_INDEX[b.name],
-  );
-  return sorted.map((m) => m.handler);
+  return middlewares.map((m) => m.handler);
 }

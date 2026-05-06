@@ -57,7 +57,7 @@ All development agents must treat authentication, authorization, workspace isola
 
 Do not create global capsule, run, tool, or artifact endpoints.
 
-Do not trust `user_id`, `actor_id`, `created_by`, `updated_by`, `approved_by`, `workspace_role`, `role_id`, `workspace_id`, `status`, `storage_path`, `assurance_level`, `auth_method`, or any `*_hash` field from request bodies.
+Do not trust `id`, `user_id`, `actor`, `actor_id`, `actor_user_id`, `created_by`, `updated_by`, `approved_by`, `decided_by`, `workspace_role`, `role_id`, `workspace_id`, `created_at`, `updated_at`, `current_version_id`, `status`, `disabled_at`, `storage_path`, `assurance_level`, `auth_method`, or any `*_hash` field from request bodies at any nesting depth.
 
 All actor fields must be derived server-side from authenticated session context.
 

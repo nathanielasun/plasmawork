@@ -18,6 +18,12 @@
  *   protected routes. When Node ships an `openat2` binding the walk
  *   loop is the single seam to upgrade.
  *
+ * Defense-in-depth: this helper validates `relativePath` itself before
+ * any filesystem call that can touch the candidate. Callers such as the
+ * path builder validate first for audit metadata, but direct safe-open
+ * users still cannot create/open `../outside` and rely on the final
+ * containment check after the side effect.
+ *
  * Verify mode supports the builder use case "where will this file go"
  * — the leaf may not yet exist. We walk every parent component with
  * O_NOFOLLOW (raising on ELOOP / ENOTDIR), canonicalize the deepest
@@ -36,6 +42,7 @@ import {
 import * as path from "node:path";
 
 import { PathInvalidError } from "../errors/shapes.js";
+import { classifyRelativePath } from "./components.js";
 
 /**
  * Promise-shaped raw `fs.open` returning the bare fd. We avoid
@@ -74,6 +81,7 @@ export const SAFE_OPEN_FLAGS = Object.freeze({
   O_RDONLY: fsConstants.O_RDONLY,
   O_WRONLY: fsConstants.O_WRONLY,
   O_CREAT: fsConstants.O_CREAT,
+  O_EXCL: fsConstants.O_EXCL,
   O_NOFOLLOW: fsConstants.O_NOFOLLOW,
 });
 
@@ -82,7 +90,7 @@ export type SafeOpenMode = "read" | "write" | "verify";
 export interface SafeOpenOptions {
   /** Absolute, already-canonical workspace root. */
   readonly root: string;
-  /** Already validated by `classifyRelativePath`. */
+  /** Relative path; validated internally before any candidate open. */
   readonly relativePath: string;
   readonly mode: SafeOpenMode;
 }
@@ -243,13 +251,16 @@ export async function safeOpenPath(
   // Empty relativePath means "the root itself"; in verify mode that's
   // legal (e.g. subpathRoot lookups). Read/write require a leaf.
   const rel = opts.relativePath;
-  const components = rel.length === 0 ? [] : rel.split("/");
-  if (rel.length > 0 && components.some((c) => c.length === 0)) {
-    // classifyRelativePath should have caught this; defense-in-depth.
-    throw new PathInvalidError("Path component invalid.", {
-      reason: "empty",
-    });
+  if (rel.length > 0) {
+    const rejection = classifyRelativePath(rel);
+    if (rejection !== null) {
+      throw new PathInvalidError("Path component invalid.", {
+        reason: rejection.reason,
+      });
+    }
   }
+
+  const components = rel.length === 0 ? [] : rel.split("/");
 
   const candidate = path.join(realRoot, ...components);
 
@@ -289,7 +300,10 @@ export async function safeOpenPath(
   const flags =
     opts.mode === "read"
       ? fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW
-      : fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW;
+      : fsConstants.O_WRONLY |
+        fsConstants.O_CREAT |
+        fsConstants.O_EXCL |
+        fsConstants.O_NOFOLLOW;
 
   let fd: number;
   try {
