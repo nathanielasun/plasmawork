@@ -1935,6 +1935,56 @@ check_grep_in_file 'archive_unsafe' \
 check_grep_in_file 'extracted' \
   packages/secure_core/test/workers/uploadRoute.test.ts \
   "workerUploadRoute archive .extracted dir cleanup is asserted (audit fix #2)"
+
+section "secure_core Layer-4 routes (L4.1, L4.12)"
+# L4.12 — health / readiness / metrics
+check_file_exists packages/secure_core/src/routes/health.ts
+check_file_exists packages/secure_core/src/routes/index.ts
+check_grep_in_file 'export const healthRoutes' \
+  packages/secure_core/src/routes/health.ts \
+  "L4.12 exports healthRoutes Fastify plugin"
+check_grep_in_file 'export class MetricsRegistry' \
+  packages/secure_core/src/routes/health.ts \
+  "L4.12 ships a tiny MetricsRegistry for Prometheus text output"
+check_grep_in_file '/readiness' \
+  packages/secure_core/src/routes/health.ts \
+  "L4.12 ships /readiness with DB probe + 1s deadline"
+check_grep_in_file '/metrics' \
+  packages/secure_core/src/routes/health.ts \
+  "L4.12 ships /metrics in Prometheus text format"
+check_file_exists packages/secure_core/test/routes/health.test.ts
+# L4.1 — workspace + members
+check_file_exists packages/secure_core/src/routes/workspaces.ts
+check_file_exists packages/secure_core/src/workspaces/service.ts
+check_grep_in_file 'export const workspaceRoutes' \
+  packages/secure_core/src/routes/workspaces.ts \
+  "L4.1 exports workspaceRoutes Fastify plugin"
+check_grep_in_file 'export class WorkspaceService' \
+  packages/secure_core/src/workspaces/service.ts \
+  "L4.1 exports WorkspaceService"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/workspaces.ts \
+  "L4.1 routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'workspace\.created' \
+  packages/secure_core/src/workspaces/service.ts \
+  "L4.1 emits workspace.created on createWorkspace"
+check_grep_in_file 'workspace\.member_added' \
+  packages/secure_core/src/workspaces/service.ts \
+  "L4.1 emits workspace.member_added on addMember"
+check_grep_in_file 'workspace\.member_removed' \
+  packages/secure_core/src/workspaces/service.ts \
+  "L4.1 emits workspace.member_removed on removeMember"
+check_grep_in_file 'workspace\.role_changed' \
+  packages/secure_core/src/workspaces/service.ts \
+  "L4.1 emits workspace.role_changed on changeMemberRole"
+# Hard rule: routes/services NEVER read actor identity from req.body
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/routes/workspaces.ts \
+  "L4.1 workspace routes never read actor identity from req.body (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/workspaces/service.ts \
+  "L4.1 WorkspaceService never reads actor identity from req.body"
+check_file_exists packages/secure_core/test/routes/workspaces.test.ts
 check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh stub"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
