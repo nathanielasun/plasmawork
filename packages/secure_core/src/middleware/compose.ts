@@ -40,6 +40,7 @@ export type MiddlewareHandler = (
  */
 export const MIDDLEWARE_ORDER = [
   "requireRequestId",
+  "enforceRateLimit",
   "requireAuth",
   "enforceCsrfForStateChange",
   "validateInputSchema",

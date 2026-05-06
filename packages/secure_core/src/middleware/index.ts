@@ -14,6 +14,14 @@ export {
 } from "./compose.js";
 
 export { requireRequestId } from "./requireRequestId.js";
+export {
+  enforceRateLimit,
+  InMemoryRateLimitStore,
+  type EnforceRateLimitDeps,
+  type RateLimitBucket,
+  type RateLimitKeyExtractor,
+  type RateLimitStore,
+} from "./enforceRateLimit.js";
 export { requireAuth, type RequireAuthDeps } from "./requireAuth.js";
 export {
   enforceCsrfForStateChange,

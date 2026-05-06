@@ -1583,6 +1583,25 @@ check_grep_in_file 'PLASMAWORK_ARCHIVE_MAX_FILES' \
   packages/secure_core/src/secrets/env.ts \
   "L2.11 registers PLASMAWORK_ARCHIVE_MAX_FILES in the env helper"
 
+# L2.12 — rate-limit middleware
+check_file_exists packages/secure_core/src/middleware/enforceRateLimit.ts
+check_grep_in_file 'export function enforceRateLimit' \
+  packages/secure_core/src/middleware/enforceRateLimit.ts \
+  "L2.12 exports enforceRateLimit(deps) factory"
+check_grep_in_file 'export class InMemoryRateLimitStore' \
+  packages/secure_core/src/middleware/enforceRateLimit.ts \
+  "L2.12 ships an in-memory limiter (Layer-3 swaps in Redis)"
+check_grep_in_file 'rate_limit\.triggered' \
+  packages/secure_core/src/middleware/enforceRateLimit.ts \
+  "L2.12 emits rate_limit.triggered on every rejection (v4 §8)"
+check_grep_in_file 'Too many requests\.' \
+  packages/secure_core/src/middleware/enforceRateLimit.ts \
+  "L2.12 returns generic anti-enumeration message (v4 §8)"
+check_grep_in_file '"enforceRateLimit"' \
+  packages/secure_core/src/middleware/compose.ts \
+  "L2.12 slot exists in MIDDLEWARE_ORDER between requireRequestId and requireAuth"
+check_file_exists packages/secure_core/test/middleware/enforceRateLimit.test.ts
+
 # v4 references ADR-0013 for the aggregate Phase 0.5 ADR (the
 # original v4 reference to ADR-0004 collided with the units-library
 # ADR and was renumbered during round-2 review).
