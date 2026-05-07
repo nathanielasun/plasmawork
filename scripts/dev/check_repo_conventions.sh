@@ -498,6 +498,8 @@ check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnosti
 check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/src/tool.py
 check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/tests/test_absorption_spectrum.py
 check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/README.md
+check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/assumptions.md
+check_file_exists packages/internal_tools/registry/absorption_spectrum_diagnostic/changelog.md
 check_file_exists tests/integration/test_tool_registry.py
 
 section "Phase 3C — Tool Templates"
@@ -536,6 +538,68 @@ check_grep_in_file '/api/tools/\{name\}/run-tests' packages/core/src/simworkbenc
 check_grep_in_file '/api/tools/\{name\}/execute' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/{name}/execute (Phase 3 gate verb)"
 check_grep_in_file '/api/tools/\{name\}/export' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/{name}/export (Phase 3 gate verb)"
 check_grep_in_file '/api/tools/import' packages/core/src/simworkbench/api/server.py "API exposes /api/tools/import (Phase 3 gate verb)"
+
+section "Post-plan — Tool construction methodology + UI binding"
+check_file_exists program_development/tool_construction_methodology_plan.md \
+  "tool construction methodology plan"
+check_dir_exists .agents/skills/simworkbench-tool-construction \
+  "repo-local tool-construction skill"
+check_file_exists .agents/skills/simworkbench-tool-construction/SKILL.md \
+  "tool-construction skill SKILL.md"
+check_file_exists .agents/skills/simworkbench-tool-construction/agents/openai.yaml \
+  "tool-construction skill OpenAI metadata"
+for ref in tool_package_contract tool_ui_binding_contract security_and_provenance validation_checklist; do
+  check_file_exists ".agents/skills/simworkbench-tool-construction/references/$ref.md" \
+    "tool-construction skill reference $ref"
+done
+check_file_executable .agents/skills/simworkbench-tool-construction/scripts/check_tool_package.py \
+  "tool package checker"
+check_file_executable scripts/dev/install_tool_construction_skill.sh \
+  "tool-construction skill installer"
+check_grep_in_file 'TOOL-CONTRACT' .agents/skills/simworkbench-tool-construction/SKILL.md \
+  "tool-construction skill carries TOOL-CONTRACT lookup tag"
+check_grep_in_file 'TOOL-UI-BINDING' .agents/skills/simworkbench-tool-construction/SKILL.md \
+  "tool-construction skill carries TOOL-UI-BINDING lookup tag"
+check_grep_in_file 'TOOL-SECURITY' .agents/skills/simworkbench-tool-construction/SKILL.md \
+  "tool-construction skill carries TOOL-SECURITY lookup tag"
+check_file_exists packages/core/src/simworkbench/tools/schema.py \
+  "tool UI schema normalizer"
+check_file_exists packages/core/src/simworkbench/tools/artifacts.py \
+  "tool artifact materializer"
+check_file_exists packages/core/src/simworkbench/tools/run_manager.py \
+  "tool run manager"
+check_grep_in_file '/api/tools/\{name\}/schema' packages/core/src/simworkbench/api/server.py \
+  "API exposes /api/tools/{name}/schema"
+check_grep_in_file '/api/tools/\{name\}/preview' packages/core/src/simworkbench/api/server.py \
+  "API exposes /api/tools/{name}/preview"
+check_grep_in_file '/api/tools/\{name\}/runs' packages/core/src/simworkbench/api/server.py \
+  "API exposes /api/tools/{name}/runs"
+check_grep_in_file '/api/tool-artifacts/\{artifact_id\}' packages/core/src/simworkbench/api/server.py \
+  "API exposes /api/tool-artifacts/{artifact_id}"
+check_file_exists apps/workbench-ui/src/components/tools/ToolWorkbench.tsx \
+  "ToolWorkbench UI binding component"
+for component in ToolInputForm ToolDataMapper ToolRunConsole ToolOutputInspector ToolArtifactBrowser ToolDiagramViewer ToolValidationPanel; do
+  check_file_exists "apps/workbench-ui/src/components/tools/$component.tsx" \
+    "$component UI tool-binding component"
+done
+check_file_exists apps/workbench-ui/src/__tests__/ToolWorkbench.test.tsx \
+  "ToolWorkbench Vitest coverage"
+check_file_exists tests/integration/test_tool_run_artifacts.py \
+  "tool run artifact integration tests"
+check_file_exists tests/regression/test_tool_artifact_path_isolation.py \
+  "tool artifact path isolation regression tests"
+check_file_exists tests/regression/test_tool_construction_skill.py \
+  "tool-construction skill regression tests"
+check_file_exists tests/unit/test_tool_metadata.py \
+  "tool metadata contract unit tests"
+check_grep_in_file 'simworkbench-tool-construction' AGENTS.md \
+  "AGENTS points to repo-local tool-construction skill"
+check_grep_in_file 'simworkbench-tool-construction' CLAUDE.md \
+  "CLAUDE points to repo-local tool-construction skill"
+check_grep_in_file 'General tool workbench' docs_site/src/content/internal_tools.tsx \
+  "internal tools docs describe general tool workbench"
+check_grep_in_file 'install_tool_construction_skill' README.md \
+  "README documents explicit tool-construction skill installation"
 
 # ---------------------------------------------------------------------------
 # Phase 4 — Agent-Assisted Paper Ingestion (Closed 2026-05-02). Every entity

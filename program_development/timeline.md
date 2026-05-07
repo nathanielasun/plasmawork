@@ -4,6 +4,31 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-07 (Tool construction methodology implementation)
+
+### Completed
+- Added the repo-local `.agents/skills/simworkbench-tool-construction/` skill with concise `SKILL.md`, OpenAI metadata, one-hop references, and a deterministic `check_tool_package.py` validator.
+- Added `scripts/dev/install_tool_construction_skill.sh` so local agents can explicitly install the skill by symlink or copy into a Codex skills directory.
+- Extended the internal-tool contract with strict `io`, `permissions`, `ui`, and `artifacts` sections while preserving fail-loud metadata validation.
+- Added UI-safe tool schema normalization, local tool-run management, artifact materialization under `local_cache/tool_runs/`, preview/run/artifact API endpoints, and legacy `/execute` compatibility.
+- Replaced the disabled Tools construction card with `ToolWorkbench` and schema-bound input, data-mapping, run-console, validation, artifact, diagram, and output-inspection components.
+- Updated the absorption-spectrum reference tool and all internal-tool templates with the new metadata sections.
+- Wired convention-checker assertions for the skill, runtime, API, UI, tests, and docs.
+
+### Changed
+- Tool UI bindings now use typed API client methods for schema, preview, run, and artifact listing; components do not call `fetch` directly.
+- Tool outputs that are table/diagram/file/report-like are artifact-backed with server-derived path and hash metadata.
+- Internal-tool docs and agent manuals now point to the repo-local skill without duplicating its full workflow.
+
+### Open questions
+- Secure-core workspace-scoped tool execution remains the deployment target. The current implementation ships the local-compatible API and metadata contract that the secure route can consume.
+- Diagram rendering intentionally supports structured graph/flow/schema data only; richer graph layout libraries can be added later behind the same safe renderer contract.
+
+### Next steps
+- Add secure-core workspace-scoped tool-run routes when the deployed multi-user UI switches from the local `/api/tools` compatibility layer to secure-core execution.
+
+---
+
 ## 2026-05-07 (Tool construction methodology and UI binding plan)
 
 ### Completed

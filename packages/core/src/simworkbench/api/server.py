@@ -29,6 +29,11 @@ Endpoints:
 - ``POST /api/tools/{name}/status``            — lifecycle promotion (Phase 3D).
 - ``POST /api/tools/{name}/run-tests``         — pytest the tool (Phase 3D).
 - ``POST /api/tools/{name}/execute``           — invoke the tool with kwargs (Phase 3D).
+- ``GET  /api/tools/{name}/schema``            — normalized UI-safe tool contract.
+- ``POST /api/tools/{name}/preview``           — validate a run without side effects.
+- ``POST /api/tools/{name}/runs``              — create a local tool run.
+- ``GET  /api/tools/{name}/runs/{run_id}``     — read local tool run metadata.
+- ``GET  /api/tools/{name}/runs/{run_id}/artifacts`` — list run artifacts.
 - ``POST /api/tools/{name}/export``            — zip the tool tree (Phase 3D).
 - ``POST /api/tools/import``                   — copy a tool tree into
   ``local_cache/imported_tools/`` (Phase 3D).
@@ -75,9 +80,13 @@ from simworkbench.tools import (
     ApprovalError,
     LifecycleError,
     ToolRegistry,
+    ToolRunManager,
+    ToolSchemaError,
     ToolStatus,
     consume_approval,
+    normalize_tool_schema,
 )
+from simworkbench.tools.artifacts import ToolArtifactError
 
 # ---------------------------------------------------------------------------
 # Request / response schemas
@@ -137,7 +146,20 @@ class ToolExecuteBody(BaseModel):
     """POST /api/tools/{name}/execute body."""
 
     kwargs: dict[str, Any] = Field(default_factory=dict)
+    inputs: dict[str, Any] = Field(default_factory=dict)
     units: dict[str, str] = Field(default_factory=dict)
+    data_mappings: dict[str, Any] = Field(default_factory=dict)
+
+    def tool_kwargs(self) -> dict[str, Any]:
+        """Return the canonical tool input mapping.
+
+        ``kwargs`` is the legacy local API shape. ``inputs`` is the UI
+        workbench shape. Both are accepted during the migration; if a caller
+        sends both, they must agree so the server does not choose silently.
+        """
+        if self.kwargs and self.inputs and self.kwargs != self.inputs:
+            raise ValueError("Request must not send conflicting kwargs and inputs")
+        return dict(self.kwargs or self.inputs)
 
 
 class ToolImportBody(BaseModel):
@@ -1099,16 +1121,111 @@ def create_app() -> FastAPI:
         registry.refresh()
         return registry
 
+    _tool_runs = ToolRunManager()
+
+    def _tool_entry_or_404(name: str):
+        try:
+            return _registry().get(name)
+        except Exception as exc:  # noqa: BLE001 — surfaced verbatim.
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    def _tool_compat_output(run: Any) -> dict[str, Any]:
+        """Rebuild the legacy /execute output shape from a persisted run.
+
+        New tool runs materialize table/file/diagram outputs as artifacts.
+        ``/execute`` remains the small synchronous compatibility endpoint, so
+        it reads JSON/text artifacts back into the old ``{"output": ...}``
+        response while still leaving the run/artifact metadata behind for the
+        new UI surfaces.
+        """
+        import json as _json
+
+        output = dict(run.inline_output)
+        for artifact in run.artifacts:
+            target = (repo_root() / artifact.path).resolve()
+            try:
+                target.relative_to(repo_root())
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Artifact {artifact.artifact_id!r} escapes repo root",
+                ) from exc
+            if artifact.mime_type == "application/json":
+                output[artifact.name] = _json.loads(target.read_text(encoding="utf-8"))
+            elif artifact.mime_type in {"text/markdown", "text/plain"}:
+                output[artifact.name] = target.read_text(encoding="utf-8")
+            else:
+                output[artifact.name] = artifact.model_dump(mode="json")
+        return output
+
+    def _tool_run_api_response(run: Any) -> dict[str, Any]:
+        """Return a UI-friendly run payload while preserving raw fields.
+
+        The raw ``ToolRun`` manifest fields (``inline_output`` and
+        ``artifacts``) stay in the response for Python/integration callers.
+        The UI consumes the normalized ``outputs`` / ``validation`` / ``logs``
+        fields so it does not need to know the persistence shape.
+        """
+        payload = run.model_dump(mode="json")
+        outputs: list[dict[str, Any]] = []
+        for name, value in run.inline_output.items():
+            outputs.append(
+                {
+                    "name": name,
+                    "kind": "scalar" if not isinstance(value, (dict, list)) else "json",
+                    "value": value,
+                    "units": value.get("units") if isinstance(value, dict) else None,
+                }
+            )
+        for artifact in run.artifacts:
+            outputs.append(
+                {
+                    "name": artifact.name,
+                    "kind": artifact.kind,
+                    "value": artifact.preview,
+                    "artifact_id": artifact.artifact_id,
+                    "mime_type": artifact.mime_type,
+                }
+            )
+        validation: list[dict[str, str]] = []
+        if run.status.value == "failed":
+            validation.append(
+                {
+                    "severity": "error",
+                    "message": run.error or "Tool run failed.",
+                }
+            )
+        elif run.status.value == "completed":
+            validation.append(
+                {
+                    "severity": "info",
+                    "message": "Tool run completed.",
+                }
+            )
+        payload.update(
+            {
+                "name": run.tool_name,
+                "outputs": outputs,
+                "validation": validation,
+                "logs": [
+                    f"run {run.run_id} started",
+                    (
+                        f"run {run.status.value}"
+                        if run.completed_at is None
+                        else f"run {run.status.value} at {run.completed_at}"
+                    ),
+                ],
+            }
+        )
+        return payload
+
     @app.get("/api/tools")
     def list_tools() -> list[dict[str, Any]]:
         return _registry().index()
 
     @app.get("/api/tools/{name}")
     def get_tool(name: str) -> dict[str, Any]:
-        try:
-            entry = _registry().get(name)
-        except Exception as exc:  # noqa: BLE001 — surfaced verbatim.
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        entry = _tool_entry_or_404(name)
         return {
             "name": entry.name,
             "directory": str(entry.directory.relative_to(repo_root())),
@@ -1120,10 +1237,7 @@ def create_app() -> FastAPI:
         """Return the tool's README + tool.yaml text so the UI can render
         documentation without a second fetch round-trip.
         """
-        try:
-            entry = _registry().get(name)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        entry = _tool_entry_or_404(name)
         readme = entry.directory / "README.md"
         yaml_path = entry.directory / "tool.yaml"
         return {
@@ -1131,6 +1245,86 @@ def create_app() -> FastAPI:
             "readme": readme.read_text(encoding="utf-8") if readme.is_file() else "",
             "tool_yaml": yaml_path.read_text(encoding="utf-8") if yaml_path.is_file() else "",
         }
+
+    @app.get("/api/tools/{name}/schema")
+    def get_tool_schema(name: str) -> dict[str, Any]:
+        """Return the normalized UI-safe tool contract."""
+        entry = _tool_entry_or_404(name)
+        return normalize_tool_schema(entry.metadata)
+
+    @app.post("/api/tools/{name}/preview")
+    def preview_tool(name: str, body: ToolExecuteBody) -> dict[str, Any]:
+        """Validate a tool run request and report planned side effects."""
+        entry = _tool_entry_or_404(name)
+        try:
+            preview = _tool_runs.preview(
+                entry,
+                kwargs=body.tool_kwargs(),
+                units=body.units,
+            )
+        except (ToolSchemaError, ToolArtifactError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        response = preview.model_dump(mode="json")
+        response["schema"] = response.pop("contract")
+        response["name"] = response["tool_name"]
+        response["ok"] = True
+        response["validation"] = [
+            {
+                "severity": "info",
+                "message": "Preview accepted; no tool side effects were run.",
+            }
+        ]
+        for artifact in response["planned_artifacts"]:
+            artifact.setdefault(
+                "artifact_id",
+                f"planned:{entry.name}:{artifact.get('name', 'artifact')}",
+            )
+        return response
+
+    @app.post("/api/tools/{name}/runs")
+    def create_tool_run(name: str, body: ToolExecuteBody) -> dict[str, Any]:
+        """Create a local synchronous tool run and persist output artifacts."""
+        entry = _tool_entry_or_404(name)
+        try:
+            run = _tool_runs.run(entry, kwargs=body.tool_kwargs(), units=body.units)
+        except (ToolSchemaError, ToolArtifactError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _tool_run_api_response(run)
+
+    @app.get("/api/tools/{name}/runs/{run_id}")
+    def get_tool_run(name: str, run_id: str) -> dict[str, Any]:
+        try:
+            run = _tool_runs.get_run(name, run_id)
+        except ToolArtifactError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 — registry/read failures become 404.
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return _tool_run_api_response(run)
+
+    @app.get("/api/tools/{name}/runs/{run_id}/artifacts")
+    def list_tool_run_artifacts(name: str, run_id: str) -> dict[str, Any]:
+        try:
+            artifacts = _tool_runs.list_artifacts(name, run_id)
+        except ToolArtifactError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 — registry/read failures become 404.
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "name": name,
+            "run_id": run_id,
+            "artifacts": [artifact.model_dump(mode="json") for artifact in artifacts],
+        }
+
+    @app.get("/api/tool-artifacts/{artifact_id}")
+    def get_tool_artifact(artifact_id: str) -> dict[str, Any]:
+        """Return safe metadata + preview for a materialized tool artifact."""
+        try:
+            artifact = _tool_runs.get_artifact(artifact_id)
+        except ToolArtifactError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 — read failures become 404.
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return artifact.model_dump(mode="json")
 
     @app.post("/api/tools/{name}/status")
     def set_tool_status(name: str, body: ToolStatusBody) -> dict[str, Any]:
@@ -1239,40 +1433,19 @@ def create_app() -> FastAPI:
         ``simworkbench.units.Q``). Output ports declared in tool.yaml
         are validated by ``RegisteredTool.execute``.
         """
-        from simworkbench.units import Q
-
+        entry = _tool_entry_or_404(name)
         try:
-            entry = _registry().get(name)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        # Build kwargs: any key in `body.units` gets wrapped in Q().
-        prepared: dict[str, Any] = {}
-        for key, value in body.kwargs.items():
-            if key in body.units:
-                prepared[key] = Q(value, body.units[key])
-            else:
-                prepared[key] = value
-        try:
-            output = entry.execute(**prepared)
-        except Exception as exc:  # noqa: BLE001
+            run = _tool_runs.run(entry, kwargs=body.tool_kwargs(), units=body.units)
+        except (ToolSchemaError, ToolArtifactError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        # Convert any unit-aware results back to (magnitude, units) pairs
-        # so the response is JSON-serializable.
-        from simworkbench.units.registry import get_registry as _ureg
-
-        def _serialize(v: Any) -> Any:
-            if isinstance(v, _ureg().Quantity):
-                mag = v.magnitude
-                if hasattr(mag, "tolist"):
-                    mag = mag.tolist()
-                return {"magnitude": mag, "units": str(v.units)}
-            if hasattr(v, "tolist"):
-                return v.tolist()
-            return v
+        if run.status.value == "failed":
+            raise HTTPException(status_code=400, detail=run.error or "Tool run failed")
 
         return {
             "name": name,
-            "output": {k: _serialize(output[k]) for k in output},
+            "run_id": run.run_id,
+            "output": _tool_compat_output(run),
+            "artifacts": [artifact.model_dump(mode="json") for artifact in run.artifacts],
         }
 
     @app.post("/api/tools/{name}/export")

@@ -37,3 +37,34 @@ validation:
   tests:
     - tests/test_absorption_spectrum.py
   reference_cases: []
+
+io:
+  mode: mixed
+  max_inline_bytes: 65536
+
+permissions:
+  filesystem: none
+  network: none
+  high_risk_actions: []
+  approval_required: []
+
+ui:
+  display_name: Absorption Spectrum Diagnostic
+  input_groups:
+    - id: spectrum
+      title: Spectrum Data
+      ports:
+        - frequency
+        - intensity
+  output_views:
+    - port: peaks
+      renderer: table
+    - port: peak_count
+      renderer: scalar
+
+artifacts:
+  outputs:
+    - name: peaks
+      kind: table
+      mime_type: application/json
+      description: Materialized peak rows for UI table rendering.

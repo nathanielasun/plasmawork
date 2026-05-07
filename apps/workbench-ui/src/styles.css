@@ -972,6 +972,245 @@ ol.lifecycle li.lifecycle-active {
   gap: var(--space-2);
   font-weight: 800;
 }
+
+/* =============================================================================
+ * Tool Workbench — schema-bound internal tool runner.
+ * ===========================================================================*/
+
+.tool-workbench {
+  overflow: hidden;
+}
+.tool-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+  margin-bottom: var(--space-4);
+}
+.tool-workbench-main,
+.tool-workbench-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tool-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.tool-input-field {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  padding: var(--space-3);
+}
+.tool-input-table,
+.tool-input-array {
+  grid-column: 1 / -1;
+}
+.tool-field-header,
+.tool-unit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.tool-field-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-weight: 700;
+}
+.tool-field-title code {
+  overflow-wrap: anywhere;
+}
+.tool-field-description {
+  display: block;
+  margin: var(--space-2) 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.tool-field-control {
+  display: block;
+  margin-top: var(--space-2);
+}
+.tool-field-control textarea {
+  resize: vertical;
+  min-height: 6rem;
+  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
+  font-size: 0.85rem;
+}
+.tool-checkbox-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  margin-top: var(--space-2);
+}
+.tool-checkbox-row input {
+  width: auto;
+  margin-top: 0.25rem;
+}
+.tool-unit-row {
+  margin-top: var(--space-2);
+}
+.tool-unit-row input {
+  max-width: 12rem;
+}
+.tool-field-error {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--status-deprecated-fg);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.tool-data-mapper {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tool-data-map-row,
+.tool-console-preview,
+.tool-artifact-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  padding: var(--space-3);
+}
+.tool-data-map-row textarea {
+  resize: vertical;
+  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
+  font-size: 0.85rem;
+}
+.tool-console-log {
+  display: flex;
+  min-height: 8rem;
+  max-height: 18rem;
+  overflow: auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid #1e293b;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.tool-console-log code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+.tool-validation-list,
+.tool-artifact-list,
+.tool-output-grid {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tool-validation-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+}
+.tool-validation-error {
+  border-color: var(--status-deprecated-border);
+  background: var(--status-deprecated-fill);
+}
+.tool-validation-warning {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-fill);
+}
+.tool-output-table {
+  max-height: 28rem;
+  overflow: auto;
+}
+.tool-output-table table {
+  margin: 0;
+}
+.tool-json-preview,
+.tool-report-preview {
+  max-height: 26rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-report-preview {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+}
+.tool-file-output {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tool-file-output code {
+  overflow-wrap: anywhere;
+}
+.tool-image-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 28rem;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-nested);
+}
+.tool-diagram-shell {
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.12) 1px, transparent 0),
+    var(--surface-card);
+  background-size: 18px 18px;
+}
+.tool-diagram-svg {
+  display: block;
+  width: 100%;
+  min-width: 440px;
+  height: 360px;
+}
+.tool-diagram-edge {
+  stroke: var(--accent);
+  stroke-width: 2;
+  fill: none;
+}
+.tool-diagram-svg marker path {
+  fill: var(--accent);
+}
+.tool-diagram-node {
+  fill: var(--kind-model-fill);
+  stroke: var(--kind-model-border);
+  stroke-width: 2;
+}
+.tool-diagram-label,
+.tool-diagram-node-label {
+  fill: var(--fg);
+  font-size: 0.72rem;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--surface-card);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
 .error {
   background: var(--status-deprecated-fill);
   color: var(--status-deprecated-fg);
@@ -992,7 +1231,8 @@ ol.lifecycle li.lifecycle-active {
 @media (max-width: 1100px) {
   .dashboard-grid-2,
   .dashboard-grid-3,
-  .tools-layout {
+  .tools-layout,
+  .tool-workbench-grid {
     grid-template-columns: minmax(0, 1fr);
   }
   .tools-library {
@@ -1027,8 +1267,19 @@ ol.lifecycle li.lifecycle-active {
     grid-template-columns: 1fr;
   }
   .form-grid,
-  .detail-grid {
+  .detail-grid,
+  .tool-input-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .tool-unit-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .tool-unit-row input {
+    max-width: none;
+  }
+  .tool-diagram-svg {
+    min-width: 360px;
   }
 }
 

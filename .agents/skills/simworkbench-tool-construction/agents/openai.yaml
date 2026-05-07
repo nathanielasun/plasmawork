@@ -1,0 +1,4 @@
+interface:
+  display_name: "SimWorkbench Tool Construction"
+  short_description: "Build and validate internal tools for the workbench."
+  default_prompt: "Use $simworkbench-tool-construction to design, validate, document, and UI-bind an internal Scientific Simulation Workbench tool."

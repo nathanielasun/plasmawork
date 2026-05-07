@@ -31,3 +31,32 @@ validation:
   tests:
     - tests/test_template.py
   reference_cases: []
+
+io:
+  mode: mixed
+  max_inline_bytes: 65536
+
+permissions:
+  filesystem: none
+  network: none
+  high_risk_actions: []
+  approval_required: []
+
+ui:
+  display_name: Diagnostic Template
+  input_groups:
+    - id: signal
+      title: Signal Data
+      ports:
+        - time
+        - signal
+  output_views:
+    - port: summary
+      renderer: table
+
+artifacts:
+  outputs:
+    - name: summary
+      kind: table
+      mime_type: application/json
+      description: Materialized summary rows for UI table rendering.

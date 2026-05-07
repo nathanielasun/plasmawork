@@ -1,6 +1,6 @@
 # Tool Construction Methodology and UI Binding Plan
 
-Status: Draft for approval
+Status: Implemented for repo-local skill, local core API/runtime, and UI binding; secure-core workspace execution remains a follow-up
 Date: 2026-05-07
 Owner: Scientific Simulation Workbench maintainers
 
@@ -586,4 +586,3 @@ This initiative is complete when:
   approval checks, quota reservation, sandboxing, and audit/provenance events.
 - Docs, examples, tests, convention checks, bug memory, and current-contract
   scanner coverage all reflect the shipped behavior.
-

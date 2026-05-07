@@ -177,6 +177,37 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
         rejects a move to <code>validated</code> when{" "}
         <code>validation.tests</code> is empty in <code>tool.yaml</code>.
       </p>
+
+      <h2>Agent-assisted tool construction</h2>
+      <p>
+        The repository maintains a tool-construction skill for agents at{" "}
+        <code>.agents/skills/simworkbench-tool-construction/SKILL.md</code>.
+        It is the compact workflow for creating or changing internal tools:
+        inspect bug memory, start from a template, write <code>tool.yaml</code>
+        first, implement <code>BaseTool</code>, add tests and examples, run the
+        package checker, verify UI binding, and update documentation.
+      </p>
+      <p>
+        The skill is intentionally separate from this manual. This page explains
+        how users and developers work with tools; the skill gives agents a
+        concise, importable checklist plus references and a deterministic
+        package checker.
+      </p>
+
+      <h2>General tool workbench</h2>
+      <p>
+        Tool metadata drives the UI binding. Inputs are rendered from the
+        validated contract, including units, tables, arrays, booleans, strings,
+        and artifact references. Outputs are rendered by declared kind: scalar,
+        table, timeseries, image, diagram, file, report, or JSON inspection.
+      </p>
+      <p>
+        Tool outputs that are too large or file-like are treated as artifacts
+        rather than hidden inline JSON. Artifact viewers show type, size, hash,
+        provenance, and a safe preview when available. Diagram rendering uses
+        structured graph/flow/schema specifications; raw executable HTML or
+        JavaScript output is not a supported renderer.
+      </p>
     </article>
   );
 }

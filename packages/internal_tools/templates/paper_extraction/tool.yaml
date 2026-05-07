@@ -30,3 +30,43 @@ validation:
   tests:
     - tests/test_template.py
   reference_cases: []
+
+io:
+  mode: mixed
+  max_inline_bytes: 65536
+
+permissions:
+  filesystem: read_artifacts
+  network: none
+  high_risk_actions: []
+  approval_required: []
+
+ui:
+  display_name: Paper Extraction Template
+  input_groups:
+    - id: source
+      title: Paper Source
+      ports:
+        - source_path
+  output_views:
+    - port: extracted_text
+      renderer: report
+    - port: extracted_equations
+      renderer: table
+    - port: extracted_parameters
+      renderer: table
+
+artifacts:
+  outputs:
+    - name: extracted_text
+      kind: report
+      mime_type: text/markdown
+      description: Extracted text prepared for review.
+    - name: extracted_equations
+      kind: table
+      mime_type: application/json
+      description: Structured equation candidates.
+    - name: extracted_parameters
+      kind: table
+      mime_type: application/json
+      description: Structured parameter candidates.

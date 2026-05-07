@@ -215,6 +215,11 @@ rather than copying them into current runbooks.
 ## Adding Internal Tools and Simulation Modules
 
 - Use the templates in `packages/internal_tools/templates/` and `packages/physics_modules/templates/`.
+- **TOOL-CONSTRUCTION-SKILL:** When building or substantially changing an
+  internal tool, use the repo-local skill at
+  `.agents/skills/simworkbench-tool-construction/SKILL.md` if present. It owns
+  the concise tool-construction workflow; this file only owns the durable
+  policy guardrails.
 - Lifecycle: `draft → candidate → validated → trusted → deprecated`. Agents may create `draft` and `candidate` only. Promotion to `trusted` requires a human reviewer.
 - Promotion criteria are in plan §14.3.
 - Lifecycle promotion gates must live in the registry/library function that mutates `tool.yaml` or `module.yaml`, not only in an API wrapper. For physics modules, `candidate → validated` requires a single-use human approval token, benchmark artifacts listed in `module.yaml`, declared tests that exist, and a passing test run before the status field is rewritten. Do not expose public `skip_approval`, `consume_approval=False`, `run_tests=False`, or similar bypass flags on lifecycle mutators.

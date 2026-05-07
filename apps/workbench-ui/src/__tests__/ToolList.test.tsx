@@ -109,10 +109,10 @@ describe("ToolList", () => {
       }),
     );
     await waitFor(() => {
-      expect(screen.getByText("Find absorption peaks.")).toBeInTheDocument();
+      expect(screen.getAllByText("Find absorption peaks.").length).toBeGreaterThan(0);
       // Ports rendered.
-      expect(screen.getByText("frequency")).toBeInTheDocument();
-      expect(screen.getByText("peaks")).toBeInTheDocument();
+      expect(screen.getAllByText("frequency").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("peaks").length).toBeGreaterThan(0);
     });
   });
 

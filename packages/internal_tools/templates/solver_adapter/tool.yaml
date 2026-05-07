@@ -34,3 +34,33 @@ validation:
   tests:
     - tests/test_template.py
   reference_cases: []
+
+io:
+  mode: mixed
+  max_inline_bytes: 65536
+
+permissions:
+  filesystem: none
+  network: none
+  high_risk_actions: []
+  approval_required: []
+
+ui:
+  display_name: Solver Adapter Template
+  input_groups:
+    - id: problem
+      title: Solver Problem
+      ports:
+        - rhs
+        - t_span
+        - y0
+  output_views:
+    - port: trajectory
+      renderer: table
+
+artifacts:
+  outputs:
+    - name: trajectory
+      kind: table
+      mime_type: application/json
+      description: Materialized solver trajectory.

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiClient, type ToolIndexRow, type ToolStatus as Status } from "../../api/client";
 import { Card, Kpi, Pill, type PillKind } from "../ui";
 import ToolDetail from "./ToolDetail";
+import ToolWorkbench from "./ToolWorkbench";
 
 function statusKind(status: Status): PillKind {
   if (status === "trusted") return "trusted";
@@ -241,27 +242,13 @@ export default function ToolList() {
             {importStatus && <p className="muted">{importStatus}</p>}
           </Card>
 
-          <Card
-            title="Construction surfaces not yet bound"
-            subtitle="The registry binding is live; the visual builder/canvas pieces from the styling reference are intentionally disabled until backend endpoints exist."
-          >
-            <div className="dashboard-grid dashboard-grid-3">
-              {[
-                "New tool builder",
-                "Manifest YAML editor",
-                "Reusable component canvas",
-              ].map((label) => (
-                <button key={label} type="button" disabled>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="route-card-note">
-              Existing live bindings remain available below: registry inspect,
-              external import, lifecycle promotion, validation tests, export,
-              and documentation.
-            </p>
-          </Card>
+          {selectedTool ? (
+            <ToolWorkbench toolName={selectedTool.name} />
+          ) : (
+            <Card title="Tool workbench" subtitle="Select a tool to load schema-bound controls.">
+              <p className="placeholder">No tool selected.</p>
+            </Card>
+          )}
 
           {selectedTool ? (
             <ToolDetail toolName={selectedTool.name} onStatusChanged={refresh} />

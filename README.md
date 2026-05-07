@@ -198,6 +198,7 @@ scientific-simulation-workbench/
   README.md                  This file
   .gitignore                 Excludes local caches, capsules, run artifacts
   LICENSE
+  .agents/                   Repo-local agent skills and workflow helpers
 
   apps/
     workbench-ui/            TypeScript UI shell (Phase 1F)
@@ -312,9 +313,21 @@ Coding agents working in this repository **must** read [`AGENTS.md`](./AGENTS.md
 - Update docs alongside code.
 - Keep temp files inside `local_cache/`, `temp_imports/`, `temp_runs/`, `simulation_capsules/`.
 - Check `bugs_and_fixes/` before modifying a subsystem.
+- Use `.agents/skills/simworkbench-tool-construction/SKILL.md` before creating or substantially changing an internal tool.
 - Use the units subsystem — no raw floats for physical quantities.
 - Promote modules `draft → candidate → validated → trusted` only with tests, docs, and a human reviewer.
 - Do not silently invent missing scientific data.
+
+Internal tool authors can install the repo-local tool-construction skill into a
+local Codex skill directory with:
+
+```bash
+scripts/dev/install_tool_construction_skill.sh --dry-run
+scripts/dev/install_tool_construction_skill.sh --symlink
+```
+
+The skill remains source-controlled in `.agents/skills/`; the installer only
+copies or symlinks it into an agent runtime when explicitly invoked.
 
 ---
 

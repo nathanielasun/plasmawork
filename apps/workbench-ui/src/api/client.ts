@@ -165,7 +165,163 @@ export interface ToolDocs {
   tool_yaml: string;
 }
 
+export type ToolInputKind =
+  | "scalar"
+  | "array"
+  | "table"
+  | "string"
+  | "bool"
+  | "enum"
+  | "file"
+  | "capsule";
+
+export type ToolOutputKind =
+  | "scalar"
+  | "table"
+  | "timeseries"
+  | "heatmap"
+  | "particle_scatter"
+  | "image"
+  | "diagram"
+  | "file"
+  | "report"
+  | "json";
+
+export interface ToolTableColumn {
+  name: string;
+  type?: string;
+  units?: string | null;
+  required?: boolean;
+  description?: string;
+}
+
+export interface ToolInputSchema {
+  name: string;
+  kind: ToolInputKind;
+  type: string;
+  units?: string | null;
+  description?: string;
+  required?: boolean;
+  default?: unknown;
+  enum_values?: string[];
+  widget?: "text" | "textarea" | "number" | "checkbox" | "select" | "json" | "artifact";
+  columns?: ToolTableColumn[];
+}
+
+export interface ToolOutputSchema {
+  name: string;
+  kind: ToolOutputKind;
+  type: string;
+  units?: string | null;
+  description?: string;
+  renderer?: ToolOutputKind | "graph" | "flow" | "schema" | "pipeline";
+  columns?: ToolTableColumn[];
+}
+
+export interface ToolPermissionSummary {
+  filesystem?: "none" | "read_artifacts" | "write_artifacts";
+  network?: "none" | "proxy_required";
+  high_risk_actions?: string[];
+}
+
+export interface ToolSchemaResponse {
+  name: string;
+  version: string;
+  type: string;
+  status: ToolStatus;
+  description: string;
+  inputs: ToolInputSchema[];
+  outputs: ToolOutputSchema[];
+  permissions?: ToolPermissionSummary;
+  ui?: Record<string, unknown>;
+}
+
+export interface ToolDataMapping {
+  source_artifact_id?: string;
+  source_path?: string;
+  columns?: Record<string, string>;
+  format?: "csv" | "json" | "inline" | "artifact";
+}
+
+export interface ToolRunRequest {
+  inputs: Record<string, unknown>;
+  units?: Record<string, string>;
+  data_mappings?: Record<string, ToolDataMapping>;
+}
+
+export interface ToolPreviewRequest extends ToolRunRequest {}
+
+export interface ToolValidationMessage {
+  severity: "error" | "warning" | "info";
+  field?: string;
+  message: string;
+}
+
+export interface ToolArtifactRef {
+  artifact_id: string;
+  name: string;
+  kind: ToolOutputKind;
+  mime_type?: string;
+  size_bytes?: number;
+  content_hash?: string;
+  preview?: unknown;
+}
+
+export interface ToolPreviewResponse {
+  name: string;
+  ok: boolean;
+  validation: ToolValidationMessage[];
+  planned_artifacts: ToolArtifactRef[];
+  permissions?: ToolPermissionSummary;
+  normalized_inputs?: Record<string, unknown>;
+}
+
+export interface ToolRunOutput {
+  name: string;
+  kind: ToolOutputKind;
+  value?: unknown;
+  units?: string | null;
+  artifact_id?: string;
+  mime_type?: string;
+  renderer?: ToolOutputSchema["renderer"];
+}
+
+export interface ToolRunResponse {
+  name: string;
+  run_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  outputs: ToolRunOutput[];
+  artifacts: ToolArtifactRef[];
+  validation: ToolValidationMessage[];
+  logs: string[];
+  started_at?: string | null;
+  completed_at?: string | null;
+  error?: string | null;
+}
+
+export interface ToolArtifactPreview {
+  artifact_id: string;
+  name: string;
+  kind: ToolOutputKind;
+  mime_type?: string;
+  size_bytes?: number;
+  content_hash?: string;
+  preview: unknown;
+}
+
 const DEFAULT_BASE = "/api";
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly responseText: string;
+
+  constructor(path: string, status: number, responseText: string) {
+    super(`API ${path} failed with ${status}: ${responseText}`);
+    this.name = "ApiError";
+    this.status = status;
+    this.responseText = responseText;
+  }
+}
 
 async function fetchJson<T>(
   path: string,
@@ -175,9 +331,256 @@ async function fetchJson<T>(
   const r = await fetch(baseUrl + path, init);
   if (!r.ok) {
     const text = await r.text();
-    throw new Error(`API ${path} failed with ${r.status}: ${text}`);
+    throw new ApiError(path, r.status, text);
   }
   return (await r.json()) as T;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isToolSchemaResponse(value: unknown): value is ToolSchemaResponse {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.version === "string" &&
+    typeof value.type === "string" &&
+    typeof value.status === "string" &&
+    typeof value.description === "string" &&
+    Array.isArray(value.inputs) &&
+    Array.isArray(value.outputs)
+  );
+}
+
+function inputKindFromPortType(type: string): ToolInputKind {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("bool")) return "bool";
+  if (normalized.includes("enum")) return "enum";
+  if (normalized.includes("table")) return "table";
+  if (normalized.includes("array") || normalized.includes("vector") || normalized.includes("list")) return "array";
+  if (normalized.includes("file") || normalized.includes("artifact")) return "file";
+  if (normalized.includes("capsule")) return "capsule";
+  if (normalized.includes("string") || normalized.includes("text")) return "string";
+  return "scalar";
+}
+
+function outputKindFromPortType(type: string): ToolOutputKind {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("table")) return "table";
+  if (normalized.includes("timeseries") || normalized.includes("series")) return "timeseries";
+  if (normalized.includes("heatmap")) return "heatmap";
+  if (normalized.includes("scatter") || normalized.includes("particle")) return "particle_scatter";
+  if (normalized.includes("image") || normalized.includes("figure")) return "image";
+  if (normalized.includes("diagram") || normalized.includes("graph") || normalized.includes("flow")) return "diagram";
+  if (normalized.includes("file") || normalized.includes("artifact")) return "file";
+  if (normalized.includes("report") || normalized.includes("markdown")) return "report";
+  if (normalized.includes("json") || normalized.includes("object")) return "json";
+  return "scalar";
+}
+
+function schemaFromToolDetail(detail: ToolDetail): ToolSchemaResponse {
+  const metadata = detail.metadata;
+  return {
+    name: metadata.name,
+    version: metadata.version,
+    type: metadata.type,
+    status: metadata.status,
+    description: metadata.description,
+    inputs: metadata.inputs.map((input) => ({
+      name: input.name,
+      kind: inputKindFromPortType(input.type),
+      type: input.type,
+      units: input.units ?? null,
+      description: input.description,
+      required: true,
+    })),
+    outputs: metadata.outputs.map((output) => ({
+      name: output.name,
+      kind: outputKindFromPortType(output.type),
+      type: output.type,
+      units: output.units ?? null,
+      description: output.description,
+      renderer: outputKindFromPortType(output.type),
+    })),
+    permissions: {
+      filesystem: "none",
+      network: "none",
+      high_risk_actions: [],
+    },
+    ui: {
+      source: "legacy_tool_metadata",
+    },
+  };
+}
+
+function isMissingEndpoint(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 404 || error.status === 405);
+}
+
+function fallbackPreview(schema: ToolSchemaResponse, request: ToolPreviewRequest): ToolPreviewResponse {
+  const validation: ToolValidationMessage[] = [];
+  for (const input of schema.inputs) {
+    const value = request.inputs[input.name];
+    const emptyString = typeof value === "string" && value.trim() === "";
+    if (input.required !== false && (value === undefined || value === null || emptyString)) {
+      validation.push({
+        severity: "error",
+        field: input.name,
+        message: `${input.name} is required before execution.`,
+      });
+    }
+  }
+  validation.push({
+    severity: "warning",
+    message: "Backend preview endpoint is unavailable; this is a client-side contract preview with no side effects.",
+  });
+  return {
+    name: schema.name,
+    ok: !validation.some((message) => message.severity === "error"),
+    validation,
+    normalized_inputs: request.inputs,
+    permissions: schema.permissions,
+    planned_artifacts: schema.outputs
+      .filter((output) => output.kind !== "scalar")
+      .map((output) => ({
+        artifact_id: `planned:${schema.name}:${output.name}`,
+        name: output.name,
+        kind: output.kind,
+        mime_type: output.kind === "table" || output.kind === "json" || output.kind === "diagram" ? "application/json" : undefined,
+      })),
+  };
+}
+
+function normalizeLegacyExecuteResponse(
+  name: string,
+  schema: ToolSchemaResponse,
+  output: Record<string, unknown>,
+): ToolRunResponse {
+  const outputs = Object.entries(output).map(([outputName, value]) => {
+    const declared = schema.outputs.find((candidate) => candidate.name === outputName);
+    let actualValue = value;
+    let units = declared?.units ?? null;
+    if (isRecord(value) && "magnitude" in value && "units" in value) {
+      actualValue = value.magnitude;
+      units = typeof value.units === "string" ? value.units : units;
+    }
+    return {
+      name: outputName,
+      kind: declared?.kind ?? outputKindFromPortType(typeof actualValue),
+      value: actualValue,
+      units,
+      renderer: declared?.renderer,
+    } satisfies ToolRunOutput;
+  });
+
+  return {
+    name,
+    run_id: "legacy-execute",
+    status: "completed",
+    outputs,
+    artifacts: [],
+    validation: [
+      {
+        severity: "info",
+        message: "Tool executed through the legacy synchronous execute endpoint; run artifacts are unavailable.",
+      },
+    ],
+    logs: ["POST /api/tools/{name}/execute completed."],
+    started_at: null,
+    completed_at: null,
+    error: null,
+  };
+}
+
+function artifactArrayFromPayload(payload: unknown): ToolArtifactRef[] {
+  if (Array.isArray(payload)) return payload as ToolArtifactRef[];
+  if (isRecord(payload) && Array.isArray(payload.artifacts)) {
+    return payload.artifacts as ToolArtifactRef[];
+  }
+  return [];
+}
+
+function normalizeRunPayload(
+  payload: unknown,
+  schema?: ToolSchemaResponse,
+): ToolRunResponse {
+  if (
+    isRecord(payload) &&
+    typeof payload.name === "string" &&
+    typeof payload.run_id === "string" &&
+    typeof payload.status === "string" &&
+    Array.isArray(payload.outputs)
+  ) {
+    return {
+      name: payload.name,
+      run_id: payload.run_id,
+      status: payload.status as ToolRunResponse["status"],
+      outputs: payload.outputs as ToolRunOutput[],
+      artifacts: artifactArrayFromPayload(payload.artifacts),
+      validation: Array.isArray(payload.validation)
+        ? (payload.validation as ToolValidationMessage[])
+        : [],
+      logs: Array.isArray(payload.logs)
+        ? payload.logs.filter((line): line is string => typeof line === "string")
+        : [],
+      started_at: typeof payload.started_at === "string" ? payload.started_at : null,
+      completed_at: typeof payload.completed_at === "string" ? payload.completed_at : null,
+      error: typeof payload.error === "string" ? payload.error : null,
+    };
+  }
+
+  if (
+    isRecord(payload) &&
+    typeof payload.run_id === "string" &&
+    typeof payload.tool_name === "string" &&
+    typeof payload.status === "string"
+  ) {
+    const inlineOutput = isRecord(payload.inline_output) ? payload.inline_output : {};
+    const artifacts = artifactArrayFromPayload(payload.artifacts);
+    const outputs: ToolRunOutput[] = [];
+    for (const [name, value] of Object.entries(inlineOutput)) {
+      const declared = schema?.outputs.find((candidate) => candidate.name === name);
+      outputs.push({
+        name,
+        kind: declared?.kind ?? outputKindFromPortType(typeof value),
+        value,
+        units: declared?.units ?? null,
+        renderer: declared?.renderer,
+      });
+    }
+    for (const artifact of artifacts) {
+      const declared = schema?.outputs.find((candidate) => candidate.name === artifact.name);
+      outputs.push({
+        name: artifact.name,
+        kind: artifact.kind,
+        value: artifact.preview,
+        artifact_id: artifact.artifact_id,
+        mime_type: artifact.mime_type,
+        renderer: declared?.renderer,
+      });
+    }
+    return {
+      name: payload.tool_name,
+      run_id: payload.run_id,
+      status: payload.status as ToolRunResponse["status"],
+      outputs,
+      artifacts,
+      validation:
+        payload.status === "failed"
+          ? [{
+              severity: "error",
+              message: typeof payload.error === "string" ? payload.error : "Tool run failed.",
+            }]
+          : [],
+      logs: [`run ${payload.status}`],
+      started_at: typeof payload.started_at === "string" ? payload.started_at : null,
+      completed_at: typeof payload.completed_at === "string" ? payload.completed_at : null,
+      error: typeof payload.error === "string" ? payload.error : null,
+    };
+  }
+
+  throw new Error("Tool run response did not match a supported shape.");
 }
 
 export interface ApiClient {
@@ -197,6 +600,12 @@ export interface ApiClient {
   listTools(): Promise<ToolIndexRow[]>;
   getTool(name: string): Promise<ToolDetail>;
   getToolDocs(name: string): Promise<ToolDocs>;
+  getToolSchema(name: string): Promise<ToolSchemaResponse>;
+  previewTool(name: string, body: ToolPreviewRequest): Promise<ToolPreviewResponse>;
+  runTool(name: string, body: ToolRunRequest): Promise<ToolRunResponse>;
+  getToolRun(name: string, runId: string): Promise<ToolRunResponse>;
+  listToolArtifacts(name: string, runId: string): Promise<ToolArtifactRef[]>;
+  getToolArtifact(artifactId: string): Promise<ToolArtifactPreview>;
   /**
    * Promote/demote a tool. The backend chooses the actor server-side:
    * agent-allowed transitions (draft / candidate / deprecated) run as
@@ -555,6 +964,31 @@ export interface PaperEditPayload {
 }
 
 export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
+  const getToolSchema = async (name: string): Promise<ToolSchemaResponse> => {
+    try {
+      const payload = await fetchJson<unknown>(
+        `/tools/${encodeURIComponent(name)}/schema`,
+        undefined,
+        baseUrl,
+      );
+      if (isToolSchemaResponse(payload)) return payload;
+      const detail = await fetchJson<ToolDetail>(
+        `/tools/${encodeURIComponent(name)}`,
+        undefined,
+        baseUrl,
+      );
+      return schemaFromToolDetail(detail);
+    } catch (error) {
+      if (!isMissingEndpoint(error)) throw error;
+      const detail = await fetchJson<ToolDetail>(
+        `/tools/${encodeURIComponent(name)}`,
+        undefined,
+        baseUrl,
+      );
+      return schemaFromToolDetail(detail);
+    }
+  };
+
   return {
     health: () => fetchJson("/health", undefined, baseUrl),
     listRuns: () => fetchJson("/runs", undefined, baseUrl),
@@ -605,6 +1039,92 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
     getTool: (name) => fetchJson(`/tools/${encodeURIComponent(name)}`, undefined, baseUrl),
     getToolDocs: (name) =>
       fetchJson(`/tools/${encodeURIComponent(name)}/docs`, undefined, baseUrl),
+    getToolSchema,
+    previewTool: async (name, body) => {
+      try {
+        return await fetchJson(
+          `/tools/${encodeURIComponent(name)}/preview`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          baseUrl,
+        );
+      } catch (error) {
+        if (!isMissingEndpoint(error)) throw error;
+        const detail = await fetchJson<ToolDetail>(
+          `/tools/${encodeURIComponent(name)}`,
+          undefined,
+          baseUrl,
+        );
+        return fallbackPreview(schemaFromToolDetail(detail), body);
+      }
+    },
+    runTool: async (name, body) => {
+      try {
+        const schema = await getToolSchema(name);
+        const payload = await fetchJson<unknown>(
+          `/tools/${encodeURIComponent(name)}/runs`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          baseUrl,
+        );
+        return normalizeRunPayload(payload, schema);
+      } catch (error) {
+        if (!isMissingEndpoint(error)) throw error;
+        const detail = await fetchJson<ToolDetail>(
+          `/tools/${encodeURIComponent(name)}`,
+          undefined,
+          baseUrl,
+        );
+        const legacy = await fetchJson<{ name: string; output: Record<string, unknown> }>(
+          `/tools/${encodeURIComponent(name)}/execute`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kwargs: body.inputs, units: body.units ?? {} }),
+          },
+          baseUrl,
+        );
+        return normalizeLegacyExecuteResponse(
+          legacy.name,
+          schemaFromToolDetail(detail),
+          legacy.output,
+        );
+      }
+    },
+    getToolRun: (name, runId) =>
+      Promise.all([
+        getToolSchema(name),
+        fetchJson<unknown>(
+          `/tools/${encodeURIComponent(name)}/runs/${encodeURIComponent(runId)}`,
+          undefined,
+          baseUrl,
+        ),
+      ]).then(([schema, payload]) => normalizeRunPayload(payload, schema)),
+    listToolArtifacts: async (name, runId) => {
+      try {
+        const payload = await fetchJson<unknown>(
+          `/tools/${encodeURIComponent(name)}/runs/${encodeURIComponent(runId)}/artifacts`,
+          undefined,
+          baseUrl,
+        );
+        return artifactArrayFromPayload(payload);
+      } catch (error) {
+        if (isMissingEndpoint(error)) return [];
+        throw error;
+      }
+    },
+    getToolArtifact: (artifactId) =>
+      fetchJson(
+        `/tool-artifacts/${encodeURIComponent(artifactId)}`,
+        undefined,
+        baseUrl,
+      ),
     setToolStatus: (name, status) =>
       // The actor is server-derived. Human-only promotions need a
       // pre-written approval token; the API returns 403 if absent.

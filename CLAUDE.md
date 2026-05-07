@@ -292,6 +292,10 @@ Promotion from `candidate` to `validated` requires plan §14.3 criteria and a hu
 
 Internal tools live at `packages/internal_tools/registry/<tool_name>/`.
 
+If `.agents/skills/simworkbench-tool-construction/SKILL.md` exists, load it
+first. That repo-local skill owns the detailed tool-construction workflow,
+contract checklist, UI binding checklist, and deterministic package checker.
+
 1. Create from **Internal Tools → New Tool from Template** or copy `packages/internal_tools/templates/<category>/`.
 2. Edit `tool.yaml` per plan §9.3: name, version, type, entrypoint, inputs/outputs with units, compatible domains, requirements, validation tests.
 3. Implement `src/tool.py` extending `simworkbench.tools.BaseTool` with `validate_inputs` and `run`.
