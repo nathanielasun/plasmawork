@@ -18,3 +18,27 @@ export {
   type WorkspaceRoutesOptions,
   type WorkspaceRoutesMiddleware,
 } from "./workspaces.js";
+
+export {
+  capsuleRoutes,
+  type CapsuleRoutesOptions,
+  type CapsuleRoutesMiddleware,
+} from "./capsules.js";
+
+export {
+  auditEventsRoutes,
+  type AuditEventsRoutesOptions,
+  type AuditEventsRoutesMiddleware,
+} from "./auditEvents.js";
+
+export {
+  toolRoutes,
+  type ToolRoutesOptions,
+  type ToolRoutesMiddleware,
+} from "./tools.js";
+
+export {
+  approvalRoutes,
+  type ApprovalRoutesOptions,
+  type ApprovalRoutesMiddleware,
+} from "./approvals.js";

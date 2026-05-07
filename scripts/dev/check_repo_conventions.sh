@@ -1936,7 +1936,7 @@ check_grep_in_file 'extracted' \
   packages/secure_core/test/workers/uploadRoute.test.ts \
   "workerUploadRoute archive .extracted dir cleanup is asserted (audit fix #2)"
 
-section "secure_core Layer-4 routes (L4.1, L4.12)"
+section "secure_core Layer-4 routes (L4.1, L4.2, L4.4, L4.6, L4.7, L4.12)"
 # L4.12 — health / readiness / metrics
 check_file_exists packages/secure_core/src/routes/health.ts
 check_file_exists packages/secure_core/src/routes/index.ts
@@ -1985,6 +1985,166 @@ check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|reques
   packages/secure_core/src/workspaces/service.ts \
   "L4.1 WorkspaceService never reads actor identity from req.body"
 check_file_exists packages/secure_core/test/routes/workspaces.test.ts
+# L4.2 — capsule routes
+check_file_exists packages/secure_core/src/routes/capsules.ts
+check_grep_in_file 'export const capsuleRoutes' \
+  packages/secure_core/src/routes/capsules.ts \
+  "L4.2 exports capsuleRoutes Fastify plugin"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/capsules.ts \
+  "L4.2 capsule routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'if-match' \
+  packages/secure_core/src/routes/capsules.ts \
+  "L4.2 PATCH honors If-Match header (v4 §20)"
+check_grep_in_file 'missing_if_match' \
+  packages/secure_core/src/routes/capsules.ts \
+  "L4.2 PATCH refuses missing If-Match with INPUT_INVALID + reason"
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/routes/capsules.ts \
+  "L4.2 capsule routes never read actor identity from req.body (v4 §19.1)"
+check_file_exists packages/secure_core/test/routes/capsules.test.ts
+# L4.4 — tool routes
+check_file_exists packages/secure_core/src/routes/tools.ts
+check_file_exists packages/secure_core/src/tools/service.ts
+check_grep_in_file 'export const toolRoutes' \
+  packages/secure_core/src/routes/tools.ts \
+  "L4.4 exports toolRoutes Fastify plugin"
+check_grep_in_file 'export class ToolService' \
+  packages/secure_core/src/tools/service.ts \
+  "L4.4 exports ToolService"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/tools.ts \
+  "L4.4 tool routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'promote-request' \
+  packages/secure_core/src/routes/tools.ts \
+  "L4.4 ships POST /tools/:id/promote-request endpoint (v4 §10.2)"
+check_grep_in_file 'use_promote_request' \
+  packages/secure_core/src/routes/tools.ts \
+  "L4.4 PATCH refuses status=trusted/validated with use_promote_request hint (v4 §17)"
+check_grep_in_file 'use_promote_request' \
+  packages/secure_core/src/tools/service.ts \
+  "L4.4 ToolService refuses validated/trusted PATCH transitions (defense in depth)"
+check_grep_in_file 'tool.created' \
+  packages/secure_core/src/tools/service.ts \
+  "L4.4 emits tool.created on createTool"
+check_grep_in_file 'tool.updated' \
+  packages/secure_core/src/tools/service.ts \
+  "L4.4 emits tool.updated on updateTool"
+check_grep_in_file 'tool.promotion_requested' \
+  packages/secure_core/src/tools/service.ts \
+  "L4.4 emits tool.promotion_requested on requestPromotion"
+check_grep_in_file 'workspace_id IS NULL AND status' \
+  packages/secure_core/src/tools/service.ts \
+  "L4.4 list/get include global trusted tools per v4 §10.3"
+# Hard rule: tool routes never read actor identity from req.body
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/routes/tools.ts \
+  "L4.4 tool routes never read actor identity from req.body (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/tools/service.ts \
+  "L4.4 ToolService never reads actor identity from req.body"
+check_file_exists packages/secure_core/test/routes/tools.test.ts
+# L4.6 — approval-request routes
+check_file_exists packages/secure_core/src/routes/approvals.ts
+check_grep_in_file 'export const approvalRoutes' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 exports approvalRoutes Fastify plugin"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'approval-requests' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 declares /workspaces/:workspaceId/approval-requests endpoints (v4 §10.2)"
+check_grep_in_file 'requestApproval' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 POST /approval-requests calls ApprovalService.requestApproval"
+check_grep_in_file 'denyRequest' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 POST /:id/deny calls ApprovalService.denyRequest"
+check_grep_in_file 'requireApprovalIfHighRiskFactory' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 /approve route binds L2.9 requireApprovalIfHighRisk via factory"
+check_grep_in_file 'approval.requested' \
+  packages/secure_core/src/approvals/service.ts \
+  "L4.6 service emits approval.requested on requestApproval"
+check_grep_in_file 'approval.denied' \
+  packages/secure_core/src/approvals/service.ts \
+  "L4.6 service emits approval.denied on denyRequest"
+# Hard rule: approval routes NEVER read actor identity from req.body (v4 §19.1)
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 approval routes never read req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.actor_user_id' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 approval routes never read req.body.actor_user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.created_by' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 approval routes never read req.body.created_by (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.requested_by' \
+  packages/secure_core/src/routes/approvals.ts \
+  "L4.6 approval routes never read req.body.requested_by (v4 §19.1)"
+check_file_exists packages/secure_core/test/routes/approvals.test.ts
+# L4.7 — audit-events + provenance-events read routes
+check_file_exists packages/secure_core/src/audit/readService.ts
+check_file_exists packages/secure_core/src/routes/auditEvents.ts
+check_file_exists packages/secure_core/test/routes/auditEvents.test.ts
+check_grep_in_file 'export const auditEventsRoutes' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 exports auditEventsRoutes Fastify plugin"
+check_grep_in_file 'export class AuditReadService' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 exports AuditReadService"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'audit:read' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 routes name the audit:read capability (v4 §13)"
+check_grep_in_file 'audit-events' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 declares /workspaces/:workspaceId/audit-events endpoint (v4 §10.2)"
+check_grep_in_file 'provenance-events' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 declares /workspaces/:workspaceId/provenance-events endpoint (v4 §10.2)"
+check_grep_in_file 'auditReadPool' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 AuditReadService takes the audit-read pool (v4 §12.1.3)"
+check_grep_in_file 'audit_read' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 AuditReadService refuses pools whose role is not audit_read"
+check_grep_in_file 'redactMetadata' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 read path runs metadata through redactMetadata (defense in depth)"
+# Hard rule: audit read service is SELECT-only — never INSERT / UPDATE / DELETE
+check_grep_absent_in_file 'INSERT INTO' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 audit read service never INSERTs (v4 §12.1.3 SELECT-only)"
+check_grep_absent_in_file 'UPDATE ' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 audit read service never UPDATEs (v4 §12.1.3 SELECT-only)"
+check_grep_absent_in_file 'DELETE FROM' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 audit read service never DELETEs (v4 §12.1.3 SELECT-only)"
+# Hard rule: audit-events routes NEVER read actor identity from req.body (v4 §19.1)
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 audit-events routes never read req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.actor_user_id' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 audit-events routes never read req.body.actor_user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.user_id' \
+  packages/secure_core/src/routes/auditEvents.ts \
+  "L4.7 audit-events routes never read req.body.user_id (v4 §19.1)"
+# Defense-in-depth: the route output type omits chain-internal columns.
+# The shape of `AuditEventOutputRow` / `ProvenanceEventOutputRow` is the
+# contract; we assert the SELECT lists do not project the chain columns
+# rather than greping the whole file (the doc comment names them).
+check_grep_absent_in_file 'SELECT.*row_hash' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 read service SELECT lists do not project row_hash"
+check_grep_absent_in_file 'SELECT.*prev_hash' \
+  packages/secure_core/src/audit/readService.ts \
+  "L4.7 read service SELECT lists do not project prev_hash"
 check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh stub"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped

@@ -61,7 +61,7 @@ import {
   hashToken,
   mintToken,
 } from "../crypto/tokens.js";
-import { VersionConflictError } from "../errors/shapes.js";
+import { NotFoundError, VersionConflictError } from "../errors/shapes.js";
 
 /** Default lock TTL — 5 minutes. v4 §20 doesn't pin a value; this
  * matches the §16 approval-token TTL family and gives a workbench
@@ -199,6 +199,35 @@ export interface ForkCapsuleOptions {
 export interface ForkCapsuleResult {
   newCapsuleId: string;
   newVersionId: string;
+}
+
+export interface CapsuleRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  current_version_id: string | null;
+  created_by: string;
+  created_at: Date;
+  deleted_at: Date | null;
+}
+
+export interface CreateCapsuleOptions {
+  capsuleId?: string;
+  workspaceId: string;
+  name: string;
+  /** Server-derived actor (req.auth.userId). Becomes capsules.created_by
+   * and v1's created_by. */
+  createdBy: string;
+  actorType: "human" | "ai_agent";
+  requestId: string;
+  contentHash: string;
+  storagePath: string;
+}
+
+export interface CreateCapsuleResult {
+  capsuleId: string;
+  versionId: string;
+  versionNumber: number;
 }
 
 /**
@@ -613,5 +642,83 @@ export class CapsuleVersionLockService {
     });
 
     return { newCapsuleId, newVersionId };
+  }
+
+  /** List non-deleted capsules in a workspace, newest first. */
+  public async listCapsules(workspaceId: string): Promise<CapsuleRow[]> {
+    const rows = await this.sql<CapsuleRow[]>`
+      SELECT id, workspace_id, name, current_version_id,
+             created_by, created_at, deleted_at
+      FROM capsules
+      WHERE workspace_id = ${workspaceId}
+        AND deleted_at IS NULL
+      ORDER BY created_at DESC
+    `;
+    return rows;
+  }
+
+  /** Read a single non-deleted capsule by id, scoped to workspace. */
+  public async getCapsule(
+    capsuleId: string,
+    workspaceId: string,
+  ): Promise<CapsuleRow> {
+    const rows = await this.sql<CapsuleRow[]>`
+      SELECT id, workspace_id, name, current_version_id,
+             created_by, created_at, deleted_at
+      FROM capsules
+      WHERE id = ${capsuleId}
+        AND workspace_id = ${workspaceId}
+        AND deleted_at IS NULL
+    `;
+    if (rows.length === 0) {
+      throw new NotFoundError("Capsule not found.", {
+        capsule_id: capsuleId,
+      });
+    }
+    return rows[0];
+  }
+
+  /** Create a fresh capsule + v1 in a single tx; emits capsule.created. */
+  public async createCapsule(
+    opts: CreateCapsuleOptions,
+  ): Promise<CreateCapsuleResult> {
+    const newCapsuleId = opts.capsuleId ?? randomUUID();
+    const newVersionId = randomUUID();
+
+    await this.sql.begin(async (tx) => {
+      await tx`
+        INSERT INTO capsules (id, workspace_id, name, created_by)
+        VALUES (${newCapsuleId}, ${opts.workspaceId},
+                ${opts.name}, ${opts.createdBy})
+      `;
+      await tx`
+        INSERT INTO capsule_versions (
+          id, capsule_id, workspace_id, version_number,
+          content_hash, storage_path, created_by
+        ) VALUES (
+          ${newVersionId}, ${newCapsuleId}, ${opts.workspaceId}, 1,
+          ${opts.contentHash}, ${opts.storagePath},
+          ${opts.createdBy}
+        )
+      `;
+      await tx`
+        UPDATE capsules SET current_version_id = ${newVersionId}
+        WHERE id = ${newCapsuleId}
+      `;
+    });
+
+    await this.auditLogger.write({
+      workspaceId: opts.workspaceId,
+      actorUserId: opts.createdBy,
+      actorType: opts.actorType,
+      action: "capsule.created",
+      objectType: "capsule",
+      objectId: newCapsuleId,
+      result: "succeeded",
+      requestId: opts.requestId,
+      metadata: { version_id: newVersionId },
+    });
+
+    return { capsuleId: newCapsuleId, versionId: newVersionId, versionNumber: 1 };
   }
 }

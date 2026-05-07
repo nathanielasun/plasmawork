@@ -75,6 +75,8 @@ export const METADATA_ALLOWLIST: ReadonlySet<string> = Object.freeze(
     "rejected_field",
     "capability",
     "role_name",
+    // L4.4 tool promotion-requested events
+    "target_status",
   ]),
 );
 
