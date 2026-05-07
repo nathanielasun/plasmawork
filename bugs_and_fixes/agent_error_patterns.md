@@ -1948,3 +1948,119 @@ The plan's deliverable list (or a docstring, or a UI panel comment) names N user
 
 ### Bug log
 - 2026-05-04 *Phase 10 round-2 audit*: `AutonomyPanel.tsx` docstring claimed "drives the four autonomy endpoints (design / smoke / sweep / review)"; only three were wired. Fix: added `POST /api/autonomy/smoke/{name}` + `apiClient.smokeExperiment` + a "Smoke run" button in the panel with results section.
+
+---
+
+## Error Pattern: Security runner covers only a subset of the numbered review matrix
+
+### Why it is bad
+A security plan carries numbered assertions, but the hard gate runs only
+the tests that happen to sit under one directory or one subsystem. Package
+tests can still pass while several numbered assertions have no executable
+evidence, no CI owner, or no convention-checker assertion.
+
+### Required behavior
+- Every numbered security assertion has a literal entry in the coverage
+  manifest with evidence paths.
+- `scripts/test/security.sh` is invoked directly by `scripts/test/all.sh`
+  and by CI.
+- The convention checker verifies the coverage manifest contains every
+  required number.
+
+### Detection
+- Compare the source plan's numbered list against
+  `packages/secure_core/test/security/section29_coverage.test.ts`.
+- Grep `scripts/test/all.sh` and CI workflows for direct
+  `scripts/test/security.sh` invocation.
+
+### Bug log
+- 2026-05-07 *Secure-core Layer-5 security gate completion*: v4 §29
+  coverage was scattered and the security runner only covered the sandbox
+  subset. Fix: added the 84-entry coverage manifest, direct all.sh wiring,
+  CI workflow, and convention-checker assertions.
+
+---
+
+## Error Pattern: Verifier trusts local anchor rows without reading the WORM object
+
+### Why it is bad
+The local database row records the external WORM anchor URI, but the
+database is not the WORM store. A verifier that checks only the local row
+can pass even if the external object is missing, stale, or points at a
+different chain root.
+
+### Required behavior
+- When an external anchor provider is configured, verification reads the
+  external object referenced by `external_anchor_uri`.
+- The external object's digest/version/chain-root payload must match the
+  latest local anchor row.
+- A negative test mutates one side and expects verifier failure.
+
+### Detection
+- Grep audit verifiers for `external_anchor_uri`; if they do not call the
+  provider read path, they are local-only checks.
+- Look for tests that corrupt provider state and assert
+  `external_anchor_mismatch`.
+
+### Bug log
+- 2026-05-07 *Secure-core Layer-5 security gate completion*: the verifier
+  could accept the local `log_chain_anchors` row without comparing the WORM
+  object. Fix: providers expose readback and `AuditChainVerifier` reports
+  `external_anchor_mismatch`.
+
+---
+
+## Error Pattern: High-risk approval token accepted for a non-human actor
+
+### Why it is bad
+Approval tokens prove that an approval request was granted; they do not
+prove that the current actor is allowed to approve or execute the
+high-risk transition. If an `ai_agent`, `worker`, or `operator` actor can
+consume the same token path as a human approver, the system has converted
+an out-of-band approval into a bearer capability.
+
+### Required behavior
+- High-risk approval middleware checks the server-derived actor type
+  before token consumption.
+- Non-human actors are denied and audited before handler side effects.
+- Tests cover a valid token presented by a non-human actor.
+
+### Detection
+- Inspect approval middleware for an actor-type check that executes before
+  `consumeToken`.
+- Search tests for an `ai_agent` or `worker` actor attempting a high-risk
+  approval path.
+
+### Bug log
+- 2026-05-07 *Secure-core Layer-5 security gate completion*: L2.9
+  middleware could consume a valid token for a non-human actor. Fix:
+  reject non-human actors before token consumption and emit an approval
+  denial audit event.
+
+---
+
+## Error Pattern: Security CI inherits production-secret-shaped environment
+
+### Why it is bad
+Security tests must prove mock/test infrastructure behavior. If the lane
+inherits production-shaped credentials, tests can accidentally touch real
+resources or pass because they used a provider that the test did not
+control.
+
+### Required behavior
+- Security runners fail closed when production-secret-shaped variables are
+  present.
+- CI security workflows do not reference repository secrets unless the
+  lane is explicitly a deployment/live-probe lane.
+- Live probes use dedicated test providers and are environment-gated.
+
+### Detection
+- Grep security scripts for a forbidden-secret denylist.
+- Grep CI workflows for `secrets.` usage in the default security lane.
+
+### Bug log
+- 2026-05-07 *Secure-core Layer-5 security gate completion*: the default
+  security lane did not explicitly refuse production-secret-shaped
+  environment variables. Fix: `scripts/test/security.sh` now checks a
+  denylist before running the §29 suite, and the default CI workflow avoids
+  production secrets.

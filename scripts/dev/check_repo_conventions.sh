@@ -1936,6 +1936,54 @@ check_grep_in_file 'extracted' \
   packages/secure_core/test/workers/uploadRoute.test.ts \
   "workerUploadRoute archive .extracted dir cleanup is asserted (audit fix #2)"
 
+section "secure_core Layer-5 integration testing + CI"
+check_file_exists packages/secure_core/test/security/section29_coverage.test.ts
+for n in $(seq 1 84); do
+  check_grep_in_file "§29 #${n} —" \
+    packages/secure_core/test/security/section29_coverage.test.ts \
+    "L5.2 §29 #${n} has an executable security-suite mapping"
+done
+check_grep_in_file 'vitest run test/security' scripts/test/security.sh \
+  "L5.3 security.sh runs the dedicated Layer-5 security suite"
+check_grep_in_file 'FORBIDDEN_PROD_SECRET_ENV' scripts/test/security.sh \
+  "L5.3 security.sh refuses production-secret-shaped env vars (test #73)"
+check_grep_in_file '"\$SCRIPT_DIR/security\.sh"' scripts/test/all.sh \
+  "L5.3 scripts/test/all.sh directly invokes the security gate"
+check_file_exists .github/workflows/security.yml \
+  "L5.3 GitHub security workflow"
+check_grep_in_file 'scripts/test/security\.sh' .github/workflows/security.yml \
+  "L5.3 CI workflow invokes scripts/test/security.sh"
+check_grep_in_file 'secure-core-security' .github/workflows/security.yml \
+  "L5.3 CI exposes a branch-protection-ready job name"
+check_grep_in_file 'branch_protection\.bypass' \
+  packages/secure_core/src/config/audit_events.ts \
+  "L5.3 audit enum includes branch_protection.bypass for admin override ingestion"
+check_file_exists docs_site/src/content/authentication.tsx \
+  "L5.4 §28 authentication docs page"
+check_file_exists docs_site/src/content/workspaces.tsx \
+  "L5.4 §28 workspaces docs page"
+check_file_exists docs_site/src/content/roles_permissions.tsx \
+  "L5.4 §28 roles_permissions docs page"
+check_file_exists docs_site/src/content/audit_provenance.tsx \
+  "L5.4 §28 audit_provenance docs page"
+check_file_exists docs_site/src/content/capsule_versioning.tsx \
+  "L5.4 §28 capsule_versioning docs page"
+check_file_exists docs_site/src/content/secure_storage.tsx \
+  "L5.4 §28 secure_storage docs page"
+check_file_exists docs_site/src/content/security_testing.tsx \
+  "L5.4 §28 security_testing docs page"
+check_file_exists docs_site/src/content/sandboxing.tsx \
+  "L5.4 §28 sandboxing docs page"
+check_file_exists docs_site/src/content/operator_access.tsx \
+  "L5.4 §28 operator_access docs page"
+check_file_exists docs_site/src/content/agent_threat_model.tsx \
+  "L5.4 §28 agent_threat_model docs page"
+check_file_exists program_development/architectural_decisions/ADR-0013-secure-multi-user-foundation.md \
+  "L5.5 aggregate secure multi-user foundation ADR"
+check_grep_in_file 'ADR-0013-secure-multi-user-foundation' \
+  secure_multi_user_scaffolding_plan_v4.md \
+  "L5.5 v4 plan references aggregate ADR-0013"
+
 section "secure_core Layer-4 routes (L4.1, L4.2, L4.3, L4.4, L4.5, L4.6, L4.7, L4.8, L4.9, L4.10, L4.12)"
 # L4.12 — health / readiness / metrics
 check_file_exists packages/secure_core/src/routes/health.ts

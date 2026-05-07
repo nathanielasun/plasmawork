@@ -78,14 +78,21 @@ function spec(over: Partial<SandboxLaunchSpec> = {}): SandboxLaunchSpec {
 }
 
 describe("§29 sandbox spec invariants (always-on)", () => {
-  it("§29 #38 — egress is default-deny (network=none) when no proxy is configured", () => {
+  it("§29 #41 — unapproved HTTP egress is default-deny (network=none)", () => {
     const r = new RunscSandboxRuntime({ allowedSourceRoots: ALLOWED_SOURCES });
     const argv = r.assembleArgv(spec());
     expect(argv).toContain("--network=none");
     expect(argv.some((a) => a.includes("--egress-proxy"))).toBe(false);
   });
 
-  it("§29 #39 — egress only opens via UDS proxy when explicitly configured", () => {
+  it("§29 #42 — DNS exfiltration has no direct network path from sandbox", () => {
+    const r = new RunscSandboxRuntime({ allowedSourceRoots: ALLOWED_SOURCES });
+    const argv = r.assembleArgv(spec());
+    expect(argv).toContain("--network=none");
+    expect(argv.some((a) => a.toLowerCase().includes("dns"))).toBe(false);
+  });
+
+  it("§29 #41 — approved egress only opens via UDS proxy while network=none remains", () => {
     const r = new RunscSandboxRuntime({ allowedSourceRoots: ALLOWED_SOURCES });
     const argv = r.assembleArgv(
       spec({ egress: { mode: "uds_proxy", socketPath: "/run/proxy.sock" } }),
@@ -95,14 +102,14 @@ describe("§29 sandbox spec invariants (always-on)", () => {
     expect(argv).toContain("--network=none");
   });
 
-  it("§29 #40 — no privileged flag is ever emitted", () => {
+  it("§29 #38 — no privileged flag or host-wide mount is ever emitted", () => {
     const r = new RunscSandboxRuntime({ allowedSourceRoots: ALLOWED_SOURCES });
     const argv = r.assembleArgv(spec());
     expect(argv.some((a) => a.includes("privileged"))).toBe(false);
     expect(argv).toContain("--no-new-privs");
   });
 
-  it("§29 #41 — DB / AWS / secret env keys are stripped before spawn", async () => {
+  it("§29 #40 — DB / AWS / secret env keys are refused before spawn", async () => {
     const fakeSpawn = vi
       .fn()
       .mockReturnValue({
@@ -128,7 +135,7 @@ describe("§29 sandbox spec invariants (always-on)", () => {
     expect(fakeSpawn).not.toHaveBeenCalled();
   });
 
-  it("§29 #42 — bind-mount sources outside the allowlist are refused", () => {
+  it("§29 #38 — bind-mount sources outside the workspace allowlist are refused", () => {
     expect(
       validateLaunchSpec(
         spec({ writableMounts: [{ source: "/etc", target: "/work" }] }),
@@ -137,17 +144,33 @@ describe("§29 sandbox spec invariants (always-on)", () => {
     ).toBe("mount_source_not_allowed");
   });
 
-  it("§29 #43 — empty allowlist forbids ALL bind mounts (hermetic-only)", () => {
+  it("§29 #39 — another workspace root is refused by source-root allowlist", () => {
+    expect(
+      validateLaunchSpec(
+        spec({
+          readonlyMounts: [
+            { source: "/workspaces/other/simulation_capsules", target: "/capsule" },
+          ],
+          writableMounts: [],
+        }),
+        { allowedSourceRoots: ["/workspaces/current"] },
+      ),
+    ).toBe("mount_source_not_allowed");
+  });
+
+  it("§29 #38 — empty allowlist forbids ALL bind mounts (hermetic-only)", () => {
     expect(
       validateLaunchSpec(spec(), { allowedSourceRoots: [] }),
     ).toBe("mount_source_not_allowed");
   });
 
-  it("§29 #67 — wall-time limit is forwarded to runsc as --wall-time", () => {
+  it("§29 #67 — trusted tools have no sandbox-escape launch field", () => {
     const r = new RunscSandboxRuntime({ allowedSourceRoots: ALLOWED_SOURCES });
-    const argv = r.assembleArgv(
-      spec({ limits: { ...BASE_LIMITS, wallSeconds: 60 } }),
-    );
+    const launchSpec = spec({ limits: { ...BASE_LIMITS, wallSeconds: 60 } });
+    expect("trusted" in launchSpec).toBe(false);
+    const argv = r.assembleArgv(launchSpec);
+    expect(argv).toContain("--network=none");
+    expect(argv).toContain("--no-new-privs");
     expect(argv).toContain("--wall-time=60");
   });
 });

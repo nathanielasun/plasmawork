@@ -347,12 +347,19 @@ Hard security rules:
 - Never implement security TODOs as permissive placeholders.
 - Never disable security tests.
 - If secure implementation is not possible in the current change, fail closed and document the blocker.
+- Keep `scripts/test/security.sh` as a direct hard gate from `scripts/test/all.sh`; it owns the v4 §29 security matrix and production-secret-env refusal.
+- Keep `packages/secure_core/test/security/section29_coverage.test.ts` synchronized with v4 §29; every numbered assertion needs a literal `§29 #NN —` entry and executable evidence.
+- External WORM anchors require provider-backed comparison, not just a local `log_chain_anchors` row.
+- L2.9 high-risk approval middleware rejects non-human actors before token consumption.
+- Branch-protection or emergency-operator override paths emit `branch_protection.bypass`.
 
 Current security status as of 2026-05-07:
 
 - Phase 0.5 Layer-0 ADRs are accepted.
-- Layer-1 through Layer-4 secure-core slices are under implementation/audit.
-- L2.9 approval-token middleware is implemented; protected high-risk routes must use it rather than local token checks.
+- Layer-1 through Layer-5 secure-core slices are implemented and covered by the security gate.
+- L2.9 approval-token middleware is implemented; protected high-risk routes must use it rather than local token checks, and non-human actors cannot consume high-risk approval tokens.
+- `scripts/test/security.sh`, `scripts/test/all.sh`, `.github/workflows/security.yml`, and `packages/secure_core/test/security/section29_coverage.test.ts` are the Layer-5 integration surface.
+- Deployment-specific live probes for gVisor, database roles, and WORM infrastructure remain environment-gated and are required before production multi-user operation.
 - Full gate: `program_development/phase_05_security_implementation_plan.md`.
 
 ---

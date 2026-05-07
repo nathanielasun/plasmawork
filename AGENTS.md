@@ -89,14 +89,24 @@ Security-sensitive code must not be implemented as permissive stubs. If authenti
 
 Never disable a security test to make CI green. Failing security tests block merge.
 
+Layer-5 integration rules:
+
+- `scripts/test/security.sh` is a hard PR gate and must stay directly invoked by `scripts/test/all.sh`; do not replace it with a package-level test that omits the security matrix.
+- Every v4 §29 security assertion must have a literal `§29 #NN —` entry in `packages/secure_core/test/security/section29_coverage.test.ts`, with evidence that points at executable code, tests, docs, or CI.
+- Security CI and local security gates must fail closed when production-secret-shaped environment variables are present. Use test fixtures or mock providers only.
+- External audit anchors are not verified by local database rows alone. The verifier must compare `log_chain_anchors.external_anchor_uri` against the WORM provider object when a provider is configured.
+- High-risk approval middleware must reject non-human actors before token consumption or handler side effects. Approval tokens do not make `ai_agent`, `worker`, or `operator` actors approvers.
+- Branch-protection or emergency-operator override paths must emit `branch_protection.bypass` audit events; undocumented bypasses are security bugs.
+
 Security summaries in this file must be reviewed at least once per major release or whenever the security scaffolding plan changes.
 
-Until Phase 0.5 is implemented, dependent features that would require these guarantees must remain disabled or scoped to single-user local-only operation. The implementation plan, gates, and ADRs live at:
+Until Phase 0.5 deployment-specific live probes are green in the target runtime, dependent features that require these guarantees must remain disabled or scoped to single-user local-only operation. The implementation plan, gates, and ADRs live at:
 
 - `secure_multi_user_scaffolding_plan_v4.md` (design)
 - `security_review_v4_and_decomposability.md` (review + decomposition)
 - `program_development/phase_05_security_implementation_plan.md` (executable plan)
-- `program_development/architectural_decisions/ADR-0008` through `ADR-0012` (Layer-0 decisions; Proposed)
+- `program_development/architectural_decisions/ADR-0008` through `ADR-0012` (Layer-0 decisions; Accepted)
+- `program_development/architectural_decisions/ADR-0013-secure-multi-user-foundation.md` (Layer-5 security foundation; Accepted)
 - `packages/secure_core/IMPLEMENTATION_MANIFEST.md` (project layout, error envelope, fixture conventions)
 
 ---

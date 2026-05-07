@@ -9,6 +9,7 @@
  */
 
 import {
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
   type S3ClientConfig,
@@ -21,6 +22,7 @@ export interface S3PutResult {
 
 export interface S3AnchorProvider {
   putObject(bucket: string, key: string, body: Buffer): Promise<S3PutResult>;
+  getObjectByUri(uri: string): Promise<Buffer>;
 }
 
 export interface AwsS3ProviderOptions {
@@ -85,6 +87,25 @@ export class AwsS3AnchorProvider implements S3AnchorProvider {
     }
     return { versionId: res.VersionId };
   }
+
+  public async getObjectByUri(uri: string): Promise<Buffer> {
+    const parsed = parseS3AnchorUri(uri);
+    const res = await this.#client.send(
+      new GetObjectCommand({
+        Bucket: parsed.bucket,
+        Key: parsed.key,
+        VersionId: parsed.versionId,
+      }),
+    );
+    if (!res.Body) {
+      throw new Error(`AwsS3AnchorProvider.getObjectByUri: empty body for ${uri}`);
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of res.Body as AsyncIterable<Uint8Array>) {
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
 }
 
 /**
@@ -131,4 +152,61 @@ export class FakeS3AnchorProvider implements S3AnchorProvider {
     this.#puts.push({ bucket, key, body, versionId });
     return { versionId };
   }
+
+  public async getObjectByUri(uri: string): Promise<Buffer> {
+    const parsed = parseS3AnchorUri(uri);
+    const hit = this.#puts.find(
+      (p) =>
+        p.bucket === parsed.bucket &&
+        p.key === parsed.key &&
+        p.versionId === parsed.versionId,
+    );
+    if (hit === undefined) {
+      throw new Error(`FakeS3AnchorProvider: no object for ${uri}`);
+    }
+    return Buffer.from(hit.body);
+  }
+
+  public overwriteObjectByUri(uri: string, body: Buffer): void {
+    const parsed = parseS3AnchorUri(uri);
+    const idx = this.#puts.findIndex(
+      (p) =>
+        p.bucket === parsed.bucket &&
+        p.key === parsed.key &&
+        p.versionId === parsed.versionId,
+    );
+    if (idx === -1) {
+      throw new Error(`FakeS3AnchorProvider: no object for ${uri}`);
+    }
+    const prev = this.#puts[idx];
+    this.#puts[idx] = { ...prev, body };
+  }
+}
+
+export function parseS3AnchorUri(uri: string): {
+  bucket: string;
+  key: string;
+  versionId: string;
+} {
+  const parsed = new URL(uri);
+  if (parsed.protocol !== "s3:") {
+    throw new Error(`invalid anchor URI protocol: ${parsed.protocol}`);
+  }
+  const versionId = parsed.searchParams.get("versionId");
+  if (versionId === null || versionId.length === 0) {
+    throw new Error("anchor URI is missing versionId");
+  }
+  const key = parsed.pathname
+    .split("/")
+    .filter((part) => part.length > 0)
+    .map((part) => decodeURIComponent(part))
+    .join("/");
+  if (parsed.hostname.length === 0 || key.length === 0) {
+    throw new Error("anchor URI must include bucket and key");
+  }
+  return {
+    bucket: decodeURIComponent(parsed.hostname),
+    key,
+    versionId,
+  };
 }

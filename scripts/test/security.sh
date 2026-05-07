@@ -26,6 +26,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+FORBIDDEN_PROD_SECRET_ENV=(
+  AWS_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY
+  AWS_SESSION_TOKEN
+  PLASMAWORK_DB_URL
+  PLASMAWORK_DB_URL_APP
+  PLASMAWORK_DB_URL_AUDIT_READ
+  PLASMAWORK_DB_URL_ANCHOR_WRITER
+  PLASMAWORK_DB_URL_MIGRATOR
+  PLASMAWORK_SECRETS_AWS_PREFIX
+)
+
+for name in "${FORBIDDEN_PROD_SECRET_ENV[@]}"; do
+  if [[ -n "${!name:-}" ]]; then
+    echo "[security] refusing to run with production-secret-shaped env var set: ${name}" >&2
+    echo "[security] use PLASMAWORK_TEST_DB_URL and local/mock providers for this lane." >&2
+    exit 1
+  fi
+done
+
 cd "$REPO_ROOT/packages/secure_core"
 
 # Vitest scoped to the security suite. The full secure_core suite

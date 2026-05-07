@@ -32,6 +32,66 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-07: Secure-core Layer-5 security gate completion
+
+### Affected subsystem
+- `packages/secure_core/src/audit`
+- `packages/secure_core/src/middleware`
+- `packages/secure_core/test/{audit,db,middleware,security}`
+- `scripts/test/{security,all}.sh`
+- `.github/workflows/security.yml`
+- `docs_site/src/content`
+- `AGENTS.md` / `CLAUDE.md`
+
+### Symptoms
+Layer-5 review found integration gaps after the lower security layers
+were implemented. The security runner covered only the sandbox subset
+instead of the full v4 §29 matrix; `scripts/test/all.sh` did not pin the
+security gate directly; no CI workflow owned the security lane; external
+WORM anchors could be trusted from the local database row without reading
+the external object; high-risk approval middleware could consume a valid
+token for a non-human actor; app-role append-only coverage was incomplete
+for provenance/operator/anchor tables; and the docs/ADR surface did not
+describe the secure multi-user foundation at the same level as the code.
+
+### Root cause
+Layer-5 was treated as a collection of previously existing package tests
+rather than as its own integration product. Numbered review assertions
+were scattered across subsystems, so a green package test could hide
+missing matrix entries, missing CI wiring, and cross-layer verification
+holes.
+
+### Fix
+Added a v4 §29 coverage manifest with literal entries for all 84
+assertions, wired the hard security gate into `scripts/test/all.sh`, and
+added a dedicated GitHub Actions security workflow. `scripts/test/security.sh`
+now refuses production-secret-shaped environment variables. Audit anchor
+providers expose readback and `AuditChainVerifier` compares the latest
+local anchor row with the configured WORM object. L2.9 high-risk approval
+middleware rejects non-human actors before consuming tokens. DB-gated
+tests cover app-role update/delete denial on provenance, operator, and
+anchor chain tables. Security docs and ADR-0013 now describe the shipped
+foundation without exposing production secrets or provider internals.
+
+### Regression protection
+- `packages/secure_core/test/security/section29_coverage.test.ts`
+- `packages/secure_core/test/security/sandbox.test.ts`
+- `packages/secure_core/test/audit/anchor.test.ts`
+- `packages/secure_core/test/db/schema.test.ts`
+- `packages/secure_core/test/middleware/requireApprovalIfHighRisk.test.ts`
+- `packages/secure_core/test/config/constants.test.ts`
+- `scripts/test/security.sh`
+- `scripts/test/all.sh`
+- `.github/workflows/security.yml`
+- `scripts/dev/check_repo_conventions.sh`
+
+### Agent warning
+Do not claim a security layer is complete because package tests are
+green. The numbered security matrix must be explicitly mapped, the
+security runner must be in the hard gate, CI must not inherit production
+secrets, external anchors must be verified against the external object,
+and high-risk approvals remain human-only even when a valid token exists.
+
 ## 2026-05-07: Secure-core Layer-4 route and worker hardening
 
 ### Affected subsystem

@@ -145,6 +145,12 @@ function buildApp(
   service: ApprovalService,
   auditLogger: AuditLogger,
   action: import("../../src/config/high_risk_actions.js").HighRiskAction,
+  context: Partial<{
+    auth: AuthContext;
+    audit: AuditContext;
+    membership: MembershipContext;
+    workspace: typeof baseWorkspace;
+  }> = {},
 ): FastifyInstance {
   const app = Fastify({ logger: false });
   app.addHook("onRequest", requireRequestId);
@@ -165,10 +171,10 @@ function buildApp(
     {
       preHandler: [
         preAttachContext({
-          auth: baseAuth,
-          audit: baseAudit,
-          membership: baseMembership,
-          workspace: baseWorkspace,
+          auth: context.auth ?? baseAuth,
+          audit: context.audit ?? baseAudit,
+          membership: context.membership ?? baseMembership,
+          workspace: context.workspace ?? baseWorkspace,
         }),
         mw.handler,
       ],
@@ -269,6 +275,38 @@ describe("requireApprovalIfHighRisk — L2.9", () => {
     // Service emits its own granted/denied audit; this middleware is silent
     // on the success path.
     expect(auditStub.calls).toHaveLength(0);
+  });
+
+  it("§29 #34 — ai_agent actor cannot consume a high-risk approval token", async () => {
+    const app = buildApp(
+      service,
+      auditStub.logger,
+      "trusted_module_promotion",
+      {
+        auth: { ...baseAuth, actorType: "ai_agent" },
+        audit: { ...baseAudit, actorType: "ai_agent" },
+      },
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: "/workspaces/ws-1/approval-requests/req-1/probe",
+      headers: { "x-approval-token": "raw-token" },
+    });
+    expect(r.statusCode).toBe(403);
+    expect((r.json() as { error: { code: string } }).error.code).toBe(
+      "APPROVAL_TOKEN_INVALID",
+    );
+    expect(serviceState.lastConsume).toBeUndefined();
+    expect(auditStub.calls).toEqual([
+      {
+        action: "approval.denied",
+        result: "denied",
+        metadata: {
+          denied_reason: "agent_approver_not_allowed",
+          capability: "tool:approve_promotion",
+        },
+      },
+    ]);
   });
 
   it("service throws APPROVAL_TOKEN_REUSED → middleware re-throws unchanged", async () => {

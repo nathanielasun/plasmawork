@@ -41,6 +41,7 @@ import {
 } from "../config/high_risk_actions.js";
 import {
   ApprovalRequiredError,
+  ApprovalTokenInvalidError,
   SecureCoreError,
 } from "../errors/shapes.js";
 
@@ -171,6 +172,24 @@ export function requireApprovalIfHighRisk(
       throw new SecureCoreError(
         "UNAUTHENTICATED",
         "Approval consumption requires an authenticated request.",
+      );
+    }
+
+    if (req.auth.actorType !== "human") {
+      await deps.auditLogger.write({
+        workspaceId: req.workspace?.id ?? null,
+        actorUserId: req.auth.userId,
+        actorType: req.auth.actorType,
+        action: "approval.denied",
+        result: "denied",
+        requestId: req.requestId,
+        metadata: {
+          denied_reason: "agent_approver_not_allowed",
+          capability: requiredCapability,
+        },
+      });
+      throw new ApprovalTokenInvalidError(
+        "Approval token must be consumed by a human approver.",
       );
     }
 

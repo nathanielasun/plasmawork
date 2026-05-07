@@ -163,6 +163,7 @@ export class AnchorCommitter {
     const verifierOpts: AuditChainVerifierOptions = {
       pool: opts.pool,
       logType: opts.logType,
+      anchorProvider: opts.s3Provider,
     };
     this.#verifier = new AuditChainVerifier(verifierOpts);
   }

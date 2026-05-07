@@ -44,6 +44,8 @@ See [`program_development/milestones/`](./program_development/milestones/) for p
 
 > **Reading the status table above as "production-ready" would be a mistake.** All ten phases ship as planned, but the convention checker verifies *structural* completeness, not scientific capability. Read [`LIMITATIONS.md`](./LIMITATIONS.md) for the honest, kept-current map of what works today (real numerical core, schemas, sweep / UQ / optimization, FastAPI + UI, approval gates) and what is heuristic / template / stub (the autonomy "agents", paper interpretation drafts, the C++/CUDA solver suite — `axpy` only —, real laser–plasma physics modules).
 
+Secure multi-user scaffolding is implemented through the Phase 0.5 Layer-5 integration gate in `packages/secure_core/`: server-derived identity, workspace-scoped object access, approval middleware, append-only audit/provenance chains, WORM anchor verification, sandbox spec guards, security docs, and CI wiring are covered by `scripts/test/security.sh`, `scripts/test/all.sh`, and `packages/secure_core/test/security/section29_coverage.test.ts`. Deployment-specific live probes for gVisor, database roles, and WORM object-lock infrastructure remain environment-gated and must pass in the target runtime lane before production multi-user operation.
+
 ---
 
 ## Installation
@@ -118,9 +120,10 @@ The UI, backend, capsule, kernel, and export scripts exist so documented command
 ./scripts/test/regression.sh    # tests/regression
 ./scripts/test/validation.sh    # tests/validation (scientific properties)
 ./scripts/test/performance.sh   # tests/performance
+./scripts/test/security.sh      # secure_core §29 security gate
 ```
 
-`./scripts/test/all.sh` runs the hard repository conventions plus the current test suite. It intentionally does not include open-workstream TODO assertions; use `./scripts/dev/check_repo_conventions.sh --include-open-workstreams` when inspecting the active implementation backlog.
+`./scripts/test/all.sh` runs the hard repository conventions plus the current test suite, including the secure_core security gate. It intentionally does not include open-workstream TODO assertions; use `./scripts/dev/check_repo_conventions.sh --include-open-workstreams` when inspecting the active implementation backlog.
 
 See `tests/README.md` for the testing strategy (also plan §20).
 

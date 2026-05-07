@@ -7,8 +7,9 @@ organized by §29 number where helpful and by subsystem where the
 
 ## Two layers of evidence
 
-The tests split into two categories. Both must be green before
-Phase 0.5 ships.
+The tests split into two categories. The spec-level plus coverage
+manifest lane is the always-on PR gate. Deployment-specific live
+probe lanes must also be green before production multi-user operation.
 
 ### 1. Spec-level invariants (always-on)
 
@@ -31,12 +32,14 @@ Each is gated on a deployment-side env var:
 - `PLASMAWORK_TEST_DB_URL=...` for DB privilege probes
 - `PLASMAWORK_ANCHOR_S3_*` for anchor probes
 
-CI runs these on a dedicated lane that ships the relevant
-runtimes; dev hosts skip them with a clear `it.skipIf` reason.
+Default CI runs the always-on lane through `scripts/test/security.sh`.
+Deployment CI must add dedicated lanes that ship the relevant runtimes;
+dev hosts skip unavailable probes with a clear `it.skipIf` reason.
 
 ## What this directory does NOT prove
 
-Until the live-runtime probes are wired and green:
+Until the live-runtime probes are wired and green in the target
+deployment lane:
 - Spec-level tests prove the runtime would produce a safe spec, NOT
   that gVisor enforces the spec.
 - The §29 #38–#43 sandbox-network-egress + #67 quota-trip tests

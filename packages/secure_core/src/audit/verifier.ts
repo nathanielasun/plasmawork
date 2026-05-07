@@ -32,11 +32,13 @@ import { createHash } from "node:crypto";
 import { canonicalize, CANONICALIZATION_VERSION } from "../crypto/jcs.js";
 import type { SecureCorePool } from "../db/pool.js";
 import type { AuditLogType } from "./dbWriter.js";
+import type { S3AnchorProvider } from "./s3Provider.js";
 
 export type VerifyFailureReason =
   | "hash_mismatch"
   | "missing_prev_hash"
-  | "tail_truncation";
+  | "tail_truncation"
+  | "external_anchor_mismatch";
 
 export type VerifyReport =
   | { ok: true; rowsVerified: number; tipHash: string | null }
@@ -50,6 +52,13 @@ export type VerifyReport =
 export interface AuditChainVerifierOptions {
   pool: SecureCorePool;
   logType: AuditLogType;
+  /**
+   * Optional external WORM reader. Unit tests and production verifier
+   * jobs pass this so §29 #50 compares the DB anchor row against the
+   * immutable object. Request-path callers may omit it and still get
+   * local-chain + local-anchor verification.
+   */
+  anchorProvider?: S3AnchorProvider;
 }
 
 /**
@@ -203,13 +212,52 @@ function walkRows(
 async function readLatestAnchor(
   pool: SecureCorePool,
   anchorLogType: string,
-): Promise<{ anchored_row_id: string; anchor_hash: string } | null> {
+): Promise<{
+  anchored_row_id: string;
+  anchor_hash: string;
+  external_anchor_uri: string;
+} | null> {
   const rows = await pool.sql<
-    { anchored_row_id: string; anchor_hash: string }[]
+    {
+      anchored_row_id: string;
+      anchor_hash: string;
+      external_anchor_uri: string;
+    }[]
   >`
-    SELECT anchored_row_id, anchor_hash
+    SELECT anchored_row_id, anchor_hash, external_anchor_uri
     FROM log_chain_anchors
     WHERE log_type = ${anchorLogType}
+    ORDER BY committed_at DESC, id DESC
+    LIMIT 1
+  `;
+  if (rows.length === 0) {
+    return null;
+  }
+  return rows[0];
+}
+
+async function readAnchorForRow(
+  pool: SecureCorePool,
+  anchorLogType: string,
+  anchoredRowId: string,
+  anchorHash: string,
+): Promise<{
+  anchored_row_id: string;
+  anchor_hash: string;
+  external_anchor_uri: string;
+} | null> {
+  const rows = await pool.sql<
+    {
+      anchored_row_id: string;
+      anchor_hash: string;
+      external_anchor_uri: string;
+    }[]
+  >`
+    SELECT anchored_row_id, anchor_hash, external_anchor_uri
+    FROM log_chain_anchors
+    WHERE log_type = ${anchorLogType}
+      AND anchored_row_id = ${anchoredRowId}::uuid
+      AND anchor_hash = ${anchorHash}
     ORDER BY committed_at DESC, id DESC
     LIMIT 1
   `;
@@ -230,6 +278,7 @@ export class AuditChainVerifier {
   private readonly logType: AuditLogType;
   private readonly tableName: string;
   private readonly anchorLogType: string;
+  private readonly anchorProvider: S3AnchorProvider | undefined;
 
   public constructor(opts: AuditChainVerifierOptions) {
     this.pool = opts.pool;
@@ -237,6 +286,7 @@ export class AuditChainVerifier {
     this.logType = opts.logType;
     this.tableName = resolved.tableName;
     this.anchorLogType = resolved.anchorLogType;
+    this.anchorProvider = opts.anchorProvider;
   }
 
   /**
@@ -253,6 +303,17 @@ export class AuditChainVerifier {
     // the chain has been truncated after the anchor was committed.
     const anchor = await readLatestAnchor(this.pool, this.anchorLogType);
     if (anchor !== null) {
+      if (this.anchorProvider !== undefined) {
+        const externalMatches = await this.externalAnchorMatches(anchor);
+        if (!externalMatches) {
+          return {
+            ok: false,
+            rowsVerified: 0,
+            firstFailureRowId: anchor.anchored_row_id,
+            failureReason: "external_anchor_mismatch",
+          };
+        }
+      }
       const localRow = fetched.find((r) => r.id === anchor.anchored_row_id);
       if (
         localRow === undefined ||
@@ -268,6 +329,33 @@ export class AuditChainVerifier {
     }
 
     return walkRows(fetched, null);
+  }
+
+  private async externalAnchorMatches(anchor: {
+    anchored_row_id: string;
+    anchor_hash: string;
+    external_anchor_uri: string;
+  }): Promise<boolean> {
+    if (this.anchorProvider === undefined) {
+      return true;
+    }
+    try {
+      const raw = await this.anchorProvider.getObjectByUri(
+        anchor.external_anchor_uri,
+      );
+      const parsed = JSON.parse(raw.toString("utf8")) as unknown;
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return false;
+      }
+      const body = parsed as Record<string, unknown>;
+      return (
+        body.log_type === this.anchorLogType &&
+        body.tip_row_id === anchor.anchored_row_id &&
+        body.tip_row_hash === anchor.anchor_hash
+      );
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -286,6 +374,25 @@ export class AuditChainVerifier {
     anchorRowId: string,
     anchorRowHash: string,
   ): Promise<VerifyReport> {
+    if (this.anchorProvider !== undefined) {
+      const externalAnchor = await readAnchorForRow(
+        this.pool,
+        this.anchorLogType,
+        anchorRowId,
+        anchorRowHash,
+      );
+      if (
+        externalAnchor === null ||
+        !(await this.externalAnchorMatches(externalAnchor))
+      ) {
+        return {
+          ok: false,
+          rowsVerified: 0,
+          firstFailureRowId: anchorRowId,
+          failureReason: "external_anchor_mismatch",
+        };
+      }
+    }
     const anchored = await this.fetchAnchorRow(anchorRowId);
     if (anchored === null || anchored.row_hash !== anchorRowHash) {
       return {
@@ -550,4 +657,3 @@ export class AuditChainVerifier {
     }));
   }
 }
-

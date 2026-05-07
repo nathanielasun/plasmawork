@@ -1,0 +1,37 @@
+name: security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  secure-core-security:
+    name: secure-core-security
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      PLASMAWORK_SECRETS_PROVIDER: env
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/secure_core/package-lock.json
+
+      - name: Install secure_core dependencies
+        run: npm --prefix packages/secure_core ci
+
+      - name: Typecheck secure_core
+        run: npm --prefix packages/secure_core run typecheck
+
+      - name: Run Layer 5 security gate
+        run: scripts/test/security.sh

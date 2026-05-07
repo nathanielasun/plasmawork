@@ -73,6 +73,7 @@ export const AUDIT_EVENTS = [
 
   // Operations
   "secret.rotated",
+  "branch_protection.bypass",
   "db.migration_applied",
   "bootstrap.completed",
   "log_chain.anchor_committed",

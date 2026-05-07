@@ -4,6 +4,25 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-07 (Phase 0.5 Layer 5 security gate complete)
+
+### Completed
+- **Layer-5 security integration gate.** `scripts/test/security.sh` is now the hard secure_core security lane, refuses production-secret-shaped environment variables, and is invoked directly by `scripts/test/all.sh`. `.github/workflows/security.yml` runs secure_core typecheck plus the security gate without repository secrets.
+- **v4 §29 coverage manifest.** `packages/secure_core/test/security/section29_coverage.test.ts` maps all 84 v4 §29 assertions to executable evidence across code, tests, docs, and CI. The convention checker now requires every literal `§29 #NN —` entry.
+- **Audit anchor verification.** `AuditChainVerifier` can compare the latest local `log_chain_anchors.external_anchor_uri` row against the configured WORM provider object. The fake and S3 providers expose readback for verifier tests; mismatch returns `external_anchor_mismatch`.
+- **High-risk approval actor hardening.** L2.9 middleware rejects non-human actors before token consumption or handler side effects, emits an audit denial, and preserves human-only approval semantics.
+- **Append-only DB role probes.** DB-gated tests now cover app-role denial of update/delete on `provenance_events`, `operator_events`, and `log_chain_anchors`, alongside existing `audit_events` checks.
+- **Security docs and ADR.** The docs site gained high-level pages for authentication, workspaces, roles/permissions, approvals, audit/provenance, capsule versioning, secure storage, sandboxing, operator access, testing, and the agent threat model. ADR-0013 records the Layer-5 secure multi-user foundation.
+- **Bug memory.** AGENTS.md, CLAUDE.md, bugfix logs, regression index, and agent error patterns now pin the recurring Layer-5 mistakes: partial security matrices, local-only anchor verification, non-human approval token consumption, and CI secret leakage.
+
+### Open questions
+- Live gVisor, database-role, and WORM object-lock probes remain deployment-lane requirements. The default PR gate proves the scaffold and numbered coverage map; production multi-user rollout still requires those environment-specific lanes to pass.
+
+### Next steps
+- Keep `scripts/test/security.sh`, `scripts/test/all.sh`, `.github/workflows/security.yml`, and `section29_coverage.test.ts` synchronized with every future security-plan change.
+
+---
+
 ## 2026-05-04 (Phase 10 closes — Autonomous Computational Experiment Design complete; final phase shipped)
 
 ### Completed

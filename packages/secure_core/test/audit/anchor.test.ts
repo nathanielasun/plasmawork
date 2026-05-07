@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import {
   AnchorCommitter,
   AuditDbWriter,
+  AuditChainVerifier,
   AuditLogger,
   FakeS3AnchorProvider,
 } from "../../src/audit/index.js";
@@ -179,6 +180,63 @@ describe.skipIf(!HAS_TEST_DB)("L3.2 — AnchorCommitter", () => {
     const lastCall = calls[calls.length - 1];
     expect(lastCall.action).toBe("log_chain.anchor_committed");
     expect(lastCall.result).toBe("succeeded");
+  });
+
+  it("§29 #50 — verifier fails when local anchor row disagrees with external WORM object", async () => {
+    await seedAuditChain(3);
+    const provider = new FakeS3AnchorProvider();
+    const writer = new AuditDbWriter({ pool, logType: "audit" });
+    const innerLogger = new AuditLogger({
+      writer: writer.writer,
+      prevHashGetter: writer.prevHashGetter,
+    });
+    const committer = new AnchorCommitter({
+      pool,
+      auditLogger: recordingAuditLogger(innerLogger, []),
+      s3Provider: provider,
+      logType: "audit",
+      bucket: "test-bucket",
+      keyPrefix: "anchors",
+    });
+    const row = await committer.commitTip({
+      committedBy: null,
+      requestId: "req-external-mismatch",
+    });
+
+    const cleanVerifier = new AuditChainVerifier({
+      pool,
+      logType: "audit",
+      anchorProvider: provider,
+    });
+    expect(await cleanVerifier.verifyAll()).toMatchObject({ ok: true });
+
+    provider.overwriteObjectByUri(
+      row.external_anchor_uri,
+      Buffer.from(
+        JSON.stringify({
+          log_type: "audit_events",
+          tip_row_id: row.anchored_row_id,
+          tip_row_hash: "not-the-local-anchor-hash",
+        }),
+      ),
+    );
+
+    const report = await cleanVerifier.verifyAll();
+    expect(report).toMatchObject({
+      ok: false,
+      firstFailureRowId: row.anchored_row_id,
+      failureReason: "external_anchor_mismatch",
+    });
+
+    const segmentReport = await cleanVerifier.verifyFromAnchor(
+      row.anchored_row_id,
+      row.anchor_hash,
+    );
+    expect(segmentReport).toMatchObject({
+      ok: false,
+      firstFailureRowId: row.anchored_row_id,
+      failureReason: "external_anchor_mismatch",
+    });
   });
 
   it("mutating the anchored row breaks chain segment verification", async () => {

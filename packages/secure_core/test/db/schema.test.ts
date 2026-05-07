@@ -349,6 +349,57 @@ describe.skipIf(!SHOULD_RUN)("L1.8 — schema, seed, and role privileges", () =>
     ).rejects.toThrow(/permission denied/i);
   });
 
+  it("§29 #52 — secure_core_app may INSERT into provenance_events but cannot UPDATE/DELETE", async () => {
+    const userId = randomUUID();
+    const wsId = randomUUID();
+    const id = randomUUID();
+    await appClient!.unsafe(
+      `INSERT INTO users (id, email) VALUES ('${userId}', 'prov-app@example.test');
+       INSERT INTO workspaces (id, name, created_by) VALUES ('${wsId}', 'prov-app', '${userId}');
+       INSERT INTO provenance_events
+         (id, workspace_id, actor_user_id, actor_type, action, row_hash)
+        VALUES ('${id}', '${wsId}', '${userId}', 'human', 'capsule.created', 'provhash')`,
+    );
+
+    await expect(
+      appClient!.unsafe(
+        `UPDATE provenance_events SET action = 'tampered' WHERE id = '${id}'`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      appClient!.unsafe(`DELETE FROM provenance_events WHERE id = '${id}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("§29 #53 — secure_core_app may INSERT into operator_events but cannot UPDATE/DELETE", async () => {
+    const userId = randomUUID();
+    const sessionId = randomUUID();
+    const auditId = randomUUID();
+    const opId = randomUUID();
+    await appClient!.unsafe(
+      `INSERT INTO users (id, email) VALUES ('${userId}', 'op-app@example.test');
+       INSERT INTO sessions (id, user_id, session_hash, auth_method, assurance_level, expires_at)
+       VALUES ('${sessionId}', '${userId}', 'op-app-session', 'sso', 'aal2', now() + interval '1 hour');
+       INSERT INTO audit_events
+         (id, actor_user_id, actor_type, action, result, row_hash)
+       VALUES ('${auditId}', '${userId}', 'operator', 'platform.capability_used', 'succeeded', 'op-audit-hash');
+       INSERT INTO operator_events
+         (id, actor_user_id, capability, reason, session_id, audit_event_id, row_hash)
+       VALUES ('${opId}', '${userId}', 'platform:audit_read', 'routine review', '${sessionId}', '${auditId}', 'op-row-hash')`,
+    );
+
+    await expect(
+      appClient!.unsafe(
+        `UPDATE operator_events SET reason = 'tampered' WHERE id = '${opId}'`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      appClient!.unsafe(`DELETE FROM operator_events WHERE id = '${opId}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
   it("secure_core_app cannot SELECT audit_events", async () => {
     await expect(
       appClient!.unsafe(`SELECT 1 FROM audit_events LIMIT 1`),
@@ -368,6 +419,31 @@ describe.skipIf(!SHOULD_RUN)("L1.8 — schema, seed, and role privileges", () =>
           's3://simworkbench-worm-dev/anchors/audit/app.json?versionId=v1'
          )`,
       ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("§29 #54/#56 — secure_core_app cannot UPDATE or DELETE log_chain_anchors", async () => {
+    const id = randomUUID();
+    await migratorClient!.unsafe(
+      `INSERT INTO log_chain_anchors
+        (id, log_type, anchor_hash, anchored_row_id, external_anchor_uri)
+       VALUES (
+        '${id}',
+        'audit_events',
+        'app-role-anchor-mutation-target',
+        '${randomUUID()}',
+        's3://simworkbench-worm-dev/anchors/audit/${id}.json?versionId=v1'
+       )`,
+    );
+
+    await expect(
+      appClient!.unsafe(
+        `UPDATE log_chain_anchors SET anchor_hash = 'changed' WHERE id = '${id}'`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      appClient!.unsafe(`DELETE FROM log_chain_anchors WHERE id = '${id}'`),
     ).rejects.toThrow(/permission denied/i);
   });
 

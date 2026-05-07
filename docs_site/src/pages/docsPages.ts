@@ -9,6 +9,17 @@ import SimulationCapsules from "../content/simulation_capsules";
 import AgentWorkflows from "../content/agent_workflows";
 import Validation from "../content/validation";
 import Troubleshooting from "../content/troubleshooting";
+import SecurityAuthentication from "../content/authentication";
+import SecurityWorkspaces from "../content/workspaces";
+import SecurityRolesPermissions from "../content/roles_permissions";
+import SecurityApprovals from "../content/security_approvals";
+import SecurityAuditProvenance from "../content/audit_provenance";
+import SecurityCapsuleVersioning from "../content/capsule_versioning";
+import SecurityStorage from "../content/secure_storage";
+import SecurityTesting from "../content/security_testing";
+import Sandboxing from "../content/sandboxing";
+import OperatorAccess from "../content/operator_access";
+import AgentThreatModel from "../content/agent_threat_model";
 
 export interface DocPage {
   slug: string;
@@ -38,6 +49,57 @@ export const docsPages: DocPage[] = [
     Component: AgentWorkflows,
   },
   { slug: "validation", title: "Validation", Component: Validation },
+  {
+    slug: "security-authentication",
+    title: "Security: Authentication",
+    Component: SecurityAuthentication,
+  },
+  {
+    slug: "security-workspaces",
+    title: "Security: Workspaces",
+    Component: SecurityWorkspaces,
+  },
+  {
+    slug: "security-roles-permissions",
+    title: "Security: Roles and Permissions",
+    Component: SecurityRolesPermissions,
+  },
+  {
+    slug: "security-approvals",
+    title: "Security: Approval Flow",
+    Component: SecurityApprovals,
+  },
+  {
+    slug: "security-audit-provenance",
+    title: "Security: Audit and Provenance",
+    Component: SecurityAuditProvenance,
+  },
+  {
+    slug: "security-capsule-versioning",
+    title: "Security: Capsule Versioning",
+    Component: SecurityCapsuleVersioning,
+  },
+  {
+    slug: "security-storage",
+    title: "Security: Storage",
+    Component: SecurityStorage,
+  },
+  {
+    slug: "security-testing",
+    title: "Security Testing",
+    Component: SecurityTesting,
+  },
+  { slug: "sandboxing", title: "Sandboxing", Component: Sandboxing },
+  {
+    slug: "operator-access",
+    title: "Operator Access",
+    Component: OperatorAccess,
+  },
+  {
+    slug: "agent-threat-model",
+    title: "Agent Threat Model",
+    Component: AgentThreatModel,
+  },
   {
     slug: "troubleshooting",
     title: "Troubleshooting",

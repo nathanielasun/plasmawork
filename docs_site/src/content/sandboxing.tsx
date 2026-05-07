@@ -1,0 +1,43 @@
+export default function Sandboxing() {
+  return (
+    <article>
+      <h1>Sandboxing</h1>
+      <p className="page-status">
+        Secure-core Layer 5 documentation for execution isolation. See
+        ADR-0009 for the runtime decision; this page summarizes the user-facing
+        guarantees.
+      </p>
+
+      <h2>Sandbox guarantee</h2>
+      <p>
+        Generated code, imported tools, workers, and trusted tools execute
+        inside a controlled sandbox. Trust can widen allowed resources within
+        policy, but trust never grants execution outside the sandbox.
+      </p>
+
+      <h2>Controls</h2>
+      <ul>
+        <li>Per-run CPU, memory, process, wall-time, and disk limits.</li>
+        <li>No direct access to host files, other workspaces, database credentials, or deployment secrets.</li>
+        <li>Network egress is denied by default and mediated through an allowlisted broker when required.</li>
+        <li>Sandbox violations emit audit events and fail the run closed.</li>
+        <li>Worker outputs are returned through the controlled artifact-upload path.</li>
+      </ul>
+
+      <h2>Scientific workflow impact</h2>
+      <p>
+        Sandbox policy may cause a run to fail before producing scientific
+        output. That failure is preferable to silently running with unsafe
+        access. Users should treat sandbox failures as execution-policy
+        findings, not physics validation failures.
+      </p>
+
+      <h2>Trusted tools</h2>
+      <p>
+        Trusted tools still run in the sandbox. Promotion can add reviewed
+        capabilities, quota, or allowlist entries, but cannot bypass isolation,
+        audit, or workspace scoping.
+      </p>
+    </article>
+  );
+}

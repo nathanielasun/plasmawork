@@ -113,6 +113,10 @@ describe("audit events", () => {
     expect(AUDIT_EVENT_SET.has("worker.upload_denied")).toBe(true);
   });
 
+  it("includes the Layer-5 branch-protection override event", () => {
+    expect(AUDIT_EVENT_SET.has("branch_protection.bypass")).toBe(true);
+  });
+
   it("isAuditEvent narrows correctly", () => {
     expect(isAuditEvent("login.succeeded")).toBe(true);
     expect(isAuditEvent("login.fake")).toBe(false);
