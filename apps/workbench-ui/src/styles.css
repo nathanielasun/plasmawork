@@ -814,16 +814,32 @@ ol.lifecycle li.lifecycle-active {
 }
 .tools-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
   gap: var(--space-5);
   align-items: start;
   min-width: 0;
 }
-.tools-library {
+.tools-primary-stack,
+.tools-side-rail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.tools-primary-stack > .card + .card,
+.tools-side-rail > .card + .card {
+  margin-top: 0;
+}
+.tools-side-rail {
   position: sticky;
   top: var(--space-4);
+  align-self: start;
   max-height: calc(100vh - 3rem);
   overflow: auto;
+  padding-right: 0.1rem;
+}
+.tools-library {
+  overflow: hidden;
 }
 .form-grid {
   display: grid;
@@ -846,11 +862,86 @@ ol.lifecycle li.lifecycle-active {
   font-size: 0.9rem;
   text-transform: capitalize;
 }
+.tool-library-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--kind-diagnostic-border);
+  border-radius: var(--radius-md);
+  background: var(--kind-diagnostic-fill);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.tool-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tool-feature-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-nested);
+  min-width: 0;
+  overflow: hidden;
+}
+.tool-feature-group summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+  padding: 0.75rem 0.85rem;
+}
+.tool-feature-group summary::-webkit-details-marker {
+  display: none;
+}
+.tool-feature-group summary::before {
+  content: "▸";
+  left: 0.85rem;
+  top: 50%;
+  color: var(--muted);
+  font-size: 0.72rem;
+  transform: translateY(-50%) rotate(0deg);
+  transition: transform 0.15s ease;
+  position: absolute;
+}
+.tool-feature-group[open] summary::before {
+  transform: translateY(-50%) rotate(90deg);
+}
+.tool-feature-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-left: 1rem;
+}
+.tool-feature-heading strong {
+  color: var(--fg);
+  font-size: 0.9rem;
+}
+.tool-feature-heading span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
 .list-stack {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+.list-stack-condensed {
+  gap: var(--space-1);
+}
+.tool-feature-group .list-stack-condensed {
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
 }
 .list-row {
   display: flex;
@@ -867,6 +958,48 @@ ol.lifecycle li.lifecycle-active {
 .list-row:hover,
 .list-row-active {
   border-color: var(--accent);
+  background: var(--surface-nested);
+}
+.tool-library-row {
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+  padding: 0.55rem 0.6rem;
+}
+.tool-feature-group .tool-library-row {
+  background: var(--surface-emphasis);
+}
+.tool-library-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+.tool-usage-badge {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.15rem 0.35rem;
+  background: var(--surface-nested);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tool-group-more,
+.tool-library-empty {
+  margin: var(--space-1) 0 0;
+  padding: 0.45rem 0.55rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.tool-group-more {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+.tool-library-empty {
+  border-radius: var(--radius-md);
   background: var(--surface-nested);
 }
 .list-row-main {
@@ -1235,7 +1368,7 @@ ol.lifecycle li.lifecycle-active {
   .tool-workbench-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .tools-library {
+  .tools-side-rail {
     position: static;
     max-height: none;
   }

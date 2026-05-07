@@ -1,5 +1,5 @@
 /**
- * Phase 3D — ToolList smoke tests.
+ * ToolList smoke tests.
  *
  * Mounts ToolList against a mocked /api/tools backend and asserts the
  * registered tool actually renders. Carries the post-Phase-2 lesson
@@ -36,9 +36,10 @@ function mockBackend(routes: Record<string, MockResponse>): void {
 describe("ToolList", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.clear();
   });
 
-  it("renders registered tools grouped by type", async () => {
+  it("renders registered tools in a feature-grouped library", async () => {
     mockBackend({
       "/api/tools": {
         body: [
@@ -54,9 +55,69 @@ describe("ToolList", () => {
     });
     render(<ToolList />);
     await waitFor(() => {
-      expect(screen.getByText("absorption_spectrum_diagnostic")).toBeInTheDocument();
-      expect(screen.getByText("diagnostic")).toBeInTheDocument();
-      expect(screen.getByText("candidate")).toBeInTheDocument();
+      expect(screen.getAllByText("absorption_spectrum_diagnostic").length).toBeGreaterThan(0);
+      expect(screen.getByText("Diagnostics & analysis")).toBeInTheDocument();
+      expect(screen.getAllByText("diagnostic · 0.1.0").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("candidate").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("keeps the library curated and reveals hidden tools through search", async () => {
+    mockBackend({
+      "/api/tools": {
+        body: [
+          {
+            name: "diagnostic_alpha",
+            type: "diagnostic",
+            version: "0.1.0",
+            status: "draft",
+            directory: "packages/internal_tools/registry/diagnostic_alpha",
+          },
+          {
+            name: "diagnostic_beta",
+            type: "diagnostic",
+            version: "0.1.0",
+            status: "draft",
+            directory: "packages/internal_tools/registry/diagnostic_beta",
+          },
+          {
+            name: "diagnostic_delta",
+            type: "diagnostic",
+            version: "0.1.0",
+            status: "draft",
+            directory: "packages/internal_tools/registry/diagnostic_delta",
+          },
+          {
+            name: "diagnostic_gamma",
+            type: "diagnostic",
+            version: "0.1.0",
+            status: "draft",
+            directory: "packages/internal_tools/registry/diagnostic_gamma",
+          },
+          {
+            name: "zz_rare_diagnostic_tool",
+            type: "diagnostic",
+            version: "0.1.0",
+            status: "draft",
+            directory: "packages/internal_tools/registry/zz_rare_diagnostic_tool",
+          },
+        ],
+      },
+    });
+
+    render(<ToolList />);
+    await waitFor(() => {
+      expect(screen.getAllByText("diagnostic_alpha").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.queryByText("zz_rare_diagnostic_tool")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search tools"), {
+      target: { value: "zz_rare" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("zz_rare_diagnostic_tool").length).toBeGreaterThan(0);
     });
   });
 
@@ -102,12 +163,13 @@ describe("ToolList", () => {
       },
     });
     render(<ToolList />);
-    await screen.findByText("absorption_spectrum_diagnostic");
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /absorption_spectrum_diagnostic/i,
-      }),
-    );
+    await waitFor(() => {
+      expect(screen.getAllByText("absorption_spectrum_diagnostic").length).toBeGreaterThan(0);
+    });
+    const [toolButton] = screen.getAllByRole("button", {
+      name: /absorption_spectrum_diagnostic/i,
+    });
+    fireEvent.click(toolButton);
     await waitFor(() => {
       expect(screen.getAllByText("Find absorption peaks.").length).toBeGreaterThan(0);
       // Ports rendered.

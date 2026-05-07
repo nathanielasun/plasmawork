@@ -353,6 +353,46 @@ function isToolSchemaResponse(value: unknown): value is ToolSchemaResponse {
   );
 }
 
+function isToolStatus(value: unknown): value is ToolStatus {
+  return (
+    value === "draft" ||
+    value === "candidate" ||
+    value === "validated" ||
+    value === "trusted" ||
+    value === "deprecated"
+  );
+}
+
+function isToolPortList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((port) => {
+      if (!isRecord(port)) return false;
+      return typeof port.name === "string" && typeof port.type === "string";
+    })
+  );
+}
+
+function isToolDetailResponse(value: unknown): value is ToolDetail {
+  if (!isRecord(value) || !isRecord(value.metadata)) return false;
+  const metadata = value.metadata;
+  return (
+    typeof value.name === "string" &&
+    typeof value.directory === "string" &&
+    typeof metadata.name === "string" &&
+    typeof metadata.version === "string" &&
+    typeof metadata.type === "string" &&
+    isToolStatus(metadata.status) &&
+    typeof metadata.description === "string" &&
+    typeof metadata.entrypoint === "string" &&
+    isToolPortList(metadata.inputs) &&
+    isToolPortList(metadata.outputs) &&
+    isRecord(metadata.validation) &&
+    Array.isArray(metadata.validation.tests) &&
+    Array.isArray(metadata.validation.reference_cases)
+  );
+}
+
 function inputKindFromPortType(type: string): ToolInputKind {
   const normalized = type.toLowerCase();
   if (normalized.includes("bool")) return "bool";
@@ -380,6 +420,9 @@ function outputKindFromPortType(type: string): ToolOutputKind {
 }
 
 function schemaFromToolDetail(detail: ToolDetail): ToolSchemaResponse {
+  if (!isToolDetailResponse(detail)) {
+    throw new Error("Malformed tool detail response from backend.");
+  }
   const metadata = detail.metadata;
   return {
     name: metadata.name,

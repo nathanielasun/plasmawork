@@ -32,6 +32,43 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-07: Tool detail UI trusted malformed registry payloads
+
+### Affected subsystem
+- `apps/workbench-ui/src/api/client.ts`
+- `apps/workbench-ui/src/components/tools/ToolDetail.tsx`
+- `apps/workbench-ui/src/components/tools/ToolList.tsx`
+
+### Symptoms
+The tools page could blank or throw React runtime errors such as
+`Cannot read properties of undefined (reading 'description')` when a tool detail
+or legacy schema fallback response was malformed. This surfaced while
+reworking the Tool Library layout because tests returned a list payload for a
+detail URL.
+
+### Root cause
+The TypeScript API client typed `fetchJson<T>()` responses but did not validate
+the runtime shape before deriving a schema from tool metadata. `ToolDetail`
+also assumed `detail.metadata` existed immediately after fetch success.
+
+### Fix
+Added runtime guards for tool detail payloads in the API client schema fallback
+and in `ToolDetail`, so malformed backend responses render a controlled error
+instead of crashing the route. The Tool Library feature classifier also removed
+the overbroad `io` substring matcher so diagnostics containing words like
+`absorption` are not misbucketed as Data I/O.
+
+### Regression protection
+- `apps/workbench-ui/src/__tests__/ToolList.test.tsx`
+- `scripts/test/ui.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not treat TypeScript response types as runtime validation for API payloads.
+Any UI path that derives fields from legacy or fallback responses needs a shape
+guard and a visible controlled-error state.
+
 ## 2026-05-07: Backend launcher ran a simulation instead of the API server
 
 ### Affected subsystem

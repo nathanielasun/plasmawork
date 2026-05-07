@@ -226,8 +226,10 @@ Dense operational pages use a stronger layout scaffold:
 - `.page-stack` wraps the route and provides consistent vertical rhythm.
 - `.dashboard-grid`, `.dashboard-grid-2`, and `.dashboard-grid-3` provide
   bounded responsive grids where every child gets `min-width: 0`.
-- `.tools-layout` provides a sticky left registry/list column and a
-  scroll-safe detail column for tool-construction style pages.
+- `.tools-layout` gives tool-construction pages a wide primary workbench
+  column and a compact sticky side rail. The rail is a navigator, not a
+  registry dump: show active/frequent tools and capped feature groups, then
+  use search for exact lookup.
 - `.list-row` is the full-width selectable row pattern for registry
   objects; it keeps status pills visible while truncating long names.
 - `.detail-grid` is the label/value contract view for server-derived

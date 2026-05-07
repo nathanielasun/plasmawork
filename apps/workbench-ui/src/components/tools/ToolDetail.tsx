@@ -1,8 +1,6 @@
 /**
- * ToolDetail — full view of a single tool: metadata, ports, validation
- * tests, lifecycle bar (with promote button), and docs. Phase 3 also
- * surfaces the gate verbs: run-tests, export, and a link to the
- * documentation walk-through for execute / use-in-experiment.
+ * ToolDetail — full view of a single tool: metadata, ports, validation tests,
+ * lifecycle bar, docs, test execution, and isolated export.
  */
 import { useEffect, useState } from "react";
 import { apiClient, type ToolDetail as Detail, type ToolStatus as Status } from "../../api/client";
@@ -35,6 +33,52 @@ function statusKind(status: Status): PillKind {
   return "draft";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isToolStatus(value: unknown): value is Status {
+  return (
+    value === "draft" ||
+    value === "candidate" ||
+    value === "validated" ||
+    value === "trusted" ||
+    value === "deprecated"
+  );
+}
+
+function isToolPortList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((port) => {
+      if (!isRecord(port)) return false;
+      return typeof port.name === "string" && typeof port.type === "string";
+    })
+  );
+}
+
+function isToolDetail(value: unknown): value is Detail {
+  if (!isRecord(value) || !isRecord(value.metadata)) return false;
+  const metadata = value.metadata;
+  if (typeof value.name !== "string" || typeof value.directory !== "string") return false;
+  if (
+    typeof metadata.name !== "string" ||
+    typeof metadata.version !== "string" ||
+    typeof metadata.type !== "string" ||
+    typeof metadata.description !== "string" ||
+    typeof metadata.entrypoint !== "string" ||
+    !isToolStatus(metadata.status) ||
+    !isToolPortList(metadata.inputs) ||
+    !isToolPortList(metadata.outputs) ||
+    !isRecord(metadata.validation) ||
+    !Array.isArray(metadata.validation.tests) ||
+    !Array.isArray(metadata.validation.reference_cases)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export default function ToolDetail({ toolName, onStatusChanged }: Props) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +94,12 @@ export default function ToolDetail({ toolName, onStatusChanged }: Props) {
     setExportResult(null);
     apiClient
       .getTool(toolName)
-      .then(setDetail)
+      .then((nextDetail: unknown) => {
+        if (!isToolDetail(nextDetail)) {
+          throw new Error("Malformed tool detail response from backend.");
+        }
+        setDetail(nextDetail);
+      })
       .catch((e) => setError(String(e)));
   }, [toolName]);
 

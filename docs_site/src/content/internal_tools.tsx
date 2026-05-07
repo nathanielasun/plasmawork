@@ -202,6 +202,13 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
         table, timeseries, image, diagram, file, report, or JSON inspection.
       </p>
       <p>
+        The in-app tool library is a compact navigator rather than a full
+        registry dump. It highlights the active tool, locally frequent tools,
+        and capped feature groups such as data I/O, diagnostics, validation,
+        visualization, and solver-facing utilities. Search is the intended
+        path for exact lookup when the registry grows.
+      </p>
+      <p>
         Tool outputs that are too large or file-like are treated as artifacts
         rather than hidden inline JSON. Artifact viewers show type, size, hash,
         provenance, and a safe preview when available. Diagram rendering uses
