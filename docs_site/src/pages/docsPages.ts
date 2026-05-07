@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import Overview from "../content/overview";
 import Installation from "../content/installation";
 import Usage from "../content/usage";
+import OperatingSystemCompatibility from "../content/os_compatibility";
 import Architecture from "../content/architecture";
 import ModuleDevelopment from "../content/module_development";
 import InternalTools from "../content/internal_tools";
@@ -27,7 +28,11 @@ export interface DocPage {
   slug: string;
   title: string;
   summary: string;
-  section: "Get Started" | "Workbench Concepts" | "Security and Operations";
+  section:
+    | "Get Started"
+    | "Features"
+    | "Workbench Concepts"
+    | "Security and Operations";
   Component: ComponentType;
 }
 
@@ -52,6 +57,14 @@ export const docsPages: DocPage[] = [
     summary: "Run the UI/backend, create experiments, and inspect results.",
     section: "Get Started",
     Component: Usage,
+  },
+  {
+    slug: "os-compatibility",
+    title: "Operating System Compatibility",
+    summary:
+      "Supported local-development platforms, wrappers, and deployment-specific limits.",
+    section: "Features",
+    Component: OperatingSystemCompatibility,
   },
   {
     slug: "architecture",

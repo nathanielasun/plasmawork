@@ -64,6 +64,20 @@ const DOC_PAGE_META: Readonly<Record<string, DocPageMeta>> = {
     summary: "Run the UI/backend, create experiments, and inspect results.",
     keywords: ["run", "experiment", "controls"],
   },
+  os_compatibility: {
+    title: "Operating System Compatibility",
+    summary:
+      "Supported local-development platforms, wrappers, and deployment-specific limits.",
+    keywords: [
+      "os",
+      "platform",
+      "windows",
+      "macos",
+      "linux",
+      "shell",
+      "compatibility",
+    ],
+  },
   architecture: {
     title: "Architecture",
     summary: "Package layout, process boundaries, and dependency direction.",
@@ -172,6 +186,12 @@ const DOC_SECTIONS: readonly DocSection[] = [
     title: "Get Started",
     summary: "Install, launch, and understand the system.",
     slugs: ["overview", "installation", "usage", "architecture"],
+  },
+  {
+    id: "features",
+    title: "Features",
+    summary: "User-facing capability contracts and compatibility notes.",
+    slugs: ["os_compatibility"],
   },
   {
     id: "workbench",
@@ -297,6 +317,7 @@ export default function DocsViewer(): JSX.Element {
   const activeSection = sectionForSlug(sections, selectedSlug);
   const [openSectionIds, setOpenSectionIds] = useState<readonly string[]>(() => [
     "start",
+    "features",
     "workbench",
     activeSection?.id ?? "start",
   ]);

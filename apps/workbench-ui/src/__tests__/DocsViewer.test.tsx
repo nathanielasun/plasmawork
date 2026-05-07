@@ -38,7 +38,11 @@ describe("DocsViewer", () => {
       name: /Documentation sections/i,
     });
     expect(within(nav).getByText("Get Started")).toBeInTheDocument();
+    expect(within(nav).getByText("Features")).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: /Architecture/i })).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("link", { name: /Operating System Compatibility/i }),
+    ).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: /Using the Workbench/i })).toBeInTheDocument();
   });
 

@@ -50,6 +50,29 @@ Secure frontend readiness is tracked in [`program_development/secure_frontend_re
 
 ---
 
+## Feature: Operating System Compatibility
+
+The workbench targets local development on macOS, Linux, and Windows for the
+Python core, TypeScript UI, documentation site, local runs, and capsule
+serialization. The canonical compatibility page is
+[`docs_site/src/content/os_compatibility.tsx`](./docs_site/src/content/os_compatibility.tsx)
+and is available inside the workbench Documentation panel under
+**Features -> Operating System Compatibility**.
+
+Current compatibility contract:
+
+- Python core/runtime/tests: intended for macOS, Linux, and Windows with Python >= 3.11.
+- UI and docs: intended for macOS, Linux, and Windows with Node.js >= 20.
+- Backend launcher: provides Unix, PowerShell, cmd.exe, and shell-neutral Python entrypoints.
+- POSIX-only scripts: use macOS/Linux/Git Bash/WSL unless a native `.ps1` or `.cmd` wrapper exists.
+- Deployment-sensitive capabilities: gVisor/runsc probes, Postgres role probes, WORM/S3 anchors, GPU/compiled kernels, Slurm, and external simulators require their documented target runtimes.
+
+Any change that affects platform support, shell wrappers, filesystem/path
+behavior, compiler/runtime prerequisites, sandboxing, or deployment probes must
+update the OS compatibility page and this README summary in the same change.
+
+---
+
 ## Installation
 
 > Phase 1 complete. The bootstrap script installs the full Python core (ModelSpec, units, experiment, runtime, diagnostics, api, capsule serialization) and the Node workspaces for both apps.

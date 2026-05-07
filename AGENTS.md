@@ -8,7 +8,7 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 
 ## Mandatory Repository Rules for Development Agents
 
-1. **Documentation stays synchronized with code.** If behavior, configuration, APIs, simulation modules, build instructions, or capsule format change, update the relevant page in `docs_site/src/content/` and `README.md` *before* completing the task.
+1. **Documentation stays synchronized with code.** If behavior, configuration, APIs, simulation modules, build instructions, or capsule format change, update the relevant page in `docs_site/src/content/` and `README.md` *before* completing the task. If platform support, shell wrappers, path handling, filesystem behavior, compiler/runtime prerequisites, sandbox assumptions, or deployment probe requirements change, also update `docs_site/src/content/os_compatibility.tsx`, the workbench docs navigation metadata, and the README compatibility summary.
 
 2. **Maintain program documentation inside `docs_site/`** as TypeScript/MDX-compatible pages accessible from the workbench UI. Do not duplicate documentation strings into the UI source — load from the canonical docs. The in-app docs browser uses `apps/workbench-ui/src/components/DocsViewer.tsx` metadata (`DOC_PAGE_META`, `DOC_SECTIONS`) for its searchable, collapsible sidebar; the standalone docs site uses `docs_site/src/pages/docsPages.ts` metadata. Update both whenever a docs page is added, renamed, or substantially repurposed. Documentation must read as a user/developer manual, not as phase/workstream closure notes or agent-only instructions.
 

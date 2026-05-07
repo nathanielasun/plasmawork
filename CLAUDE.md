@@ -123,6 +123,7 @@ Current status:
 - `scripts/dev/check_repo_conventions.sh` exists and is the hard gate.
 - `scripts/test/security.sh` runs the §29 spec-level invariants under `packages/secure_core/test/security/` (always-on); live-runtime gVisor / DB / S3 probes are env-gated for the dedicated CI lane.
 - `scripts/dev/check_workspace_paths.sh`, `scripts/dev/check_security_headers.sh`, and `scripts/dev/check_security_schema.sh` are reserved command contracts; create them with their owning follow-up layers.
+- `docs_site/src/content/os_compatibility.tsx` and the README compatibility summary are the canonical OS-support notes. Update both whenever platform support, shell wrappers, path behavior, compiler/runtime requirements, sandbox assumptions, or live probe requirements change.
 
 ---
 

@@ -5,6 +5,7 @@ import type { DocPage } from "../pages/docsPages";
 
 const DOC_SECTIONS: readonly DocPage["section"][] = [
   "Get Started",
+  "Features",
   "Workbench Concepts",
   "Security and Operations",
 ];
@@ -22,6 +23,7 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [openSections, setOpenSections] = useState<readonly string[]>([
     "Get Started",
+    "Features",
     "Workbench Concepts",
   ]);
 

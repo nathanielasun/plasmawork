@@ -2863,11 +2863,17 @@ check_dir_exists  docs_site
 check_file_exists docs_site/package.json
 check_file_exists docs_site/tsconfig.json
 check_dir_exists  docs_site/src/content
-for f in overview installation usage architecture module_development \
+for f in overview installation usage os_compatibility architecture module_development \
          internal_tools simulation_capsules agent_workflows \
          validation troubleshooting; do
   check_file_exists "docs_site/src/content/$f.tsx" "doc page $f.tsx"
 done
+check_grep_in_file 'os-compatibility' \
+  docs_site/src/pages/docsPages.ts \
+  "OS compatibility docs page is registered"
+check_grep_in_file 'os_compatibility' \
+  apps/workbench-ui/src/components/DocsViewer.tsx \
+  "OS compatibility page is registered in workbench docs"
 
 # ---------------------------------------------------------------------------
 section "Project source directories must not be gitignored"
