@@ -4,6 +4,22 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-07 (Deprecated phase-state contract drift sweep)
+
+### Completed
+- Ran a parallel repository scour for current files still built around old phase state after the full ten-phase plan closed.
+- Reconciled stale user-facing contracts: README example/run/export commands, CLAUDE phase/security status, core package/runtime/API docstrings, UI placeholder copy, candidate plasma-module wording, and secure frontend readiness notes.
+- Converted `CodeViewer` from a placeholder panel into a real read-only capsule source viewer using the capsule list/tree/file API.
+- Added executable security helper wrappers for workspace-path, security-header, and schema/route validation checks.
+- Made `postgres_up.sh` fail closed instead of succeeding as a "not implemented" stub; `security.sh` now dispatches live DB/runsc/WORM probe scripts when the corresponding env vars are intentionally set.
+- Added `tests/regression/test_phase_contract_drift.py`, `tests/performance/test_runtime_smoke.py`, stronger Phase-8 HPC wrapper execution coverage, and convention-checker assertions for the drift class.
+- Logged the recurring error pattern in `bugs_and_fixes/agent_error_patterns.md`, `bugfixes.md`, `regression_tests.md`, `AGENTS.md`, and `CLAUDE.md`.
+
+### Next steps
+- Treat remaining historical phase references in ADRs, milestones, and timeline as provenance only; any future current-surface match must be reconciled or explicitly documented as historical.
+
+---
+
 ## 2026-05-07 (Documentation browser restyle and manual copy cleanup)
 
 ### Completed

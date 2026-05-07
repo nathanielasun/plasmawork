@@ -285,6 +285,7 @@ check_grep_in_file 'uvicorn' scripts/dev/run_backend.py "run_backend.py starts u
 check_grep_in_file 'simworkbench\.api\.server:app' scripts/dev/run_backend.py "run_backend.py targets the FastAPI app"
 check_grep_absent_in_file 'root / "examples"' scripts/dev/run_backend.py "run_backend.py does not dispatch simulation examples"
 check_file_exists tests/regression/test_run_backend_launcher.py
+check_file_exists tests/regression/test_phase_contract_drift.py
 check_file_exists examples/simple_rate_equations/run.py
 
 # ---------------------------------------------------------------------------
@@ -357,6 +358,7 @@ check_file_exists apps/workbench-ui/src/api/client.ts
 check_file_exists apps/workbench-ui/src/__tests__/App.test.tsx
 check_file_exists apps/workbench-ui/src/__tests__/SimulationList.test.tsx
 check_file_exists apps/workbench-ui/src/__tests__/RunControls.test.tsx
+check_file_exists apps/workbench-ui/src/__tests__/CodeViewer.test.tsx
 check_file_exists apps/workbench-ui/src/__tests__/DocsViewer.test.tsx
 check_grep_absent_in_file 'placeholder package for the Scientific Simulation Workbench UI' apps/workbench-ui/package.json "apps/workbench-ui/package.json no longer Phase-0 placeholder"
 check_grep_absent_in_file 'Workbench UI shell is scheduled for Phase 1F' scripts/dev/run_ui.sh "scripts/dev/run_ui.sh is no longer the Phase-0 stub"
@@ -1907,7 +1909,7 @@ check_grep_in_file 'ADR-0013-secure-multi-user-foundation' \
   secure_multi_user_scaffolding_plan_v4.md \
   "v4 plan points at ADR-0013 (renumbered to avoid units-library collision)"
 
-section "v4 §1 inserts + security stub"
+section "v4 §1 inserts + security gates"
 check_grep_in_file 'Secure Multi-User Development Requirements' AGENTS.md \
   "AGENTS.md carries v4 §1.1 insert"
 check_grep_in_file 'Security Rules for Multi-User Workbench Work' CLAUDE.md \
@@ -1915,6 +1917,12 @@ check_grep_in_file 'Security Rules for Multi-User Workbench Work' CLAUDE.md \
 check_file_executable scripts/test/security.sh "scripts/test/security.sh runs §29 spec-level invariants"
 check_grep_in_file 'vitest run test/security' scripts/test/security.sh \
   "security.sh actually runs the §29 suite under packages/secure_core/test/security/"
+check_grep_in_file 'security_live_runsc\.sh' scripts/test/security.sh \
+  "security.sh dispatches enabled runsc live probes"
+check_grep_in_file 'security_live_db\.sh' scripts/test/security.sh \
+  "security.sh dispatches enabled DB live probes"
+check_grep_in_file 'security_live_worm\.sh' scripts/test/security.sh \
+  "security.sh dispatches enabled WORM live probes"
 check_file_executable scripts/test/security_live_db.sh \
   "security_live_db.sh executable"
 check_file_executable scripts/test/security_live_runsc.sh \
@@ -2728,7 +2736,11 @@ check_grep_absent_in_file 'req\.body\.capsule_version_id' \
 check_grep_absent_in_file 'req\.body\.requested_by' \
   packages/secure_core/src/workers/tokenRoute.ts \
   "L4.11 token route never reads req.body.requested_by (v4 §19.1)"
-check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh stub"
+check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh executable"
+check_grep_in_file 'exit 1' scripts/dev/postgres_up.sh \
+  "postgres_up.sh fails closed instead of succeeding as an informational stub"
+check_grep_in_file 'security_live_db\.sh' scripts/dev/postgres_up.sh \
+  "postgres_up.sh points users at the live DB probe lane"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
@@ -2768,6 +2780,33 @@ check_grep_in_file 'designExperiment|reviewExperiment|autonomousSweep' \
   "client.ts exposes autonomy helpers"
 check_file_exists apps/workbench-ui/src/components/autonomy/AutonomyPanel.tsx
 
+section "Deprecated phase-state drift guards"
+check_file_exists tests/regression/test_phase_contract_drift.py
+check_grep_absent_in_file 'Runtime execution lands in Workstream 1C' README.md \
+  "README no longer advertises runtime as future Phase 1C work"
+check_grep_absent_in_file 'examples/krf_excimer/krf_excimer\.lxp' README.md \
+  "README no longer points run_capsule at a nonexistent KrF capsule"
+check_grep_absent_in_file './scripts/export/capsule\.sh <capsule_name>' README.md \
+  "README export command uses the current capsule_dir target_dir contract"
+check_grep_absent_in_file '\| 10 \| Next \|' CLAUDE.md \
+  "CLAUDE phase table marks Phase 10 complete"
+check_grep_absent_in_file 'empty pending Phase 10' CLAUDE.md \
+  "CLAUDE convention-checker note no longer says Phase 10 is pending"
+check_grep_absent_in_file 'currently active|Pending\.' packages/core/src/simworkbench/__init__.py \
+  "simworkbench package docstring does not claim old Phase 1 pending state"
+check_grep_absent_in_file 'wait for Phase|Phase 1 has no rate-parser|field-only interactions land in Phase|higher-order kinetics land in Phase' \
+  packages/core/src/simworkbench/runtime/python_cpu.py \
+  "python_cpu runtime errors do not tell users to wait for closed phases"
+check_grep_absent_in_file 'workbench shell skeleton|Backend file fetch lands|file content fetching is wired' \
+  apps/workbench-ui/src/components/CodeViewer.tsx \
+  "CodeViewer loads from the current capsule file API, not placeholder text"
+check_grep_in_file 'getCapsuleFile' apps/workbench-ui/src/components/CodeViewer.tsx \
+  "CodeViewer uses capsule file API"
+check_grep_in_file 'getCapsuleTree' apps/workbench-ui/src/components/CodeViewer.tsx \
+  "CodeViewer uses capsule tree API"
+check_grep_absent_in_file 'Phase 0 placeholder|UI placeholder' apps/workbench-ui/src/app/page.tsx \
+  "app/page.tsx no longer presents itself as Phase 0 placeholder UI"
+
 # Open-workstream TODO branch. Phase 10 closed 2026-05-04; no further
 # phases scheduled.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
@@ -2790,6 +2829,9 @@ done
 for f in dev/install.sh \
          dev/run_ui.sh \
          dev/run_backend.sh \
+         dev/check_workspace_paths.sh \
+         dev/check_security_headers.sh \
+         dev/check_security_schema.sh \
          dev/run_capsule.sh \
          build/ui.sh \
          build/kernels.sh \
@@ -2818,6 +2860,7 @@ for d in laser_species krf_excimer simple_rate_equations molecular_dynamics isin
   check_file_exists "examples/$d/README.md"
 done
 check_file_exists examples/simple_rate_equations/model.yaml
+check_file_exists tests/performance/test_runtime_smoke.py
 check_file_exists examples/krf_excimer/model.yaml
 check_file_exists configs/default.yaml
 check_file_exists configs/local.yaml.example

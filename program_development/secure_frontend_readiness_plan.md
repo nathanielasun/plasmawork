@@ -106,9 +106,12 @@ Files:
 
 ### Q2. Session and permission model for UI
 
-Status: implemented for `GET /auth/session`; frontend integration still pending.
+Status: implemented for `GET /auth/session`; initial Security Ops frontend
+integration has landed. Broader product routes still need server-derived
+capability gating before exposing high-risk actions.
 
-The frontend needs a server-derived current-session shape before it can gate navigation or hide buttons.
+The frontend uses a server-derived current-session shape to gate security
+navigation and disabled-control states.
 
 Desired route:
 

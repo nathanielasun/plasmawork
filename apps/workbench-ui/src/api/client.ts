@@ -13,9 +13,8 @@ export interface RunSummary {
   diagnostics_keys: string[];
   /**
    * True when one or more interactions used a flagged-placeholder rate
-   * constant. Phase 1 has no rate-parser, so every run currently has at
-   * least one placeholder. The UI must surface this so the user knows the
-   * run is exploratory, not validated.
+   * constant. The UI must surface this so the user knows the run is
+   * exploratory unless separate validation evidence upgrades the result.
    */
   placeholder_used: boolean;
   placeholders: string[];

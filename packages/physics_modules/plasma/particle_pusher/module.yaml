@@ -4,10 +4,10 @@ domain: plasma
 status: candidate
 
 description: |
-  Phase 7C interface stub for a single-particle pusher driven by E/B
-  fields. The reference implementation is the Boris algorithm
-  (semi-implicit, 2nd-order); validated runs land in Phase 8 once the
-  PIC adapter binds it to a real field solver.
+  Candidate interface for a single-particle pusher driven by E/B fields.
+  The reference implementation is the Boris algorithm (semi-implicit,
+  2nd-order); scientifically validated runs require binding this interface
+  to a validated field solver/PIC backend.
 
 inputs:
   - name: particles

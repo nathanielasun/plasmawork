@@ -1,9 +1,10 @@
-"""Workbench backend HTTP API — Phase 1F.
+"""Workbench backend HTTP API.
 
-A small FastAPI app that exposes the experiment / runtime / diagnostics
-surface the workbench UI consumes. The API is HTTP/JSON and intentionally
-minimal: list runs, start a run from a YAML model spec, query state, fetch
-final diagnostics.
+A FastAPI app exposing the experiment, runtime, diagnostics, capsule, tool,
+paper-ingestion, proposal, code-generation, sweep/reporting, and autonomy
+surfaces consumed by the workbench UI. The API is HTTP/JSON; the TypeScript
+client in ``apps/workbench-ui/src/api/client.ts`` mirrors the public response
+and request shapes.
 
 Per AGENTS.md "Repository Architecture Rules → Packaging boundary": the
 TypeScript UI never imports Python directly. It talks to this server.
@@ -38,10 +39,9 @@ Endpoints:
 - ``POST /api/proposals``                           — Phase 5 end-to-end
   (transform → map → analyze → propose).
 
-Phase 1F runs are synchronous: the server starts the run on the request
-thread and returns the final state. Async / pause-resume across HTTP is a
-Phase 1F+ enhancement; the in-process Runner already supports it (see
-``simworkbench.runtime.Runner``).
+The legacy ``POST /api/runs`` path is synchronous: it starts the run on the
+request thread and returns the final state. Long-running or privileged run
+state is handled by the secure-core workspace-scoped run machinery.
 """
 
 from __future__ import annotations
@@ -877,7 +877,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/capsules")
     def list_capsules() -> list[dict[str, str]]:
-        """List ``.lxp`` directories under ``simulation_capsules/`` (Phase 1F skeleton)."""
+        """List ``.lxp`` directories under ``simulation_capsules/``."""
         root = simulation_capsules_root()
         return [
             {"name": p.name, "path": str(p.relative_to(repo_root()))}

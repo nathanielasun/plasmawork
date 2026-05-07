@@ -1,9 +1,9 @@
-"""Core experiment model for Phase 1A.
+"""Core experiment model.
 
-The classes here describe a manually configured experiment before the Phase 1C
-runtime executes it. They intentionally do not run simulations; they bind a
-validated `ModelSpec` to run, backend, and diagnostic configuration and provide
-a stable serialization boundary.
+The classes here describe a configured experiment before the runtime executes
+it. They intentionally do not run simulations; they bind a validated
+``ModelSpec`` to run, backend, and diagnostic configuration and provide a
+stable serialization boundary.
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ class BackendConfig(BaseModel):
     Inputs: `name` is a backend identifier with no units; `options` are
     backend-specific metadata that must not contain physical raw floats.
     Outputs: a validated backend configuration object.
-    Assumptions: Phase 1A only validates names and metadata shape; execution
-    capability checks land in Phase 1C/8.
-    References: plan Phase 1A, Phase 8; ADR-0001.
+    Assumptions: this model validates names and metadata shape. Runtime and
+    backend-specific capability checks remain in the runner/backend registry.
+    References: ADR-0001 and backend registry documentation.
     """
 
     model_config = ConfigDict(extra="forbid")

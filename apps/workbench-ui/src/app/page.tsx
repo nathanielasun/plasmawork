@@ -1,11 +1,10 @@
 /**
- * Phase 0 placeholder for the future workbench application shell.
+ * Compatibility smoke entrypoint for environments that still scan
+ * `src/app/page.tsx`.
  *
- * The real UI shipped in Phase 1F (and has been extended through Phase 9);
- * this file exists so the repository
- * skeleton has a concrete TypeScript entrypoint that convention checks can
- * track.
+ * The routed Vite application lives in `src/App.tsx`; this file remains only
+ * as a lightweight exported function for repository convention checks.
  */
-export function phase0WorkbenchPlaceholder(): string {
-  return "Scientific Simulation Workbench UI placeholder";
+export function workbenchAppSmokeEntrypoint(): string {
+  return "Scientific Simulation Workbench UI routed shell";
 }

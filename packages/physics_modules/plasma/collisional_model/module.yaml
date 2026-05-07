@@ -4,9 +4,10 @@ domain: plasma
 status: candidate
 
 description: |
-  Phase 7C interface for elastic Coulomb collisions among charged species.
-  Skeleton only; the validated implementation (e.g. Nanbu's binary
-  collision model) lands in Phase 8.
+  Candidate interface for elastic Coulomb collisions among charged species.
+  This module declares the shape and validity notes only; a validated
+  implementation (e.g. Nanbu's binary collision model) must ship with
+  scientific validation evidence before trusted use.
 
 inputs:
   - name: species_density

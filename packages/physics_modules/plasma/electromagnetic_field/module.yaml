@@ -4,11 +4,10 @@ domain: plasma
 status: candidate
 
 description: |
-  Phase 7C interface stub for an electromagnetic-field representation
-  used by particle pushers and PIC adapters. Carries a 3-component E/B
-  field on a structured grid; the physical solver lives in Phase 8 (HPC
-  backends bring vectorized FDTD). This module's job at Phase 7 is the
-  data shape + unit contract.
+  Candidate interface for an electromagnetic-field representation used by
+  particle pushers and PIC adapters. Carries a 3-component E/B field on a
+  structured grid. This module's job is the data shape + unit contract;
+  numerical FDTD/FFT evolution requires a validated field solver/backend.
 
 inputs:
   - name: domain_extent
@@ -24,9 +23,9 @@ outputs:
 
 validity_domain:
   notes:
-    - "Structured Cartesian grid only; unstructured / AMR awaits Phase 8."
+    - "Structured Cartesian grid only; no unstructured / AMR solver is implemented here."
     - "Uniform spacing along each axis."
-    - "Phase 7 ships the data structure + boundary marshalling. Numerical evolution lands in Phase 8."
+    - "Data structure + boundary marshalling only; numerical evolution is out of scope for this candidate."
 
 references:
   - title: "Birdsall & Langdon, *Plasma Physics via Computer Simulation*, ch. 4."

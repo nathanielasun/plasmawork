@@ -35,9 +35,12 @@ export default function SecurityTesting() {
       </p>
       <p>
         The default PR lane runs <code>scripts/test/security.sh</code> without
-        deployment credentials. Live-runtime checks are separate protected
-        lanes: <code>security_live_db.sh</code> provisions an ephemeral
-        PostgreSQL service through <code>PLASMAWORK_TEST_DB_URL</code>,
+        deployment credentials. If a live-probe environment variable is set,
+        the default script dispatches to the matching live-probe script and
+        fails closed if the target runtime is not actually available. Protected
+        lanes may also call these scripts directly:{" "}
+        <code>security_live_db.sh</code> provisions an ephemeral PostgreSQL
+        service through <code>PLASMAWORK_TEST_DB_URL</code>,{" "}
         <code>security_live_runsc.sh</code> requires
         <code>PLASMAWORK_RUNSC_PROBES=1</code> and a runner with
         <code>runsc</code> installed, and <code>security_live_worm.sh</code>

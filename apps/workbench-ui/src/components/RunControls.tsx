@@ -1,8 +1,8 @@
 /**
  * RunControls — start a new run from a selected ModelSpec.
- * Phase 1F: synchronous start; pause/resume/stop are wired to the same API
- * surface but Phase 1F's backend executes synchronously (the runner library
- * supports interactive control; HTTP-driven pause/resume lands in Phase 1F+).
+ * This legacy API path executes synchronously and returns the final run state.
+ * Interactive/background run state belongs to the runtime library and the
+ * secure-core workspace-scoped run surfaces.
  */
 import { useState } from "react";
 import { apiClient, type RunSummary } from "../api/client";

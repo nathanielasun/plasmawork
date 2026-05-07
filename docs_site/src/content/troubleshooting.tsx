@@ -53,6 +53,16 @@ export default function Troubleshooting() {
         command is unavailable.
       </p>
 
+      <h3>A command behaves like an old phase stub</h3>
+      <p>
+        Treat that as a contract-drift bug, even when the convention checker
+        passes. Verify the documented command against the current code path,
+        update stale phase wording, add a regression test for the real
+        behavior, and record the fix in <code>bugs_and_fixes/</code>. A script
+        that cannot safely run in the current environment must fail closed, not
+        exit successfully after printing a placeholder message.
+      </p>
+
       <h3>A simulation runs but produces nonsense</h3>
       <p>
         Check the validation panel. If status is <code>exploratory</code> or

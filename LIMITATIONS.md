@@ -1,6 +1,6 @@
 # Capabilities and Limitations
 
-**Last updated: 2026-05-07 (Phase 0.5 Layers 1-4 structurally complete. Layer-4 final batch shipped 6 routes via parallel sub-agents: L4.3 runs (CRUD + cancel via L3.6 atomic transition), L4.5 artifacts + export (SSRF-validated destination + L3.5 quota reservation + L2.9 high-risk gate on `artifact_export`), L4.8 recovery flows (5 endpoints with anti-enumeration constant-time-ish responses + per-IP + per-account rate limits), L4.9 bootstrap (5-gate check incl. WORM marker + constant-time-fence credential compare + real lockout after 5 failures), L4.10 operator (cross-workspace audit-read + investigate + remediate via L2.9, paired audit_events + operator_events writes per V4-R7), L4.11 worker token issuance (POST /internal/workers/runs/:runId/token wrapping L3.8 issueWorkerToken; raw token never logged or in audit metadata). secure_core suite: 625 tests pass + 87 Postgres-gated skips across 51 files. Convention checker at 1251 checks. Layer-5 (§29 live-runtime CI lane + integration suite) and FastAPI cut-over remain future work.)**
+**Last updated: 2026-05-07 (Deprecated phase-state contract drift sweep. Phase 0.5 secure-core is implemented through Layer 5: identity/session, workspace-scoped routes, approval middleware, audit/provenance chains, sandbox spec guards, worker-token/upload paths, security dashboard, rate limits, production-secret validation, supply-chain gates, and frontend Security Ops binding. Production multi-user operation still requires target-runtime live probes for DB roles, gVisor/runsc, and WORM anchors, plus an explicit deployment cut-over from the local single-user FastAPI workbench.)**
 
 This document is the honest, non-aspirational map of what the Scientific Simulation Workbench can and cannot do today. The convention checker verifies *structural* completeness — files exist, classes define the right fields, tests cover the named verbs. It does **not** verify scientific capability. A green gate plus a passing test suite means the wiring works and regressions don't sneak back in. It does NOT mean the system can take a real laser-physics paper and produce a publishable simulation autonomously.
 
@@ -14,6 +14,7 @@ What you have is a well-tested **substrate**:
 - Schemas, units, runtime contract, capsule format, provenance, sweep / UQ / optimization, FastAPI + TypeScript UI, audit trails, approval gates.
 - One real numerical domain (0D rate equations) end-to-end, with deterministic seeded execution and validated agreement between two backends.
 - Six small physics modules promoted to `validated` against analytic limits.
+- A secure-core multi-user scaffold with server-derived identity, workspace object scope, approval-token middleware, audit/provenance chain verification, security dashboard, and CI/security gates.
 
 What you do **not** have:
 - An LLM in the loop. Every "agent" in `simworkbench.autonomy` is a Python class with hand-coded heuristics. The plan's "autonomous experiment design" is a structured-data emitter, not a reasoning system.
@@ -79,9 +80,21 @@ These subsystems are real, tested, and work as documented. You can use them in e
 | Folder browser | `apps/workbench-ui/src/components/ui/FolderBrowser.tsx` + `GET /api/browse` | Real | Read-only tree view over the four workbench-managed roots + `examples/`. Server allow-lists root names; resolves `..` and symlink-escape attempts via `.resolve().relative_to(root)` and refuses with 400. AbortController-cancellable on the client. Replaces the hand-typed path inputs in AutonomyPanel and RunControls; original `<input>` stays as a power-user fallback. |
 | Unified runs view | `GET /api/runs` (merged) + `GET /api/runs/{id}/diagnostics/{name}` (disk fallback) | Real | Backend merges in-memory runs with on-disk `temp_runs/<id>/summary.json` files; heterogeneous summary shapes (python_cpu's `species_trajectories: {A: [...]}` and tabular runs' `rows: [{T, m, ...}]`) both surface as dotted diagnostic keys (`species_trajectories.A`, `rows.m_per_spin`). Time axis falls back to integer index when the summary has no `time_seconds`. Path-traversal-guarded (`run_id` cannot contain `/` or start with `.`). Diagnostics tab now shows every run a researcher launches via the Examples gallery, not just in-memory ones. |
 | Docs viewer | `apps/workbench-ui/src/components/DocsViewer.tsx` (single-server) | Real | Bundles every page under `docs_site/src/content/*.tsx` into the workbench UI via Vite's `import.meta.glob`, one lazy chunk per page. No iframe, no probe, no second server — the Documentation tab works the moment the workbench UI is up. Typography handled by a `.docs-content` wrapper class so the existing TSX pages render readable without per-page styling. AGENTS.md "no inlined doc text" preserved — pages literally come from `docs_site/src/content/`, just bundled instead of separately served. The `docs_site/` Vite app remains as an optional standalone build target (`scripts/docs/build.sh`). |
+| Code viewer | `apps/workbench-ui/src/components/CodeViewer.tsx` + capsule file APIs | Real | Read-only viewer over capsule `src/generated/`, `src/user_edits/`, and `src/kernels/` using `listCapsules`, `getCapsuleTree`, and `getCapsuleFile`. User-owned files are labeled and not editable from this route. |
 | Vite ↔ FastAPI proxy | `apps/workbench-ui/vite.config.ts` | Real | `/api` → `localhost:8000`. |
-| Convention checker | `scripts/dev/check_repo_conventions.sh` | Real | 680 default + opt-in `--include-open-workstreams`. Hard gate for repo health. |
+| Convention checker | `scripts/dev/check_repo_conventions.sh` | Real | Default hard gate plus opt-in `--include-open-workstreams` backlog view. Hard gate for repo health. |
 | Test runner | `scripts/test/all.sh` | Real | Convention check → ruff lint → unit → integration → regression → validation → performance → UI typecheck. |
+
+### Secure multi-user scaffold
+
+| Capability | Module | Status | Notes |
+|---|---|---|---|
+| Server-derived session | `packages/secure_core/src/auth` + `/auth/session` | Real scaffold | Session data includes actor, assurance, memberships, roles, and capabilities. Live memberships with zero capabilities remain visible. |
+| Workspace-scoped routes | `packages/secure_core/src/routes/` | Real scaffold | Workspaces, capsules, runs, artifacts, tools, approvals, operator, bootstrap, worker token/upload, and security-dashboard routes enforce auth, membership/capability, schema, object scope, and audit checks. |
+| Approval middleware | `packages/secure_core/src/middleware/requireApprovalIfHighRisk.ts` | Real scaffold | Human-only, single-use high-risk approval token consumption with operator step-up preconditions where required. |
+| Audit/provenance chains | `packages/secure_core/src/audit/` | Real scaffold | Append-only chain verification, external-anchor readback when WORM provider is configured, periodic verifier job, and dashboard health summaries. |
+| Sandbox runner scaffold | `packages/secure_core/src/sandbox/` | Real scaffold | Launch specs forbid privileged mode, default network egress, forbidden env, and mount escapes. Production isolation still depends on a target runner with `runsc` and live probes. |
+| Security Ops UI | `apps/workbench-ui/src/components/security/` | Real scaffold | `/security` route renders server-derived session/dashboard data when available and labels fixture fallback during local UI review. |
 
 ### Validated physics modules
 
@@ -166,12 +179,12 @@ A short, brutal list of cases where you'd hit a wall. Each is a real consequence
 
 1. **"Import this PIC paper and run a 1D sim."** Phase 4 extracts text/equations/parameters; Phase 5 needs a human to review and clean up the four interpretation artifacts; Phase 6 can only generate code that calls a registered module. There is no PIC module. End of road.
 2. **"Run this on the GPU."** `cuda` is a capability descriptor with a determinism warning. There's no GPU kernel for any solver.
-3. **"Sweep over rate constants for a real KrF laser."** No real plasma-laser module ships. The `species/rate_equation_0d` solver works but can only honor `placeholder:`-prefixed coefficient sources — Phase 1 has no rate-constant parser. A "real" run is one with placeholder rates plus an `exploratory` capsule status.
+3. **"Sweep over rate constants for a real KrF laser."** No real plasma-laser module ships. The `species/rate_equation_0d` solver works but `python_cpu` can only honor explicit `placeholder:` coefficient sources unless a validated module/backend supplies a real numeric rate. A placeholder-rate run remains `exploratory`.
 4. **"Have the agent critique my spec and fix the issues."** The reviewer flags absolutist phrasing and missing-physics categories. It does not propose code changes, and does not have any model of *what physics is missing for your specific problem*.
 5. **"Submit to a real Slurm cluster from the workbench."** `SlurmJob.write` writes a real bundle. The remote node needs `simworkbench-core` installed and `PYTHONPATH` configured; the bundle is "self-contained" only for the workbench's own payload + entrypoint, not for the runtime. ADR documents this.
 6. **"Run the full `examples/autonomous_experiment_kr` pipeline against a real paper."** The example uses a stand-in quadratic objective. The four-stage pipeline runs end-to-end, but the objective it sweeps is `(x - 0.7)^2`, not anything tied to the spec.
-7. **"Have multiple researchers share a workspace."** Not yet. The repository now has secure-core Layer-1 primitives, but the active FastAPI workbench remains single-user: no enforced auth middleware, no workspace-scoped endpoints, no per-user request identity, and no production multi-user server cut-over.
-8. **"Run this on a sandboxed worker."** No sandbox today. `simworkbench.runtime.python_cpu` runs in-process via the same Python interpreter as the API server; `simworkbench.codegen.sandbox.sandboxed_write` is a path-allow-list, not a process boundary. Per the same Phase 0.5 plan.
+7. **"Have multiple researchers share a production workspace."** Not yet. `packages/secure_core` has the multi-user scaffold, route tests, and Security Ops UI binding, but the default local FastAPI workbench remains a single-user scientific API. Production rollout requires mounting/cut-over to the secure-core server composition and passing the target-runtime live probes.
+8. **"Run this on a production sandboxed worker."** Not from the default local scientific runtime. Secure-core has worker-token/upload paths and sandbox launch-spec guards; `simworkbench.runtime.python_cpu` still runs in-process for local examples. Production worker execution requires a `runsc`-capable target runtime and green live probes.
 
 ---
 
@@ -187,7 +200,7 @@ This is the order-of-magnitude estimate. The substrate is solid; the rest is rea
 | PIC / MHD / hydrodynamics solver | Months+ | These are full research codes; the workbench is a wrapper that needs them to exist. |
 | Real paper interpretation (not template) | Weeks (LLM-driven) | Same shape as agent wiring — replace the template artifacts with LLM-generated drafts that still require human review per Plan §22. |
 | Real solver suite for `cpp` / `fortran` / `kokkos` / `petsc` / `amrex` | Months+ each | Each backend lifecycle gate is gated; promoting them requires real benchmarks. |
-| Phase 0.5 — multi-user auth / workspace isolation / sandbox / audit chain | 10–12 weeks | Layer-0 ADRs are accepted and Layer-1 primitives exist. Middleware, routes, sandbox runtime service, and cut-over remain the real implementation work. |
+| Production multi-user cut-over | Deployment-dependent | The secure-core scaffold is implemented through Layer 5. Remaining work is target-runtime verification, deployment composition, real identity provider integration, operational runbooks, and cut-over from the local single-user FastAPI workbench. |
 
 ---
 

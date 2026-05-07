@@ -6,11 +6,11 @@ Asserts the convention checker's two-mode contract:
 1. **Default mode** is the hard gate. It must always exit 0. ``scripts/test/all.sh``
    calls this mode.
 2. **Opt-in mode** (``--include-open-workstreams``) exposes any open
-   implementation backlog. Phase 3 closed 2026-05-02 with every entity
+   implementation backlog. Phase 10 closed 2026-05-04 with every phase entity
    ratcheted into the default branch; no workstream is currently open, so
-   opt-in mode also passes. When Phase 4 opens, the "no open workstreams"
-   message will be replaced by failing assertions and these tests flip back
-   to the "exits non-zero" form.
+   opt-in mode also passes. When a new workstream opens, the
+   "no open workstreams" message will be replaced by failing assertions and
+   these tests flip back to the "exits non-zero" form.
 
 Update procedure when opening a new phase:
 - Add a section under ``if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]`` in the
@@ -48,7 +48,7 @@ def test_default_convention_checker_excludes_open_workstream_todos() -> None:
 
 
 def test_opt_in_mode_passes_with_no_open_workstream() -> None:
-    """Phase 5 closed 2026-05-03; no workstream is currently open."""
+    """Phase 10 closed 2026-05-04; no workstream is currently open."""
     result = _run_checker("--include-open-workstreams")
     output = result.stdout + result.stderr
     assert result.returncode == 0, output

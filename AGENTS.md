@@ -41,7 +41,7 @@ This file is the canonical instruction set for autonomous and semi-autonomous co
 
 11. **The convention checker is the source of truth for repository health and completed deliverables.** The default `scripts/dev/check_repo_conventions.sh` mode is the hard gate and must stay green. Intentionally open workstream TODOs live behind `scripts/dev/check_repo_conventions.sh --include-open-workstreams`; that mode may fail by design and must not be wired into `scripts/test/all.sh`. A phase is complete only when the default checker exits zero and no relevant open-workstream TODO assertion remains failing. Markdown checkboxes are aspirational; checker assertions are enforced. See **Phase Gate Discipline** below.
 
-12. **Documented commands must exist as executables.** Every script path mentioned in `README.md`, `CLAUDE.md`, `AGENTS.md`, or any docs page must be present on disk and executable, even before its subsystem is implemented. Use stubs that print "Phase N — not implemented yet" for unimplemented commands. A docs reference and the corresponding stub land in the same commit.
+12. **Documented commands must exist as executables.** Every script path mentioned in `README.md`, `CLAUDE.md`, `AGENTS.md`, or any docs page must be present on disk and executable, even before its subsystem is implemented. If the implementation is unavailable in the current environment, use a fail-closed stub that explains the blocker and exits non-zero. A docs reference and the corresponding command land in the same commit.
 
 13. **Reality-test plan-derived artifacts.** The plan document is design, not implementation. Patterns copied from it (`.gitignore` rules, directory diagrams, filename templates, command lists) get reality-tested against the actual filesystem before commit — see `bugs_and_fixes/agent_error_patterns.md` "Treating the plan document as a check instead of as a draft".
 
@@ -223,6 +223,7 @@ Until Phase 0.5 deployment-specific live probes are green in the target runtime,
 - Registry discovery must not hide invalid `module.yaml` / `tool.yaml` by silently skipping bad files. Bad metadata is a failed gate, not an absent module.
 - Do not promote a module by trusting `actor="human"` or any other caller-supplied identity. The mutating registry path must consume server/local approval evidence itself.
 - Do not let stale metadata point at missing tests or benchmarks. Every path declared in `module.yaml` is part of the public contract and must resolve during promotion checks.
+- Do not preserve deprecated phase-state behavior after later phases ship. Current commands, runtime errors, UI copy, and docs must describe the present contract; old "lands in Phase N", "pending", or success-exiting "not implemented" stubs are bugs. See `agent_error_patterns.md` "Deprecated phase-state contract survives after later phases ship".
 
 ---
 
@@ -275,13 +276,18 @@ Before flipping any phase status to "Complete":
    Confirm every match agrees with the new status. **Read every match the grep returns**, not just the first paragraph — the same status is often mirrored in a banner *and* a status table within the same file.
 5. Commit the status flip in one commit that touches all status-bearing files at once.
 6. Push (this is a major change per **Autonomous Git Operations**).
+7. Grep current user-facing surfaces for stale phase-state claims before the close commit:
+   ```bash
+   grep -RInE "currently active|Pending\\.|not implemented yet|scheduled for Phase|lands in Phase|wait for Phase|Phase 0 placeholder|skeleton" README.md CLAUDE.md docs_site/src/content apps packages scripts | grep -v "program_development/milestones" || true
+   ```
+   Historical ADR/timeline/milestone text may remain historical, but current commands, runtime errors, UI copy, and README/docs examples must not describe a deprecated phase state.
 
 ### Behavioral verification — the lesson of the Phase 2 + 3 + 4 + 5 closes
 
 Existence checks (steps 1–6 above) are necessary but not sufficient. The convention checker proves files exist. It does not prove that the phase gate's *behaviors* work. Phases 1, 2, 3, 4, and 5 each shipped an incomplete close (Phase 4 twice; Phase 5 once) because the agent confused "all entities exist" or "the gate verb is satisfied" with "the plan's deliverable list is met". Add these sixteen behavioral checks before any close commit:
 
 1. **End-to-end gate walk.** Each plan §Phase-N gate criterion exercised on a real artifact. For "portable, inspectable, reloadable, exportable": save → load → run → export → fork → reload, each step a separate integration test.
-2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns only stubs in not-yet-opened phases. Every script the README/CLAUDE.md/docs page advertises as a current entrypoint runs successfully on a typical input.
+2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns no current entrypoint stubs. Every script the README/CLAUDE.md/docs page advertises as runnable either runs successfully on a typical input or fails closed with a documented environment/deployment blocker.
 3. **Producer-writer wiring.** Every writer that landed in this phase appears in the producer's call site. Round-trip the producer's output through the writer's `load_*` to catch hand-rolled equivalents that bypass the new writer.
 4. **Validator field parity.** Every new producer output has a matching validator required-field. Diff the validator's `REQUIRED_FILES` and the producer's outputs in the same review.
 5. **Destructive-after-validate in exporters / registries.** Every exporter validates the entire plan before any `rmtree` / `unlink` / write. Tests assert source-survival on self-export. Same rule for registry mutations: `register_from_template`, `set_status`, etc. validate user-controlled names BEFORE any filesystem touch.
@@ -297,7 +303,7 @@ Existence checks (steps 1–6 above) are necessary but not sufficient. The conve
 15. **Compatibility checks compare against the consumer's contract** *(Phase 5 audit lesson)*. Don't accept "parses cleanly" or "is non-empty" as compatibility. Compute the consumer's required shape (dimensions, schema, port set) and check coverage of THAT.
 16. **Cross-cutting "always-on" prose has a regression test** *(Phase 5 audit lesson)*. Each cross-cutting invariant ("always-on", "must be enabled", "always required") has a regression test that reads the relevant state and fails when the invariant drifts. Prose without a test ages into a lie.
 
-The named patterns each of these defends against live in `bugs_and_fixes/agent_error_patterns.md` (37 patterns; the latest four are post-Phase-5: hard-rule-via-client-flag, mixed-shape-rule-incomplete, compat-by-pattern-match, cross-cutting-rule-in-comments-only).
+The named patterns each of these defends against live in `bugs_and_fixes/agent_error_patterns.md`. Keep that file current whenever a repeated agent failure appears; recent patterns include security context normalization, production-secret CI leakage, zero-capability membership joins, and deprecated phase-state contract drift.
 
 ### When a checker assertion is wrong
 

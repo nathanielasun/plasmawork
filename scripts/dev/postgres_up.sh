@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
 #
-# Phase 0.5 secure_core Postgres bootstrap entrypoint.
+# secure_core Postgres bootstrap entrypoint.
 #
-# The full containerized bootstrap lands with the Layer-2/3 runtime
-# services. For Layer 1, the DB integration tests accept an explicit
-# PLASMAWORK_TEST_DB_URL and skip when it is unset.
+# This repository does not silently provision a local database for secure-core
+# role probes. Operators must provide an explicit deployment/CI database URL to
+# the live probe script. This command fails closed so automation cannot treat an
+# informational stub as a successful database startup.
 set -euo pipefail
 
 cat <<'EOF'
-scripts/dev/postgres_up.sh: secure_core Postgres bootstrap is not implemented yet.
+scripts/dev/postgres_up.sh: no local Postgres bootstrap is configured.
 
-For current Layer-1 DB checks, provide a PostgreSQL superuser URL via:
+Provide an ephemeral PostgreSQL superuser URL via:
   PLASMAWORK_TEST_DB_URL=postgres://postgres:postgres@localhost:5432/postgres
 
 Then run:
-  scripts/test/secure_core.sh
+  scripts/test/security_live_db.sh
+
+The default security gate remains:
+  scripts/test/security.sh
 EOF
+
+exit 1

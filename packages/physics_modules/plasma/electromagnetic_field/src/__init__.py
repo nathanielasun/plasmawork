@@ -1,8 +1,9 @@
-"""Phase 7C electromagnetic-field interface — candidate.
+"""Electromagnetic-field interface — candidate.
 
-Data structure + unit contract only. Numerical FDTD/FFT evolution lands
-in Phase 8 with the HPC backends. The shape contract is what
-upstream/downstream modules (PIC adapter, particle pusher) bind to.
+Data structure + unit contract only. Numerical FDTD/FFT evolution is not
+implemented in this candidate module; use a validated field solver/backend for
+scientific field evolution. The shape contract is what upstream/downstream
+modules (PIC adapter, particle pusher) bind to.
 """
 
 from __future__ import annotations

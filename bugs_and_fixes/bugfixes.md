@@ -1316,7 +1316,7 @@ A second-pass audit caught residue from round-1: live runsc probes still surface
 Round-1 prioritized landing fixes; this round addresses the gaps the fixes themselves opened. The `expect.fail` placeholders existed because real gVisor probes need a Linux + runsc CI lane that doesn't exist yet — but `expect.fail` makes the env-gate worse than useless. The archive-extraction fix routed validation through `extractArchive` but didn't update the quota model to account for the additional disk footprint. Regression coverage of the round-1 fixes was implicit (caller code exercises the fixed paths) but not direct.
 
 ### Fix
-1. **Live probes detect runsc presence.** `detectRunscAvailable()` checks `PLASMAWORK_RUNSC_PROBES=1` AND a successful `spawnSync('runsc', ['--version'])`. Both true → probes enabled; either false → `it.skipIf` skips them. Probe bodies are now `it.todo` markers (no `expect.fail`); a future PR ships gVisor in CI and replaces each todo with a real probe one at a time. `scripts/test/security.sh` no longer fails on dev hosts even with `PLASMAWORK_RUNSC_PROBES=1` set.
+1. **Live probes detect runsc presence.** `detectRunscAvailable()` checks `PLASMAWORK_RUNSC_PROBES=1` AND a successful `spawnSync('runsc', ['--version'])`. Both true → probes enabled; either false → `it.skipIf` skips them. Probe bodies are now `it.todo` markers (no `expect.fail`). The top-level `scripts/test/security.sh` was later hardened to dispatch `scripts/test/security_live_runsc.sh` when `PLASMAWORK_RUNSC_PROBES=1` is set, so a live-probe lane now fails closed if `runsc` is absent instead of silently downgrading.
 2. **Archive quota + cleanup.** On rejection: `rm -rf` the `.extracted` directory in addition to unlinking the archive. On success: after `extractArchive` returns `{filesWritten, bytesWritten}`, `reserveBytes(extractedBytes)` is called against the workspace quota — extracted disk usage is charged on top of the archive's original reservation. If the second reservation fails (quota exhausted by extraction), the archive + `.extracted` tree are removed and the original reservation is released; `worker.upload_denied { quota_exceeded }` emitted.
 3. **Direct regression tests.** New `test/sandbox/runner.test.ts` (3 cases) pins launch-before-running ordering: spec-rejection path transitions `queued → failed` only (never running), spawn-failure path same, happy path order is `running → completed`. New `test/workers/uploadRoute.test.ts` (7 cases) pins FK target = `claims.requested_by_user_id` (not `run_id`); audit `actorUserId` matches; underdeclared bytes rejected mid-stream as `oversize`; `declared_size > maxUploadBytes` rejected up front (no reservation attempted); zip-slip archive rejected with `archive_unsafe`, archive + `.extracted` dir unlinked, reservation released; clean zip success extracts and charges extracted bytes via a second `reserveBytes` call.
 4. **Stale docs corrected.** `CLAUDE.md` security-checks block updated to describe what `security.sh` actually does (runs §29 spec-level invariants + env-gated live-runtime probes). `scripts/test/secure_core.sh` header comment updated to match.
@@ -1324,10 +1324,93 @@ Round-1 prioritized landing fixes; this round addresses the gaps the fixes thems
 ### Regression protection
 - 11 new tests across `test/sandbox/runner.test.ts` + `test/workers/uploadRoute.test.ts` — each maps to a numbered audit fix.
 - Convention checker grew 1054 → 1062 with assertions for: `detectRunscAvailable` presence in security.test, the new test files exist, and they grep-pin the §-fix concepts (`requested_by_user_id`, `declared_size`, `archive_unsafe`, `extracted`).
-- `PLASMAWORK_RUNSC_PROBES=1 scripts/test/security.sh` now exits 0 on dev hosts (no spurious failures); when a real runsc lands in CI, the `it.todo` reports surface what's missing without breaking the build.
+- `PLASMAWORK_RUNSC_PROBES=1 scripts/test/security.sh` now dispatches the live runsc lane and fails closed if `runsc` is absent; without the env var, the default security gate remains secrets-free and host-portable.
 
 ### Agent warning
 - `expect.fail("not implemented")` is worse than `it.todo`. Either implement the test or mark it as a todo — never plant a guaranteed-fail in an env-gated path.
 - When an upload writes A and then derives B from A, the quota reservation must cover both. Charging only A and leaving B uncharged is a quota bypass disguised as an accounting question.
 - Cleanup paths must remove EVERY artifact the failed code path created. `unlink(archive)` without `rm -rf(.extracted)` leaks. The cleanup should mirror the creation set.
 - Round-1 fixes need round-2 verification: each substantive fix should land with at least one direct regression test before the audit cycle closes.
+
+## 2026-05-07: Deprecated phase-state contract drift sweep
+
+### Affected subsystem
+Repository-wide current contracts in `README.md`, `CLAUDE.md`, `docs_site/`,
+`packages/core/src/simworkbench/`, `apps/workbench-ui/`, `scripts/dev/`, and
+`scripts/test/`.
+
+### Symptoms
+After `scripts/dev/run_backend.sh` was fixed to start the API server instead of
+the Phase-1C example simulation, a parallel sweep found the same genre of bug
+elsewhere: code and documentation still described old phase state as if later
+work had not shipped.
+
+Concrete drift included:
+
+1. `README.md` said runtime execution would land in Workstream 1C and pointed
+   `run_capsule.sh` at a nonexistent `examples/krf_excimer/krf_excimer.lxp`.
+2. `README.md` and `CLAUDE.md` documented the old one-argument
+   `scripts/export/capsule.sh <name>` contract even though the script requires
+   `<capsule_dir> <target_dir>`.
+3. `CLAUDE.md` still marked Phase 10 as `Next`, security as Layer 1-4
+   in-progress, and `--include-open-workstreams` as empty "pending Phase 10".
+4. `simworkbench.__init__`, runtime errors, API docstrings, UI comments, and
+   candidate plasma-module docs told users to wait for Phase 1/4/7/8 work that
+   is already closed, or presented real UI as a Phase-0 shell placeholder.
+5. Documented security helper commands existed only as text in `CLAUDE.md`.
+6. `postgres_up.sh` exited successfully after printing that bootstrap was not
+   implemented, so automation could treat an unavailable DB bootstrap as a
+   successful setup.
+7. `scripts/test/security.sh` printed that live probes were enabled/skipped
+   instead of dispatching the dedicated live-probe scripts when their env vars
+   were set.
+8. `scripts/test/performance.sh` still exited success with an empty performance
+   suite after the full phase plan was closed.
+
+### Root cause
+The repository had strong existence checks, but not enough "current contract"
+checks. Old phase scaffolding comments, stubs, and command examples remained
+green because the convention checker proved that files existed, not that they
+matched the latest program state.
+
+### Fix
+- Rewrote stale phase-status and command-contract docs in `README.md`,
+  `CLAUDE.md`, `docs_site/src/content/{usage,security_testing,troubleshooting}.tsx`,
+  and `program_development/secure_frontend_readiness_plan.md`.
+- Replaced stale runtime/API/docstring remediation with current backend
+  limitations: `python_cpu` is a 0D rate-equation backend that refuses
+  unflagged coefficients and tells users to choose validated module/backend
+  paths, not to wait for closed phases.
+- Converted `CodeViewer` from placeholder text to a real read-only capsule
+  source viewer using `listCapsules`, `getCapsuleTree`, and `getCapsuleFile`.
+- Added executable focused security wrappers:
+  `scripts/dev/check_workspace_paths.sh`,
+  `scripts/dev/check_security_headers.sh`, and
+  `scripts/dev/check_security_schema.sh`.
+- Made `scripts/dev/postgres_up.sh` fail closed and point users to
+  `scripts/test/security_live_db.sh`.
+- Made `scripts/test/security.sh` dispatch live DB/runsc/WORM lanes when their
+  env vars are intentionally set.
+- Added a real `tests/performance/test_runtime_smoke.py` guard and made the
+  performance script fail if the lane becomes empty.
+- Strengthened the Phase-8 HPC shell-wrapper gate to execute
+  `submit_slurm.sh`, run the generated remote script, and import the result
+  through `import_hpc_result.sh`.
+
+### Regression protection
+- New `tests/regression/test_phase_contract_drift.py` pins the exact stale
+  strings, placeholder UI state, fail-closed DB bootstrap, live-probe dispatch,
+  documented helper executables, and non-empty performance lane.
+- New `apps/workbench-ui/src/__tests__/CodeViewer.test.tsx` verifies the code
+  viewer calls the capsule list/tree/file APIs and renders returned source.
+- `scripts/dev/check_repo_conventions.sh` now asserts the same high-signal
+  drift guards, the new helper scripts, and live-probe dispatch wiring.
+- `tests/integration/test_phase_8_gate_walk.py` now exercises the HPC wrapper
+  scripts behaviorally rather than checking only file existence.
+
+### Agent warning
+After any phase close or major subsystem rewrite, search current user-facing
+docs, comments, script output, and UI placeholder copy for old phase-state
+claims. A command that exits 0 while saying "not implemented" is not a harmless
+stub after the phase that owns it has closed. Either implement the current
+contract or fail closed with a documented live/deployment-gated path.

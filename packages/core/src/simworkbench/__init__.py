@@ -1,20 +1,13 @@
 """Core package for the Scientific Simulation Workbench.
 
-Phase 1 (Manual Workbench) is currently active. The submodules below land
-incrementally during Phase 1:
+The ten-phase local workbench scaffold is structurally shipped. The package
+surface includes ModelSpec loading, units, experiments, runtime execution,
+diagnostics, capsule serialization, validation, registries, provenance,
+internal tools, the HTTP API, path helpers, sweeps, and autonomy helpers.
 
-- ``simworkbench.units``       — Phase 1B (ADR-0004, pint wrapper). Available.
-- ``simworkbench.model_spec``  — Phase 1A (ADR-0003, Pydantic IR). Available.
-- ``simworkbench.experiment``  — Phase 1A core experiment/config model. Available.
-- ``simworkbench.runtime``     — Phase 1C. Pending.
-- ``simworkbench.serialization`` — Phase 1A experiment save/load. Capsule save/load Phase 2.
-- ``simworkbench.diagnostics`` — Phase 1E. Pending.
-- ``simworkbench.validation``  — Phase 1A onwards. Pending.
-- ``simworkbench.registry``    — Phase 3. Pending.
-- ``simworkbench.provenance``  — Phase 2. Pending.
-- ``simworkbench.tools``       — Phase 3. Pending.
-- ``simworkbench.api``         — Phase 1F. Pending.
-- ``simworkbench.paths``       — workbench path helpers. Pending.
+This status is not a scientific trust claim: individual modules and generated
+results still carry their own lifecycle, assumptions, validation evidence, and
+``exploratory``/``validated`` status.
 """
 
 from __future__ import annotations

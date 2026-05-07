@@ -478,8 +478,13 @@ def test_phase_8_determinism_adr_present():
     assert len(body) > 200, "Determinism ADR too short to be real"
 
 
-def test_phase_8_hpc_orchestration_scripts_present():
-    """Plan §Phase 8 / 8E: HPC orchestration scripts under scripts/dev/."""
+def test_phase_8_hpc_orchestration_scripts_execute_round_trip():
+    """Plan §Phase 8 / 8E: shell wrappers generate and import a real bundle."""
+    import shutil as _shutil
+    import uuid as _uuid
+
+    from simworkbench.paths import temp_runs_root
+
     for script in (
         "scripts/dev/submit_slurm.sh",
         "scripts/dev/import_hpc_result.sh",
@@ -487,3 +492,58 @@ def test_phase_8_hpc_orchestration_scripts_present():
         path = REPO_ROOT / script
         assert path.is_file(), f"Missing HPC orchestration script: {script}"
         assert os.access(path, os.X_OK), f"Not executable: {script}"
+
+    bundle_root = temp_runs_root() / f"_pytest_phase8_hpc_scripts_{_uuid.uuid4().hex[:8]}"
+    experiment_path = bundle_root / "experiment.yaml"
+    bundle = bundle_root / "slurm_bundle"
+    try:
+        bundle_root.mkdir(parents=True, exist_ok=True)
+        _build_experiment().save_yaml(experiment_path)
+        env = dict(os.environ)
+        env["SIMWORKBENCH_PYTHON"] = sys.executable
+        env.setdefault("PYTHONPATH", str(REPO_ROOT / "packages" / "core" / "src"))
+
+        submit = subprocess.run(
+            [
+                str(REPO_ROOT / "scripts" / "dev" / "submit_slurm.sh"),
+                str(experiment_path),
+                str(bundle),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        assert submit.returncode == 0, submit.stdout + submit.stderr
+        assert (bundle / "submit.sh").is_file()
+        assert (bundle / "run_remote.py").is_file()
+
+        remote = subprocess.run(
+            [sys.executable, str(bundle / "run_remote.py")],
+            cwd=bundle,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        assert remote.returncode == 0, remote.stdout + remote.stderr
+        assert (bundle / "result.json").is_file()
+
+        imported = subprocess.run(
+            [
+                str(REPO_ROOT / "scripts" / "dev" / "import_hpc_result.sh"),
+                str(bundle),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        output = imported.stdout + imported.stderr
+        assert imported.returncode == 0, output
+        assert "diagnostics keys" in output
+        assert "A" in output
+    finally:
+        _shutil.rmtree(bundle_root, ignore_errors=True)

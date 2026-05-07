@@ -1,8 +1,8 @@
-"""Built-in ``python_cpu`` backend for Phase 1.
+"""Built-in ``python_cpu`` backend for 0D rate-equation runs.
 
-Phase-1 scope: drives 0D rate-equation ModelSpecs by building a coupled-ODE
-system from ``ModelSpec.species`` + ``ModelSpec.interactions`` and integrating
-with ``scipy.integrate.solve_ivp`` (LSODA — stiff-friendly). Honors
+Scope: drives 0D rate-equation ModelSpecs by building a coupled-ODE system
+from ``ModelSpec.species`` + ``ModelSpec.interactions`` and integrating with
+``scipy.integrate.solve_ivp`` (LSODA — stiff-friendly). Honors
 ``bugs_and_fixes/agent_error_patterns.md`` *Replacing validated solver calls
 with naive generated loops*: every advance is one ``solve_ivp`` call, never a
 hand-rolled timestep loop.
@@ -13,10 +13,9 @@ event on every step so the run is unambiguously exploratory. Honors
 ``agent_error_patterns.md`` *Silently inventing missing physical
 coefficients*: nothing is invented, only flagged-explicit defaults are used.
 
-Higher-fidelity / non-0D simulations (MD, Ising) bypass this backend in
-Phase 1 and use their physics module's own driver (see ``packages/
-physics_modules/molecular_dynamics/lennard_jones`` and
-``packages/physics_modules/phase_transition/ising_2d``).
+Higher-fidelity / non-0D simulations use their physics module's own driver or
+a validated specialized backend (see ``packages/physics_modules/`` and
+``packages/solver_backends/``).
 """
 
 from __future__ import annotations
@@ -43,7 +42,7 @@ class _RateState:
 
 
 class PythonCpuBackend:
-    """Default Phase-1 backend. Implements ``runner.BackendProtocol`` structurally."""
+    """Default 0D rate-equation backend implementing ``BackendProtocol``."""
 
     name = "python_cpu"
 
@@ -84,11 +83,11 @@ class PythonCpuBackend:
             if not ix.coefficient_sources:
                 raise ValueError(
                     f"Interaction {ix.name!r} has no coefficient_sources. "
-                    "Phase 1 cannot parse rate constants, so the run would "
-                    "use an unflagged default — that is silent fabrication. "
-                    "Declare an explicit 'placeholder: <reason>' source to "
-                    "mark the run exploratory, or wait for Phase 4+ paper "
-                    "ingestion to supply a real rate."
+                    "The python_cpu backend refuses unflagged defaults because "
+                    "that would silently fabricate a physical rate. Declare "
+                    "an explicit 'placeholder: <reason>' source to mark the "
+                    "run exploratory, or use a validated module/backend path "
+                    "that resolves a real coefficient source."
                 )
             placeholder_flagged = any(
                 str(src).lower().startswith("placeholder")
@@ -98,35 +97,38 @@ class PythonCpuBackend:
                 raise ValueError(
                     f"Interaction {ix.name!r} declares coefficient_sources "
                     f"{list(ix.coefficient_sources)!r} that do not begin with "
-                    "'placeholder:', but Phase 1 has no rate-parser to honor "
-                    "a real source. Either prefix the source with "
-                    "'placeholder:' to mark the rate as exploratory, or wait "
-                    "for Phase 4+ paper ingestion."
+                    "'placeholder:', but this backend cannot convert those "
+                    "source declarations into a numeric rate. Either prefix "
+                    "the source with 'placeholder:' to mark the rate as "
+                    "exploratory, or route the experiment through a validated "
+                    "module/backend that resolves the source."
                 )
 
             # Filter to species participants (fields are not state variables).
             species_participants = [p for p in participants if p in index]
 
-            # Phase 1's rate-equation backend implements two regimes:
+            # This rate-equation backend implements two regimes:
             #   - 1 species participant → first-order decay: dN/dt = -k N.
             #   - 2 species participants → conversion: A -> B at rate k.
-            # Three or more participants are not yet supported (kinetic
-            # backend lands later); refuse loudly rather than silently drop.
+            # Three or more participants require a specialized kinetic module;
+            # refuse loudly rather than silently dropping participants.
             if len(species_participants) == 0:
                 raise ValueError(
                     f"Interaction {ix.name!r} has no species participants. "
-                    "Phase 1 needs at least one species participant; "
-                    "field-only interactions land in Phase 8+."
+                    "python_cpu supports rate equations over species state "
+                    "variables only. Use a validated field/PIC/PDE-capable "
+                    "backend for field-only interactions."
                 )
             if len(species_participants) > 2:
                 raise ValueError(
                     f"Interaction {ix.name!r} has "
                     f"{len(species_participants)} species participants. "
-                    "Phase 1 supports decay (1) and conversion (2); "
-                    "higher-order kinetics land in Phase 7+."
+                    "python_cpu supports first-order decay (1) and conversion "
+                    "(2). Use a validated higher-order kinetics module/backend "
+                    "for reactions with more species participants."
                 )
 
-            base_rate = 1.0  # Phase 1 single-rate exploratory default
+            base_rate = 1.0  # explicit exploratory placeholder default
             placeholders.append(ix.name)
             field_participants = [p for p in participants if p not in index]
             rate = base_rate

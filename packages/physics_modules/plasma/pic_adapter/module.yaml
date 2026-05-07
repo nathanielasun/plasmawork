@@ -4,9 +4,10 @@ domain: plasma
 status: candidate
 
 description: |
-  Phase 7C adapter that composes electromagnetic_field + particle_pusher
-  into a PIC step. The skeleton enforces the wire-up contract; the
-  numerical Yee-grid field update and current deposition land in Phase 8.
+  Candidate adapter that composes electromagnetic_field + particle_pusher
+  into a PIC step. The interface enforces the wire-up contract; numerical
+  Yee-grid field update and current deposition require a validated PIC
+  backend/module before scientific use.
 
 inputs:
   - name: particles
@@ -20,7 +21,7 @@ outputs:
 
 validity_domain:
   notes:
-    - "Skeleton-only at Phase 7. Phase 8 binds a real Yee solver and current deposition."
+    - "Interface-only candidate; no self-consistent Yee solver or current deposition is implemented here."
 
 references:
   - title: "Birdsall & Langdon, *Plasma Physics via Computer Simulation*, ch. 1–4."

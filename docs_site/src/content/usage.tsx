@@ -37,6 +37,11 @@ python scripts/dev/run_backend.py
       <pre>
         <code>{`python examples/simple_rate_equations/run.py --max-steps 25 --no-capsule`}</code>
       </pre>
+      <p>
+        Standalone examples are separate from the backend launcher. The backend
+        launcher starts the API server only; it should not dispatch example
+        simulations.
+      </p>
 
       <h2>Creating an experiment manually</h2>
       <p>
@@ -76,6 +81,16 @@ reloaded = load_experiment("temp_runs/simple_rate_equations_experiment.yaml")`}<
         <li>Validation panel — dimensional checks, conservation, benchmark comparison.</li>
         <li>Provenance panel — environment, seeds, automation trace, package versions.</li>
       </ul>
+
+      <h2>Exporting and rerunning capsules</h2>
+      <pre>
+        <code>{`./scripts/export/capsule.sh <capsule_dir> <target_dir> [--kinds code,data,plots,notebook,report,archive]
+./scripts/dev/run_capsule.sh path/to/capsule.lxp`}</code>
+      </pre>
+      <p>
+        Export requires both a capsule directory and an explicit target
+        directory. Rerun uses an existing <code>.lxp/</code> capsule directory.
+      </p>
 
       <h2>Next things to verify</h2>
       <ul>

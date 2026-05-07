@@ -1,10 +1,9 @@
 """Paper-extraction tool template.
 
-Extracts text, equations, and parameters from a paper file. Phase 3
-provides only the template; the actual extraction stack lands in Phase 4
-(Agent-Assisted Paper Ingestion). The default ``run`` is a stub that
-returns the file's text and empty equations / parameters tables — replace
-with your real extractor.
+Extracts text, equations, and parameters from a paper file. This template is
+for custom extractor tools; the default ``run`` is intentionally minimal and
+returns the file's text plus empty equations / parameters tables. Replace it
+with your real extractor before registering a production tool.
 
 Per AGENTS.md / plan §22: extracted parameters MUST carry units. Don't
 fabricate units when the paper omits them — flag the row with a

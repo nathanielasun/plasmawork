@@ -54,18 +54,27 @@ cd "$REPO_ROOT/packages/secure_core"
 echo "[security] running v4 §29 spec-level invariants..."
 npx vitest run test/security
 
-if [[ -n "${PLASMAWORK_RUNSC_PROBES:-}" ]]; then
-  echo "[security] runsc live probes enabled (PLASMAWORK_RUNSC_PROBES=$PLASMAWORK_RUNSC_PROBES)"
+if [[ "${PLASMAWORK_RUNSC_PROBES:-}" == "1" ]]; then
+  echo "[security] dispatching runsc live probes..."
+  "$REPO_ROOT/scripts/test/security_live_runsc.sh"
+elif [[ -n "${PLASMAWORK_RUNSC_PROBES:-}" ]]; then
+  echo "[security] PLASMAWORK_RUNSC_PROBES must be exactly 1 when set." >&2
+  exit 1
 else
   echo "[security] runsc live probes SKIPPED — set PLASMAWORK_RUNSC_PROBES=1 in CI to enable"
 fi
 if [[ -n "${PLASMAWORK_TEST_DB_URL:-}" ]]; then
-  echo "[security] DB role probes will fire against PLASMAWORK_TEST_DB_URL"
+  echo "[security] dispatching DB role live probes..."
+  "$REPO_ROOT/scripts/test/security_live_db.sh"
 else
   echo "[security] DB role probes SKIPPED — set PLASMAWORK_TEST_DB_URL to enable"
 fi
-if [[ -n "${PLASMAWORK_ANCHOR_LIVE_PROBES:-}" ]]; then
-  echo "[security] WORM anchor live probes are deployment-scoped; run scripts/test/security_live_worm.sh"
+if [[ "${PLASMAWORK_ANCHOR_LIVE_PROBES:-}" == "1" ]]; then
+  echo "[security] dispatching WORM anchor live probes..."
+  "$REPO_ROOT/scripts/test/security_live_worm.sh"
+elif [[ -n "${PLASMAWORK_ANCHOR_LIVE_PROBES:-}" ]]; then
+  echo "[security] PLASMAWORK_ANCHOR_LIVE_PROBES must be exactly 1 when set." >&2
+  exit 1
 else
   echo "[security] WORM anchor live probes SKIPPED — set PLASMAWORK_ANCHOR_LIVE_PROBES=1 in a protected deployment lane"
 fi

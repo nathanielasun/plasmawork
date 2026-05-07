@@ -2,7 +2,7 @@
 
 A modular workbench for laser physics, laser fusion, laser–species interaction, and adjacent computational-physics domains. Designed to turn a scientific paper into a structured, inspectable, testable, visualizable computational experiment — and to keep the resulting code, data, and provenance bundled in a portable simulation capsule.
 
-> **Status: Phase 10 — Autonomous Computational Experiment Design complete (2026-05-04). The full ten-phase plan has shipped.** Phase 10's `simworkbench.autonomy` module ships five workstreams 10A–10E: `ExperimentDesigner.design(spec)` returns an `ExperimentPlan` with minimum viable model, ordered fidelity ladder, cost estimate, planned diagnostics, and validation path (refuses if no recommended solver is declared); `SmokeRunner.run(experiment)` returns a `SmokeReport` with diagnostics interpretation, instability flags (NaN / monotonic blow-up detection), and suggested parameter adjustments — never auto-applied; `ControlledSweepAgent(budget=N)` wraps Phase-9 `SweepEngine` with a hard budget cap (no `ignore_budget` / `unbounded` / `skip_budget` kwargs; signature regression locks the contract), monitors run-by-run, summarises trends, and emits next-sweep recommendations; `ScientificReviewer.write(capsule)` writes `<capsule>/review/scientific_review.md` covering assumption critique, missing physics, literature alignment, overclaim flags, and recommended validation (off-limits subtrees `src/user_edits/`, `paper_sources/`, `provenance/` are explicitly refused); `ApprovalGate` enforces single-use file-backed tokens for the four documented privileged actions (trusted-promotion, expensive-runs, external-export, destructive-edits) — the HTTP API never reads `actor` / `role` from the request body. Plan §22 (Scientific Accuracy Policy) is enforced by `capsule_status_for_plan(plan)`: any placeholder coefficient pins the capsule to `exploratory`, never `validated`. ADR-0007 documents the budget-governance contract. The "Autonomy" UI tab (`AutonomyPanel.tsx`) drives three new endpoints (`POST /api/autonomy/{design,sweep,review}/{capsule}`). `tests/integration/test_phase_10_gate_walk.py` written BEFORE implementation; 18 gate-walk tests cover every plan verb plus signature-bypass guards. `examples/autonomous_experiment_kr/run_autonomous.py` demonstrates the full design → sweep → review pipeline end-to-end. Phases 0–9 remain complete.
+> **Status: Phase 10 — Autonomous Computational Experiment Design complete (2026-05-04). The full ten-phase plan has shipped.** Phase 10's `simworkbench.autonomy` module ships five workstreams 10A–10E: `ExperimentDesigner.design(spec)` returns an `ExperimentPlan` with minimum viable model, ordered fidelity ladder, cost estimate, planned diagnostics, and validation path (refuses if no recommended solver is declared); `SmokeRunner.run(experiment)` returns a `SmokeReport` with diagnostics interpretation, instability flags (NaN / monotonic blow-up detection), and suggested parameter adjustments — never auto-applied; `ControlledSweepAgent(budget=N)` wraps Phase-9 `SweepEngine` with a hard budget cap (no `ignore_budget` / `unbounded` / `skip_budget` kwargs; signature regression locks the contract), monitors run-by-run, summarises trends, and emits next-sweep recommendations; `ScientificReviewer.write(capsule)` writes `<capsule>/review/scientific_review.md` covering assumption critique, missing physics, literature alignment, overclaim flags, and recommended validation (off-limits subtrees `src/user_edits/`, `paper_sources/`, `provenance/` are explicitly refused); `ApprovalGate` enforces single-use file-backed tokens for the four documented privileged actions (trusted-promotion, expensive-runs, external-export, destructive-edits) — the HTTP API never reads `actor` / `role` from the request body. Plan §22 (Scientific Accuracy Policy) is enforced by `capsule_status_for_plan(plan)`: any placeholder coefficient pins the capsule to `exploratory`, never `validated`. ADR-0007 documents the budget-governance contract. The "Autonomy" UI tab (`AutonomyPanel.tsx`) drives four endpoints (`POST /api/autonomy/{design,smoke,sweep,review}/{capsule}`). `tests/integration/test_phase_10_gate_walk.py` written BEFORE implementation; 18 gate-walk tests cover every plan verb plus signature-bypass guards. `examples/autonomous_experiment_kr/run_autonomous.py` demonstrates the full design → sweep → review pipeline end-to-end. Phases 0–9 remain complete.
 
 The full architectural plan is in [`scientific_simulation_workbench_agent_plan.md`](./scientific_simulation_workbench_agent_plan.md).
 
@@ -126,11 +126,12 @@ python examples/simple_rate_equations/run.py --max-steps 25 --no-capsule
 # Validate repository conventions
 ./scripts/dev/check_repo_conventions.sh
 
-# Inspect open workstream TODO assertions (expected to fail until implemented)
+# Inspect open workstream TODO assertions. This passes after the Phase 10
+# final close unless a new open workstream has intentionally added TODOs.
 ./scripts/dev/check_repo_conventions.sh --include-open-workstreams
 ```
 
-The UI, backend, capsule, kernel, and export scripts exist so documented commands do not point at missing files. Scripts for later phases print an explicit scheduled-phase message until their subsystem is implemented.
+The UI, backend, capsule, kernel, security, and export scripts exist so documented commands do not point at missing files. Deployment-specific commands that cannot run in the local environment fail closed with an explicit explanation.
 
 ---
 
@@ -258,10 +259,10 @@ See [`CLAUDE.md → How to Add an Internal Tool`](./CLAUDE.md#how-to-add-an-inte
 
 ## How to Run Example Simulations
 
-The first Phase 1A example is a validated ModelSpec. Runtime execution lands in Workstream 1C:
+Standalone examples and capsule reruns are separate from the backend launcher:
 
 ```bash
-# Validate and save/load the example experiment
+# Validate and save/load the simple rate-equation experiment
 source .venv/bin/activate
 python - <<'PY'
 from simworkbench import Experiment
@@ -273,8 +274,12 @@ experiment = Experiment.from_model_spec(spec)
 save_experiment(experiment, "temp_runs/simple_rate_equations_experiment.yaml")
 PY
 
-# Phase 2+
-./scripts/dev/run_capsule.sh examples/krf_excimer/krf_excimer.lxp
+# Run a standalone example without creating a capsule
+python examples/simple_rate_equations/run.py --max-steps 25 --no-capsule
+
+# Create a KrF capsule, then rerun the generated capsule path printed by run.py
+python examples/krf_excimer/run.py
+./scripts/dev/run_capsule.sh simulation_capsules/<printed_capsule>.lxp
 ```
 
 ---
@@ -283,7 +288,7 @@ PY
 
 ```bash
 # Export a capsule (data + code + provenance) to a portable archive
-./scripts/export/capsule.sh <capsule_name>
+./scripts/export/capsule.sh <capsule_dir> <target_dir> [--kinds code,data,plots,notebook,report,archive]
 
 # Reload a capsule into the workbench
 ./scripts/dev/run_capsule.sh path/to/capsule.lxp

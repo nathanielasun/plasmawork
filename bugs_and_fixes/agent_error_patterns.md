@@ -502,12 +502,12 @@ Compare `scientific_simulation_workbench_agent_plan.md`, `README.md`, and `progr
 ## Error Pattern: Documented path that does not exist as an executable on disk
 
 ### Why it is bad
-README, `CLAUDE.md`, and docs pages list commands a user is expected to run (`./scripts/dev/run_ui.sh`, `./scripts/test/all.sh`, etc.). When the path is missing, a new contributor following the README hits `No such file or directory` instead of a meaningful "Phase X — not implemented yet" message. The repository looks broken even though the design is intact.
+README, `CLAUDE.md`, and docs pages list commands a user is expected to run (`./scripts/dev/run_ui.sh`, `./scripts/test/all.sh`, etc.). When the path is missing, a new contributor following the README hits `No such file or directory` instead of a meaningful current explanation. The repository looks broken even though the design is intact.
 
 ### Required behavior
-Every command path mentioned in `README.md`, `CLAUDE.md`, `AGENTS.md`, or any `docs_site/src/content/*.tsx` page must exist on disk as an executable file. Scripts whose subsystem is not implemented yet ship as **stubs** that:
-1. Print a one-line "Phase N — not implemented yet" message naming the responsible workstream.
-2. Exit with code `0` if the user is exploring (so the docs flow stays usable) or a documented non-zero code if used in CI — pick one and commit to it in the script header.
+Every command path mentioned in `README.md`, `CLAUDE.md`, `AGENTS.md`, or any `docs_site/src/content/*.tsx` page must exist on disk as an executable file. Scripts whose subsystem is unavailable in the current environment ship as **fail-closed stubs** that:
+1. Print a one-line explanation naming the blocker and the correct current command or deployment lane.
+2. Exit non-zero so automation cannot treat an unavailable implementation as success.
 3. Do not silently no-op.
 
 When you add a command to docs, you add the stub in the same commit. When you remove a stub, you remove the doc reference in the same commit.
@@ -2272,3 +2272,46 @@ configuration drift.
   memberships*: `/auth/session` used an inner join from memberships to
   role permissions. Fix: use `LEFT JOIN role_permissions` and group null
   capability rows into an empty capability list.
+
+---
+
+## Error Pattern: Deprecated phase-state contract survives after later phases ship
+
+### Why it is bad
+Phase scaffolding starts as a useful temporary contract, but it becomes false
+once the owning phase closes. If old comments, examples, stubs, or UI copy keep
+saying "lands in Phase N" or "not implemented yet", users and agents will make
+decisions against a deprecated program state. The most dangerous variant is an
+executable script that exits 0 while only printing an old placeholder message:
+automation treats the old phase behavior as successful current behavior.
+
+### Required behavior
+- After a phase/workstream closes, current docs and runtime errors describe the
+  actual capability or the current limitation, not a future phase promise.
+- Documented commands match the current CLI contract exactly. If a command
+  cannot safely run on the current host, it fails closed and points to the
+  correct deployment/live-probe lane.
+- UI panels that claim to view/edit/run something bind to the current API or
+  explicitly render a disabled/fail-closed state. They do not keep placeholder
+  "future shell" copy after the feature has shipped elsewhere.
+- Convention checks include behavior or high-signal string guards for current
+  command contracts, not just file existence.
+
+### Detection
+- Grep current surfaces for `currently active`, `Pending.`, `not implemented
+  yet`, `scheduled for Phase`, `lands in Phase`, `wait for Phase`, `Phase 0
+  placeholder`, `skeleton`, and obsolete command examples.
+- Run documented scripts that claim to be current. Any script that exits 0
+  while saying it did not do the work is a bug unless the docs explicitly mark
+  it as a no-op status command.
+- Compare README/CLAUDE/docs command examples against each script's actual
+  `--help` or usage block.
+
+### Bug log
+- 2026-05-07 *Backend launcher ran a simulation instead of the API server*:
+  `run_backend.sh` preserved old Phase-1C example behavior after the API server
+  contract existed. Fix: shared cross-shell launcher targets uvicorn.
+- 2026-05-07 *Deprecated phase-state contract drift sweep*: stale phase status,
+  obsolete command examples, placeholder UI copy, success-exiting DB bootstrap,
+  non-dispatching live probes, and empty performance lane were corrected across
+  docs, scripts, core runtime messages, and UI.

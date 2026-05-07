@@ -1,8 +1,9 @@
-"""Phase 7C PIC adapter — composes EM field + particle pusher.
+"""PIC adapter contract — composes EM field + particle pusher.
 
-Skeleton only. Phase 8 brings a real Yee-grid field solver, current
-deposition, and a self-consistent loop. The adapter here exposes the
-contract so downstream code can be written against the final shape.
+This candidate module exposes the interface shape only. It does not implement
+a self-consistent Yee-grid field solver, current deposition, or production PIC
+loop; those require a validated specialized backend/module before scientific
+use.
 """
 
 from __future__ import annotations

@@ -177,13 +177,14 @@ class ExperimentProposer:
     def _recommend_backend(spec: ModelSpec, top_match) -> str:
         if spec.geometry.dimensionality == 0:
             return (
-                "**python_cpu** (Phase 1F default). 0D rate-equations run on "
+                "**python_cpu**. 0D rate-equations run on "
                 "scipy.integrate.solve_ivp with LSODA — never a hand-rolled "
                 "timestep loop (plan §15.2)."
             )
         return (
-            "Reviewer to choose; Phase 1F's `python_cpu` covers 0D + simple "
-            "1D, Phase 8 brings GPU / HPC backends."
+            "Reviewer to choose from the registered backend/module surface. "
+            "`python_cpu` is limited to 0D rate equations; accelerated and HPC "
+            "adapters require their own validation evidence before scientific use."
         )
 
     @staticmethod

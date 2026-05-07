@@ -13,7 +13,7 @@
 
 - **Higher-order kinetics** (3+ species per interaction). The runtime
   refuses these explicitly — declare a coupled multi-step interaction
-  network or wait for Phase 7+ kinetic backend.
+  network or use a validated higher-order kinetics module/backend.
 - **Inhomogeneous systems**. The 0D approximation breaks down when the
   characteristic transport time is comparable to or shorter than the
   reaction time. Use a 1D / PDE module.

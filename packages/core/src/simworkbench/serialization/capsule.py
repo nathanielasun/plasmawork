@@ -320,7 +320,7 @@ def load_capsule(path: str | Path) -> LoadedCapsule:
         raise ValueError(
             f"Unsupported capsule format_version {fmt_version!r}; "
             f"this build understands {CAPSULE_FORMAT_VERSION!r}. "
-            "Capsule migrations land in Phase 2."
+            "No migration path is registered for this source version."
         )
 
     # Experiment lives at configs/run_config.yaml (it serializes the full

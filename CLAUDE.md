@@ -20,7 +20,7 @@ Treat these as load-bearing. Do not reinterpret them because a local task seems 
 3. Maintain a root-level `README.md`.
 4. Maintain `.gitignore`. Never commit local caches, temp simulation files, intermediate imports, generated outputs, `.env` files, or secrets.
 5. Maintain `bugs_and_fixes/` and `program_development/`.
-6. Every documented command path in `README.md`, `CLAUDE.md`, `AGENTS.md`, or docs pages must exist on disk and be executable. If the subsystem is not implemented yet, add an executable stub in the same commit as the doc reference.
+6. Every documented command path in `README.md`, `CLAUDE.md`, `AGENTS.md`, or docs pages must exist on disk and be executable. If the subsystem is unavailable in the current environment, add a fail-closed executable stub in the same commit as the doc reference.
 
 ### Scientific and simulation boundaries
 
@@ -124,8 +124,8 @@ scripts/dev/check_security_schema.sh
 Current status:
 
 - `scripts/dev/check_repo_conventions.sh` exists and is the hard gate.
-- `scripts/test/security.sh` runs the §29 spec-level invariants under `packages/secure_core/test/security/` (always-on); live-runtime gVisor / DB / S3 probes are env-gated for the dedicated CI lane.
-- `scripts/dev/check_workspace_paths.sh`, `scripts/dev/check_security_headers.sh`, and `scripts/dev/check_security_schema.sh` are reserved command contracts; create them with their owning follow-up layers.
+- `scripts/test/security.sh` runs the §29 spec-level invariants under `packages/secure_core/test/security/` (always-on); when live-runtime env vars are set, it dispatches the dedicated gVisor / DB / S3 probe scripts and fails closed if the target runtime is missing.
+- `scripts/dev/check_workspace_paths.sh`, `scripts/dev/check_security_headers.sh`, and `scripts/dev/check_security_schema.sh` are executable focused wrappers around secure-core path, header, and schema/security-route tests.
 - `docs_site/src/content/os_compatibility.tsx` and the README compatibility summary are the canonical OS-support notes. Update both whenever platform support, shell wrappers, path behavior, compiler/runtime requirements, sandbox assumptions, or live probe requirements change.
 
 ---
@@ -247,7 +247,7 @@ When an agent generates simulation code into a capsule:
 7. Ensure capsule export produces a self-contained archive:
 
    ```bash
-   scripts/export/capsule.sh <name>
+   scripts/export/capsule.sh <capsule_dir> <target_dir> [--kinds code,data,plots,notebook,report,archive]
    ```
 
 Every run touches `<capsule>/provenance/`:
@@ -550,16 +550,28 @@ When the plan suggests one filename but the section title implies another, follo
 
 ### Documented commands
 
-When documentation references a command, create the script or stub in the same commit:
+When documentation references a command, create the script or fail-closed stub
+in the same commit. After a phase closes, update or remove old phase wording;
+a command that exits 0 while saying "not implemented" is a deprecated
+phase-state bug.
 
 ```bash
 #!/usr/bin/env bash
-# scripts/dev/run_ui.sh
+# scripts/dev/example_deployment_probe.sh
 set -euo pipefail
 
-echo "scripts/dev/run_ui.sh: scheduled for Phase 1 / Workstream 1F (UI Workbench)"
-echo "See program_development/milestones/phase_01_manual_workbench.md."
-exit 0
+echo "scripts/dev/example_deployment_probe.sh: unavailable on this host."
+echo "Run the documented live-probe lane in a configured deployment environment."
+exit 1
+```
+
+Before closing a phase or major workstream, run a stale-contract grep over
+current surfaces and reconcile every match that is not purely historical:
+
+```bash
+grep -RInE "currently active|Pending\\.|not implemented yet|scheduled for Phase|lands in Phase|wait for Phase|Phase 0 placeholder|skeleton" \
+  README.md CLAUDE.md docs_site/src/content apps packages scripts \
+  | grep -v "program_development/milestones" || true
 ```
 
 ---
@@ -736,11 +748,11 @@ As of 2026-05-07:
 | 7 | Complete | Validated Physics Module Registry; six validated analytic modules, plasma candidates. |
 | 8 | Complete | HPC/hardware backends; Python/Numba validation, C++ ABI, CUDA probes, Slurm/Ray/external-PIC adapters. |
 | 9 | Complete | Sweeps, optimization, uncertainty, comparison reports. |
-| 10 | Next | Open via the phase/workstream gate procedure: write gate-walk tests first, enumerate plan deliverables, add opt-in checker assertions, then implement. |
-| 0.5 Security | In progress | Layer-0 ADRs accepted; Layer-1 through Layer-4 slices under implementation/audit; L2.9 implemented and required on high-risk routes. |
+| 10 | Complete | Autonomous bounded experiment design; design/smoke/sweep/review helpers, UI route, approval gates, and gate-walk tests. |
+| 0.5 Security | Implemented through Layer 5 | Secure-core identity, workspace isolation, approvals, audit/provenance chains, dashboard, rate limits, CI gates, and frontend readiness are wired; target-runtime live probes remain deployment-gated. |
 
 Current convention-checker state:
 
-- Default mode covers every Phase 0–9 entity.
-- `--include-open-workstreams` is empty pending Phase 10.
+- Default mode covers every Phase 0–10 entity and the implemented Phase 0.5 security layers.
+- `--include-open-workstreams` is empty after the Phase 10 final close unless a new workstream is intentionally opened.
 - Bug history and `agent_error_patterns.md` must be consulted before changing checker logic, gate behavior, registries, lifecycle gates, or scientific I/O boundaries.

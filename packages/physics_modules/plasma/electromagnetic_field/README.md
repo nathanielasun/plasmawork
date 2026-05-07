@@ -1,9 +1,9 @@
 # Plasma — Electromagnetic Field (candidate)
 
-Phase 7C interface stub for an electromagnetic-field representation used
-by particle pushers and PIC adapters. Phase 7 ships the data shape + unit
-contract; numerical FDTD/FFT evolution lands in Phase 8 with the HPC
-backends.
+Candidate interface for an electromagnetic-field representation used by
+particle pushers and PIC adapters. This module ships the data shape + unit
+contract; numerical FDTD/FFT evolution requires a validated field
+solver/backend.
 
 ```python
 from simworkbench.units import Q

@@ -1,6 +1,6 @@
-# cuda — Phase 8 GPU backend adapter
+# cuda — GPU backend adapter
 
-Phase 8 ships:
+This adapter ships:
 
 - `detect_capability()` — non-raising probe that returns a structured
   `GPUCapability` describing whether a CUDA runtime + visible device
@@ -14,7 +14,7 @@ Phase 8 ships:
   policy (bitwise reproducibility is not promised on GPU; results
   match within representable rounding).
 
-Validated kernel implementations land in Phase 9+ once a downstream
-physics module needs them. The Phase 8 adapter does NOT auto-fall-back
-to CPU — silent fallback would hide a missing GPU; instead callers
-inspect `is_available()` and choose a different backend.
+Validated kernel implementations are still downstream work for each physics
+module that needs GPU execution. This adapter does NOT auto-fall-back to CPU —
+silent fallback would hide a missing GPU; callers inspect `is_available()` and
+choose a different backend.
