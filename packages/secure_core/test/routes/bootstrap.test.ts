@@ -215,6 +215,7 @@ function buildApp(opts: BuildAppOpts): {
   app.register(bootstrapRoutes, {
     service,
     mw,
+    auditLogger: audit.logger,
     bootstrapAllowed: opts.bootstrapAllowed,
     wormMarker: marker,
     rateLimitStore: store,

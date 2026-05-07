@@ -338,17 +338,21 @@ Never accept client-provided server-derived fields, at any nesting depth. This i
 Hard security rules:
 
 - Derive identity, workspace, role, and audit actor server-side.
+- Protected JSON-body routes run audit-aware `validateInputSchema` / `bodyValidation`; do not rely only on Fastify `schema.body`.
+- Accept object references such as `source_artifact_id`; derive `content_hash`, `storage_path`, and lifecycle `status` server-side.
+- High-risk route handlers consume an L2.9 approval token before side effects, and privilege-bearing services re-check live capability inside the transaction before commit.
+- Worker/sandbox writers reserve and commit quota for every derived artifact; failed paths clean up every file they created.
 - Never write workspace artifacts outside the server-generated workspace path.
 - Never bypass authorization checks for convenience.
 - Never implement security TODOs as permissive placeholders.
 - Never disable security tests.
 - If secure implementation is not possible in the current change, fail closed and document the blocker.
 
-Current security status as of 2026-05-06:
+Current security status as of 2026-05-07:
 
 - Phase 0.5 Layer-0 ADRs are accepted.
-- Layer-1 and Layer-2 slices L2.1–L2.8, L2.10, and L2.11 are under implementation/audit.
-- L2.9 remains pending.
+- Layer-1 through Layer-4 secure-core slices are under implementation/audit.
+- L2.9 approval-token middleware is implemented; protected high-risk routes must use it rather than local token checks.
 - Full gate: `program_development/phase_05_security_implementation_plan.md`.
 
 ---
@@ -700,7 +704,7 @@ A Claude task is done only when all applicable items are true:
 
 ## 18. Current Phase Snapshot
 
-As of 2026-05-06:
+As of 2026-05-07:
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -715,7 +719,7 @@ As of 2026-05-06:
 | 8 | Complete | HPC/hardware backends; Python/Numba validation, C++ ABI, CUDA probes, Slurm/Ray/external-PIC adapters. |
 | 9 | Complete | Sweeps, optimization, uncertainty, comparison reports. |
 | 10 | Next | Open via the phase/workstream gate procedure: write gate-walk tests first, enumerate plan deliverables, add opt-in checker assertions, then implement. |
-| 0.5 Security | In progress | Layer-0 ADRs accepted; Layer-1 and most Layer-2 slices under implementation/audit; L2.9 pending. |
+| 0.5 Security | In progress | Layer-0 ADRs accepted; Layer-1 through Layer-4 slices under implementation/audit; L2.9 implemented and required on high-risk routes. |
 
 Current convention-checker state:
 

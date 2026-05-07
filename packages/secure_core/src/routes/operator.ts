@@ -22,20 +22,18 @@
  * `actor_type` is materialized as `"operator"` inside `OperatorService`,
  * not read from any request shape.
  *
- * The /remediate endpoint is bound to L2.9 `requireApprovalIfHighRisk`
- * with action `platform_operator_access`. Per v4 §16.1 the approval
- * TOKEN MUST come via the `X-Approval-Token` header (never URL/body).
- * The approval REQUEST id, however, may live in the body — we shim it
- * into `req.params.approvalRequestId` via a tiny pre-handler so L2.9's
- * existing `requestIdParam` lookup finds it without re-implementing
- * the consumption logic. This deviation is documented inline because
- * the operator URL signature has no native slot for the request id.
+ * The /investigate and /remediate endpoints are bound to L2.9
+ * `requireApprovalIfHighRisk` with action `platform_operator_access`.
+ * Per v4 §16.1 the approval TOKEN MUST come via the `X-Approval-Token`
+ * header (never URL/body). The approval REQUEST id lives in the body
+ * because the operator URL signature has no native slot for it; the
+ * audit-aware body validator copies it into
+ * `req.params.approvalRequestId` so L2.9 can use its standard lookup.
  */
 
 import type {
   FastifyInstance,
   FastifyPluginAsync,
-  FastifyRequest,
 } from "fastify";
 
 import {
@@ -45,6 +43,7 @@ import {
 import {
   InputInvalidError,
   NotFoundError,
+  PermissionDeniedError,
   SecureCoreError,
 } from "../errors/shapes.js";
 import type {
@@ -54,6 +53,8 @@ import type {
   OperatorService,
   RemediationAction,
 } from "../operator/service.js";
+import type { AuditLogger } from "../audit/logger.js";
+import { bodyValidationWithApprovalRequest } from "./validation.js";
 
 /** UUID v4 regex — used by URL-param + body probes. */
 const UUID_V4 =
@@ -154,10 +155,11 @@ const AUDIT_EVENTS_QUERY_SCHEMA = {
 const INVESTIGATE_BODY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reason", "ttl_seconds"],
+  required: ["reason", "ttl_seconds", "approval_request_id"],
   properties: {
     reason: { type: "string", minLength: 1, maxLength: MAX_REASON_LENGTH },
     ttl_seconds: { type: "integer", minimum: 60, maximum: MAX_TTL_SECONDS },
+    approval_request_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
 
@@ -188,6 +190,7 @@ interface AuditEventsQuery {
 interface InvestigateBody {
   reason: string;
   ttl_seconds: number;
+  approval_request_id: string;
 }
 
 interface RemediateBody {
@@ -219,42 +222,35 @@ export interface OperatorRoutesMiddleware {
 
 export interface OperatorRoutesOptions {
   readonly service: OperatorService;
+  readonly auditLogger: AuditLogger;
   readonly mw: OperatorRoutesMiddleware;
 }
 
-/**
- * Pre-handler that copies `body.approval_request_id` into
- * `req.params.approvalRequestId` so L2.9 finds it via its standard
- * `requestIdParam` lookup. Documented as a deviation in the file
- * header.
- */
-const shimApprovalRequestIdToParams: NamedMiddleware = {
-  name: "validateInputSchema",
-  handler: async (req: FastifyRequest): Promise<void> => {
-    const body = req.body as { approval_request_id?: unknown } | undefined;
-    if (
-      body === undefined ||
-      typeof body.approval_request_id !== "string"
-    ) {
-      // Schema validation runs BEFORE this shim, so a missing field is
-      // already a 400. Defensive: if we somehow get here without it,
-      // surface a typed input error rather than a runtime cast.
-      throw new InputInvalidError("approval_request_id missing from body.", {
-        field: "approval_request_id",
-      });
-    }
-    const params = (req.params as Record<string, unknown> | undefined) ?? {};
-    params.approvalRequestId = body.approval_request_id;
-    (req as FastifyRequest & { params: Record<string, unknown> }).params =
-      params;
-  },
-};
+function assertOperatorStepUp(req: {
+  auth?: { assuranceLevel: "aal1" | "aal2" | "aal3" };
+}): void {
+  if (req.auth?.assuranceLevel !== "aal2" && req.auth?.assuranceLevel !== "aal3") {
+    throw new PermissionDeniedError(
+      "Operator access requires step-up authentication.",
+      { reason: "step_up_required" },
+    );
+  }
+}
 
 export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
   app: FastifyInstance,
   opts,
 ) => {
   const { service, mw } = opts;
+  const validateInvestigate = bodyValidationWithApprovalRequest(
+    INVESTIGATE_BODY_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateRemediate = bodyValidationWithApprovalRequest(
+    REMEDIATE_BODY_SCHEMA,
+    opts.auditLogger,
+  );
+  const approvalIfHighRisk = mw.requireApprovalIfHighRiskFactory();
 
   // -------------------------------------------------------------------
   // GET /operator/audit-events  — cross-workspace audit read
@@ -273,6 +269,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       if (req.auth === undefined) {
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
+      assertOperatorStepUp(req);
       const limit = parseLimit(req.query.limit);
       const cursor =
         req.query.cursor !== undefined
@@ -307,18 +304,20 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
   }>(
     "/operator/incident/:workspaceId/investigate",
     {
-      schema: { body: INVESTIGATE_BODY_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateInvestigate,
         mw.attachAuditActor,
         mw.requireOperatorIncidentInvestigate,
+        approvalIfHighRisk,
       ]),
     },
     async (req, reply) => {
       if (req.auth === undefined) {
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
+      assertOperatorStepUp(req);
       const workspaceId = assertUuid(req.params.workspaceId, "workspaceId");
       const result = await service.enterInvestigation({
         actorUserId: req.auth.userId,
@@ -344,24 +343,20 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
   }>(
     "/operator/incident/:workspaceId/remediate",
     {
-      schema: { body: REMEDIATE_BODY_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
-        // The shim copies body.approval_request_id → params for L2.9.
-        // Registered under the validateInputSchema slot; the schema
-        // itself runs as part of `app.post` schema validation, which
-        // Fastify executes BEFORE the preHandler chain.
-        shimApprovalRequestIdToParams,
+        validateRemediate,
         mw.attachAuditActor,
         mw.requireOperatorIncidentRemediate,
-        mw.requireApprovalIfHighRiskFactory(),
+        approvalIfHighRisk,
       ]),
     },
     async (req, reply) => {
       if (req.auth === undefined) {
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
+      assertOperatorStepUp(req);
       const workspaceId = assertUuid(req.params.workspaceId, "workspaceId");
       const result = await service.executeRemediation({
         actorUserId: req.auth.userId,

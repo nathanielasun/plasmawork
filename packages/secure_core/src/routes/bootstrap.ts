@@ -60,6 +60,8 @@ import {
 } from "../bootstrap/service.js";
 import type { BootstrapWormMarkerProvider } from "../bootstrap/wormMarker.js";
 import type { RateLimitStore } from "../middleware/enforceRateLimit.js";
+import type { AuditLogger } from "../audit/logger.js";
+import { bodyValidation } from "./validation.js";
 
 /**
  * Lockout duration after `BOOTSTRAP_FAILURE_LOCKOUT_THRESHOLD` failed
@@ -106,6 +108,7 @@ export interface BootstrapRoutesMiddleware {
 export interface BootstrapRoutesOptions {
   readonly service: BootstrapService;
   readonly mw: BootstrapRoutesMiddleware;
+  readonly auditLogger: AuditLogger;
   /**
    * Reads the `BOOTSTRAP_ALLOWED` env via `secrets/env.ts`. The plugin
    * compares for `=== "1"`; any other value (including unset) closes
@@ -160,14 +163,18 @@ export const bootstrapRoutes: FastifyPluginAsync<BootstrapRoutesOptions> =
     // POST /bootstrap
     // -----------------------------------------------------------------
     const now = opts.now ?? Date.now;
+    const validateBootstrapBody = bodyValidation(
+      BOOTSTRAP_BODY_SCHEMA,
+      opts.auditLogger,
+    );
 
     app.post<{ Body: BootstrapBody }>(
       "/bootstrap",
       {
-        schema: { body: BOOTSTRAP_BODY_SCHEMA },
         preHandler: composeMiddleware([
           opts.mw.enforceRateLimit,
           opts.mw.enforceCsrfForStateChange,
+          validateBootstrapBody,
         ]),
       },
       async (req, reply) => {

@@ -34,7 +34,13 @@ import {
   type NamedMiddleware,
 } from "../middleware/compose.js";
 import type { CapsuleVersionLockService } from "../capsules/versionLock.js";
-import { SecureCoreError, NotFoundError } from "../errors/shapes.js";
+import {
+  InputInvalidError,
+  SecureCoreError,
+  NotFoundError,
+} from "../errors/shapes.js";
+import type { AuditLogger } from "../audit/logger.js";
+import { bodyValidation } from "./validation.js";
 
 /**
  * Capability-bound + chain middleware bundle for capsule routes. The
@@ -60,7 +66,21 @@ export interface CapsuleRoutesMiddleware {
 
 export interface CapsuleRoutesOptions {
   readonly service: CapsuleVersionLockService;
+  readonly auditLogger: AuditLogger;
+  readonly sourceArtifacts: CapsuleSourceArtifactResolver;
   readonly mw: CapsuleRoutesMiddleware;
+}
+
+export interface CapsuleSourceArtifact {
+  readonly storage_path: string;
+  readonly content_hash: string | null;
+}
+
+export interface CapsuleSourceArtifactResolver {
+  getArtifactOrThrow(
+    workspaceId: string,
+    artifactId: string,
+  ): Promise<CapsuleSourceArtifact>;
 }
 
 const UUID_V4 =
@@ -75,12 +95,10 @@ function assertUuid(value: unknown, label: string): string {
 
 interface CreateCapsuleBody {
   name: string;
-  content_hash: string;
-  storage_path: string;
+  source_artifact_id: string;
 }
 interface UpdateCapsuleBody {
-  content_hash: string;
-  storage_path: string;
+  source_artifact_id: string;
 }
 interface ForkCapsuleBody {
   name: string;
@@ -89,21 +107,19 @@ interface ForkCapsuleBody {
 const CREATE_CAPSULE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["name", "content_hash", "storage_path"],
+  required: ["name", "source_artifact_id"],
   properties: {
     name: { type: "string", minLength: 1, maxLength: 200 },
-    content_hash: { type: "string", minLength: 1, maxLength: 256 },
-    storage_path: { type: "string", minLength: 1, maxLength: 1024 },
+    source_artifact_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
 
 const UPDATE_CAPSULE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["content_hash", "storage_path"],
+  required: ["source_artifact_id"],
   properties: {
-    content_hash: { type: "string", minLength: 1, maxLength: 256 },
-    storage_path: { type: "string", minLength: 1, maxLength: 1024 },
+    source_artifact_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
 
@@ -121,6 +137,37 @@ export const capsuleRoutes: FastifyPluginAsync<CapsuleRoutesOptions> = async (
   opts,
 ) => {
   const { service, mw } = opts;
+  const validateCreateCapsule = bodyValidation(
+    CREATE_CAPSULE_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateUpdateCapsule = bodyValidation(
+    UPDATE_CAPSULE_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateForkCapsule = bodyValidation(
+    FORK_CAPSULE_SCHEMA,
+    opts.auditLogger,
+  );
+
+  async function resolveSourceArtifact(
+    workspaceId: string,
+    artifactId: string,
+  ): Promise<{ contentHash: string; storagePath: string }> {
+    const artifact = await opts.sourceArtifacts.getArtifactOrThrow(
+      workspaceId,
+      artifactId,
+    );
+    if (artifact.content_hash === null || artifact.content_hash.length === 0) {
+      throw new InputInvalidError("Source artifact must have a content hash.", {
+        field: "source_artifact_id",
+      });
+    }
+    return {
+      contentHash: artifact.content_hash,
+      storagePath: artifact.storage_path,
+    };
+  }
 
   // -------------------------------------------------------------------
   // GET /workspaces/:workspaceId/capsules — list capsules
@@ -153,10 +200,10 @@ export const capsuleRoutes: FastifyPluginAsync<CapsuleRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/capsules",
     {
-      schema: { body: CREATE_CAPSULE_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateCreateCapsule,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
@@ -169,14 +216,18 @@ export const capsuleRoutes: FastifyPluginAsync<CapsuleRoutesOptions> = async (
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
       assertUuid(req.params.workspaceId, "workspaceId");
+      const source = await resolveSourceArtifact(
+        req.params.workspaceId,
+        req.body.source_artifact_id,
+      );
       const result = await service.createCapsule({
         workspaceId: req.params.workspaceId,
         name: req.body.name,
         createdBy: req.auth.userId,
         actorType: req.auth.actorType === "ai_agent" ? "ai_agent" : "human",
         requestId: req.requestId,
-        contentHash: req.body.content_hash,
-        storagePath: req.body.storage_path,
+        contentHash: source.contentHash,
+        storagePath: source.storagePath,
       });
       return reply.code(201).send({
         capsule_id: result.capsuleId,
@@ -221,10 +272,10 @@ export const capsuleRoutes: FastifyPluginAsync<CapsuleRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/capsules/:capsuleId",
     {
-      schema: { body: UPDATE_CAPSULE_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateUpdateCapsule,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
@@ -238,6 +289,10 @@ export const capsuleRoutes: FastifyPluginAsync<CapsuleRoutesOptions> = async (
       }
       assertUuid(req.params.workspaceId, "workspaceId");
       assertUuid(req.params.capsuleId, "capsuleId");
+      const source = await resolveSourceArtifact(
+        req.params.workspaceId,
+        req.body.source_artifact_id,
+      );
 
       const ifMatchHeaderRaw = req.headers["if-match"];
       const ifMatch = Array.isArray(ifMatchHeaderRaw)
@@ -256,8 +311,8 @@ export const capsuleRoutes: FastifyPluginAsync<CapsuleRoutesOptions> = async (
         workspaceId: req.params.workspaceId,
         expectedBaseVersionId: ifMatch,
         newContent: {
-          contentHash: req.body.content_hash,
-          storagePath: req.body.storage_path,
+          contentHash: source.contentHash,
+          storagePath: source.storagePath,
         },
         actorUserId: req.auth.userId,
         actorType: req.auth.actorType === "ai_agent" ? "ai_agent" : "human",
@@ -279,10 +334,10 @@ export const capsuleRoutes: FastifyPluginAsync<CapsuleRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/capsules/:capsuleId/fork",
     {
-      schema: { body: FORK_CAPSULE_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateForkCapsule,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,

@@ -156,7 +156,6 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   app.post<{ Body: RequestEmailBody }>(
     "/auth/password-reset/request",
     {
-      schema: { body: REQUEST_EMAIL_SCHEMA },
       preHandler: composeMiddleware([
         mw.enforceRateLimit,
         mw.enforceCsrfForStateChange,
@@ -178,7 +177,6 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   app.post<{ Body: PasswordResetConsumeBody }>(
     "/auth/password-reset/consume",
     {
-      schema: { body: PASSWORD_RESET_CONSUME_SCHEMA },
       preHandler: composeMiddleware([
         mw.enforceRateLimit,
         mw.enforceCsrfForStateChange,
@@ -201,7 +199,6 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   app.post<{ Body: RequestEmailBody }>(
     "/auth/email-verify/request",
     {
-      schema: { body: REQUEST_EMAIL_SCHEMA },
       preHandler: composeMiddleware([
         mw.enforceRateLimit,
         mw.enforceCsrfForStateChange,
@@ -223,7 +220,6 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   app.post<{ Body: EmailVerifyConsumeBody }>(
     "/auth/email-verify/consume",
     {
-      schema: { body: EMAIL_VERIFY_CONSUME_SCHEMA },
       preHandler: composeMiddleware([
         mw.enforceRateLimit,
         mw.enforceCsrfForStateChange,
@@ -245,7 +241,6 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   app.post<{ Body: MfaRecoveryBody }>(
     "/auth/mfa-recovery",
     {
-      schema: { body: MFA_RECOVERY_SCHEMA },
       preHandler: composeMiddleware([
         mw.enforceRateLimit,
         mw.enforceCsrfForStateChange,

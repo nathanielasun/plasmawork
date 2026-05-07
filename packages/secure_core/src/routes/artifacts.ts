@@ -52,6 +52,8 @@ import type {
   ArtifactKeysetCursor,
   ArtifactService,
 } from "../artifacts/service.js";
+import type { AuditLogger } from "../audit/logger.js";
+import { bodyValidation } from "./validation.js";
 
 /**
  * Default + max for `expected_size_bytes`. Spec §21 caps stored-byte
@@ -94,6 +96,7 @@ export interface ArtifactRoutesMiddleware {
 
 export interface ArtifactRoutesOptions {
   readonly service: ArtifactService;
+  readonly auditLogger: AuditLogger;
   readonly mw: ArtifactRoutesMiddleware;
   /** Cap on `expected_size_bytes`. Default 10 GiB. */
   readonly maxExportBytes?: number;
@@ -228,6 +231,7 @@ export const artifactRoutes: FastifyPluginAsync<ArtifactRoutesOptions> = async (
 ) => {
   const { service, mw } = opts;
   const maxExportBytes = opts.maxExportBytes ?? DEFAULT_MAX_EXPORT_BYTES;
+  const validateExport = bodyValidation(EXPORT_SCHEMA, opts.auditLogger);
 
   // L2.9 is action-bound at registration time. The factory is called
   // once with `"artifact_export"`; the produced NamedMiddleware is then
@@ -313,10 +317,10 @@ export const artifactRoutes: FastifyPluginAsync<ArtifactRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/artifacts/:artifactId/export",
     {
-      schema: { body: EXPORT_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateExport,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,

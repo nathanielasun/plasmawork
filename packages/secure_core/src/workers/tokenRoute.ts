@@ -57,6 +57,7 @@ import {
   type RunState,
 } from "../runs/stateMachine.js";
 import type { AuditLogger } from "../audit/logger.js";
+import { bodyValidation } from "../routes/validation.js";
 import {
   NotFoundError,
   VersionConflictError,
@@ -160,6 +161,10 @@ export const workerTokenRoute: FastifyPluginAsync<
   WorkerTokenRouteOptions
 > = async (app: FastifyInstance, opts) => {
   const { mw } = opts;
+  const validateIssueToken = bodyValidation(
+    ISSUE_TOKEN_SCHEMA,
+    opts.auditLogger,
+  );
 
   app.post<{
     Params: { runId: string };
@@ -167,10 +172,10 @@ export const workerTokenRoute: FastifyPluginAsync<
   }>(
     "/internal/workers/runs/:runId/token",
     {
-      schema: { body: ISSUE_TOKEN_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateIssueToken,
         mw.attachAuditActor,
         mw.requireWorkerIssueToken,
       ]),

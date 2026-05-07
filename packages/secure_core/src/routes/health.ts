@@ -29,6 +29,8 @@ import type {
 } from "fastify";
 import type { Sql } from "postgres";
 
+const PROMETHEUS_IDENTIFIER = /^[a-zA-Z_:][a-zA-Z0-9_:]*$/;
+
 export interface HealthRoutesOptions {
   /** App-role pool. Probed in /readiness via `SELECT 1`. */
   readonly appSql?: Sql;
@@ -61,6 +63,10 @@ export class MetricsRegistry {
     labels: Readonly<Record<string, string>> = {},
     by: number = 1,
   ): void {
+    assertPrometheusIdentifier(name, "metric name");
+    for (const key of Object.keys(labels)) {
+      assertPrometheusIdentifier(key, "metric label");
+    }
     if (!Number.isFinite(by) || by < 0) {
       throw new Error(`MetricsRegistry.inc: 'by' must be a non-negative finite number (got ${by})`);
     }
@@ -82,6 +88,12 @@ export class MetricsRegistry {
       }
     }
     return lines.join("\n") + (lines.length > 0 ? "\n" : "");
+  }
+}
+
+function assertPrometheusIdentifier(value: string, label: string): void {
+  if (!PROMETHEUS_IDENTIFIER.test(value)) {
+    throw new Error(`MetricsRegistry.inc: invalid ${label}: ${value}`);
   }
 }
 

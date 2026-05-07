@@ -102,7 +102,10 @@ interface ReservationCall {
   reservationId?: string;
 }
 
-function makeStubReservationService(opts: { quotaCap: bigint }): {
+function makeStubReservationService(opts: {
+  quotaCap: bigint;
+  rejectCommitReservationId?: string;
+}): {
   service: StorageReservationService;
   calls: ReservationCall[];
 } {
@@ -138,6 +141,9 @@ function makeStubReservationService(opts: { quotaCap: bigint }): {
         workspaceId: o.workspaceId,
         reservationId: o.reservationId,
       });
+      if (o.reservationId === opts.rejectCommitReservationId) {
+        throw new Error("commit failed");
+      }
     },
     async releaseReservation(o: { reservationId: string; workspaceId: string }) {
       calls.push({
@@ -398,6 +404,32 @@ describe("workerUploadRoute — L3.9 regressions (audit fixes #4–#7)", () => {
     expect(reservations.calls.find((c) => c.action === "reserveBytes")).toBeUndefined();
   });
 
+  it("rejects malformed declared_size with a typed denial and no reservation", async () => {
+    const app = buildApp({
+      auditLogger: audit.logger,
+      storageReservations: reservations.service,
+    });
+    const body = multipartBody([
+      { name: "run_id", value: RUN_ID },
+      { name: "artifact_kind", value: "results" },
+      { name: "artifact_name", value: "bad-size.bin" },
+      { name: "declared_size", value: "1e6" },
+      { name: "file", filename: "bad-size.bin", content: Buffer.alloc(10) },
+    ]);
+    const r = await app.inject({
+      method: "POST",
+      url: "/uploads",
+      headers: { ...body.headers, "x-worker-token": tokenFor() },
+      payload: body.payload,
+    });
+    expect(r.statusCode).toBe(403);
+    expect(
+      reservations.calls.find((c) => c.action === "reserveBytes"),
+    ).toBeUndefined();
+    const denied = audit.calls.find((c) => c.action === "worker.upload_denied");
+    expect(denied?.metadata?.denied_reason).toBe("oversize");
+  });
+
   // -------------------------------------------------------------------
   // Audit fix #7: archive validation routing + rejection cleanup
   // -------------------------------------------------------------------
@@ -485,6 +517,14 @@ describe("workerUploadRoute — L3.9 regressions (audit fixes #4–#7)", () => {
     expect(reserveCalls).toHaveLength(2);
     expect(reserveCalls[0].bytes).toBe(BigInt(cleanZip.length));
     expect(reserveCalls[1].bytes).toBeGreaterThan(0n);
+    const commitCalls = reservations.calls.filter(
+      (c) => c.action === "commitReservation",
+    );
+    expect(commitCalls).toHaveLength(2);
+    const success = audit.calls.find((c) => c.action === "worker.uploaded");
+    expect(BigInt(String(success?.metadata?.bytes_committed))).toBe(
+      BigInt(cleanZip.length) + (reserveCalls[1].bytes ?? 0n),
+    );
 
     // The .extracted dir exists and has the file.
     const extractDir = join(
@@ -498,5 +538,51 @@ describe("workerUploadRoute — L3.9 regressions (audit fixes #4–#7)", () => {
     );
     const extracted = await stat(join(extractDir, "data", "results.csv"));
     expect(extracted.isFile()).toBe(true);
+  });
+
+  it("archive commit failure: cleans up archive and extracted files", async () => {
+    reservations = makeStubReservationService({
+      quotaCap: 10_000_000n,
+      rejectCommitReservationId: "res-2",
+    });
+    const app = buildApp({
+      auditLogger: audit.logger,
+      storageReservations: reservations.service,
+    });
+    const cleanZip = await buildZipBuffer([
+      { name: "data/results.csv", content: "x,y\n1,2\n" },
+    ]);
+    const body = multipartBody([
+      { name: "run_id", value: RUN_ID },
+      { name: "artifact_kind", value: "archive" },
+      { name: "artifact_name", value: "commit-fail.zip" },
+      { name: "declared_size", value: cleanZip.length.toString() },
+      { name: "file", filename: "commit-fail.zip", content: cleanZip },
+    ]);
+    const r = await app.inject({
+      method: "POST",
+      url: "/uploads",
+      headers: { ...body.headers, "x-worker-token": tokenFor() },
+      payload: body.payload,
+    });
+    expect(r.statusCode).toBe(403);
+    const archivePath = join(
+      storageRoot,
+      "workspaces",
+      WS_ID,
+      "temp_runs",
+      RUN_ID,
+      "archive",
+      "commit-fail.zip",
+    );
+    expect(existsSync(archivePath)).toBe(false);
+    expect(existsSync(`${archivePath}.extracted`)).toBe(false);
+    expect(
+      reservations.calls.filter((c) => c.action === "commitReservation"),
+    ).toHaveLength(2);
+    expect(
+      audit.calls.find((c) => c.action === "worker.upload_denied")?.metadata
+        ?.denied_reason,
+    ).toBe("quota_exceeded");
   });
 });

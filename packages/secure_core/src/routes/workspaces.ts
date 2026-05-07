@@ -40,6 +40,12 @@ import {
 } from "../middleware/compose.js";
 import type { WorkspaceService } from "../workspaces/service.js";
 import { SecureCoreError, NotFoundError } from "../errors/shapes.js";
+import type { AuditLogger } from "../audit/logger.js";
+import type { HighRiskAction } from "../config/high_risk_actions.js";
+import {
+  bodyValidation,
+  bodyValidationWithApprovalRequest,
+} from "./validation.js";
 
 /**
  * Middleware factories the app composes into route preHandlers. Each
@@ -59,10 +65,14 @@ export interface WorkspaceRoutesMiddleware {
   readonly requireWorkspaceMembership: NamedMiddleware;
   /** `workspace:manage_members` capability-bound mw. */
   readonly requireManageMembers: NamedMiddleware;
+  readonly requireApprovalIfHighRiskFactory: (
+    action: HighRiskAction,
+  ) => NamedMiddleware;
 }
 
 export interface WorkspaceRoutesOptions {
   readonly service: WorkspaceService;
+  readonly auditLogger: AuditLogger;
   readonly mw: WorkspaceRoutesMiddleware;
 }
 
@@ -81,11 +91,16 @@ interface CreateWorkspaceBody {
   name: string;
 }
 interface AddMemberBody {
-  user_id: string;
+  target_user_id: string;
   role_name: string;
+  approval_request_id: string;
 }
 interface ChangeRoleBody {
   role_name: string;
+  approval_request_id: string;
+}
+interface RemoveMemberBody {
+  approval_request_id: string;
 }
 
 const CREATE_WORKSPACE_SCHEMA = {
@@ -100,19 +115,30 @@ const CREATE_WORKSPACE_SCHEMA = {
 const ADD_MEMBER_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["user_id", "role_name"],
+  required: ["target_user_id", "role_name", "approval_request_id"],
   properties: {
-    user_id: { type: "string", pattern: UUID_V4.source },
+    target_user_id: { type: "string", pattern: UUID_V4.source },
     role_name: { type: "string", minLength: 1, maxLength: 100 },
+    approval_request_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
 
 const CHANGE_ROLE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["role_name"],
+  required: ["role_name", "approval_request_id"],
   properties: {
     role_name: { type: "string", minLength: 1, maxLength: 100 },
+    approval_request_id: { type: "string", pattern: UUID_V4.source },
+  },
+} as const;
+
+const REMOVE_MEMBER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["approval_request_id"],
+  properties: {
+    approval_request_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
 
@@ -121,6 +147,25 @@ export const workspaceRoutes: FastifyPluginAsync<WorkspaceRoutesOptions> = async
   opts,
 ) => {
   const { service, mw } = opts;
+  const validateCreateWorkspace = bodyValidation(
+    CREATE_WORKSPACE_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateAddMember = bodyValidationWithApprovalRequest(
+    ADD_MEMBER_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateChangeRole = bodyValidationWithApprovalRequest(
+    CHANGE_ROLE_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateRemoveMember = bodyValidationWithApprovalRequest(
+    REMOVE_MEMBER_SCHEMA,
+    opts.auditLogger,
+  );
+  const requireMembershipChangeApproval = mw.requireApprovalIfHighRiskFactory(
+    "workspace_membership_change",
+  );
 
   // -------------------------------------------------------------------
   // GET /workspaces  — list workspaces the caller is an active member of
@@ -148,10 +193,10 @@ export const workspaceRoutes: FastifyPluginAsync<WorkspaceRoutesOptions> = async
   app.post<{ Body: CreateWorkspaceBody }>(
     "/workspaces",
     {
-      schema: { body: CREATE_WORKSPACE_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateCreateWorkspace,
         mw.attachAuditActor,
       ]),
     },
@@ -199,15 +244,16 @@ export const workspaceRoutes: FastifyPluginAsync<WorkspaceRoutesOptions> = async
   }>(
     "/workspaces/:workspaceId/members",
     {
-      schema: { body: ADD_MEMBER_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateAddMember,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
         mw.requireWorkspaceMembership,
         mw.requireManageMembers,
+        requireMembershipChangeApproval,
       ]),
     },
     async (req, reply) => {
@@ -217,7 +263,7 @@ export const workspaceRoutes: FastifyPluginAsync<WorkspaceRoutesOptions> = async
       assertUuid(req.params.workspaceId, "workspaceId");
       const row = await service.addMember({
         workspaceId: req.params.workspaceId,
-        targetUserId: req.body.user_id,
+        targetUserId: req.body.target_user_id,
         roleName: req.body.role_name,
         actorUserId: req.auth.userId,
         requestId: req.requestId,
@@ -235,15 +281,16 @@ export const workspaceRoutes: FastifyPluginAsync<WorkspaceRoutesOptions> = async
   }>(
     "/workspaces/:workspaceId/members/:userId",
     {
-      schema: { body: CHANGE_ROLE_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateChangeRole,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
         mw.requireWorkspaceMembership,
         mw.requireManageMembers,
+        requireMembershipChangeApproval,
       ]),
     },
     async (req) => {
@@ -266,17 +313,22 @@ export const workspaceRoutes: FastifyPluginAsync<WorkspaceRoutesOptions> = async
   // -------------------------------------------------------------------
   // DELETE /workspaces/:workspaceId/members/:userId
   // -------------------------------------------------------------------
-  app.delete<{ Params: { workspaceId: string; userId: string } }>(
+  app.delete<{
+    Params: { workspaceId: string; userId: string };
+    Body: RemoveMemberBody;
+  }>(
     "/workspaces/:workspaceId/members/:userId",
     {
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateRemoveMember,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
         mw.requireWorkspaceMembership,
         mw.requireManageMembers,
+        requireMembershipChangeApproval,
       ]),
     },
     async (req, reply) => {

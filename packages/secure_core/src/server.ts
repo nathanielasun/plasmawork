@@ -29,7 +29,7 @@ import {
   toHttpResponse,
   type ToHttpResponseOptions,
 } from "./errors/mapper.js";
-import { SecureCoreError } from "./errors/shapes.js";
+import { InputInvalidError } from "./errors/shapes.js";
 import { readSecureCoreEnv } from "./secrets/env.js";
 
 export interface BuildAppDeps {
@@ -67,8 +67,9 @@ export function buildApp(deps: BuildAppDeps): FastifyInstance {
 
   app.setErrorHandler((err, req, reply) => {
     const requestId = req.requestId ?? "unknown";
+    const mappedError = fastifyValidationToSecureError(err);
     const mapped = toHttpResponse(
-      err instanceof SecureCoreError ? err : err,
+      mappedError,
       requestId,
       deps.errorMapping,
     );
@@ -76,6 +77,22 @@ export function buildApp(deps: BuildAppDeps): FastifyInstance {
   });
 
   return app;
+}
+
+function fastifyValidationToSecureError(err: unknown): unknown {
+  const candidate = err as {
+    statusCode?: unknown;
+    validation?: unknown;
+  };
+  if (
+    candidate !== null &&
+    typeof candidate === "object" &&
+    candidate.statusCode === 400 &&
+    candidate.validation !== undefined
+  ) {
+    return new InputInvalidError("Request failed schema validation.");
+  }
+  return err;
 }
 
 declare module "fastify" {

@@ -42,10 +42,12 @@ import {
   type NamedMiddleware,
 } from "../middleware/compose.js";
 import type { ApprovalService } from "../approvals/service.js";
+import type { AuditLogger } from "../audit/logger.js";
 import {
   HIGH_RISK_ACTIONS,
   type HighRiskAction,
 } from "../config/high_risk_actions.js";
+import { bodyValidation } from "./validation.js";
 import { NotFoundError, SecureCoreError } from "../errors/shapes.js";
 
 /** UUID v4 regex — used by URL-param probes. */
@@ -92,6 +94,7 @@ export interface ApprovalRoutesMiddleware {
 
 export interface ApprovalRoutesOptions {
   readonly service: ApprovalService;
+  readonly auditLogger: AuditLogger;
   readonly mw: ApprovalRoutesMiddleware;
   /**
    * The high-risk action this plugin instance handles. Fixed at
@@ -150,6 +153,18 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
   opts,
 ) => {
   const { service, mw, action } = opts;
+  const validateCreateApprovalRequest = bodyValidation(
+    CREATE_APPROVAL_REQUEST_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateApproveApprovalRequest = bodyValidation(
+    APPROVE_APPROVAL_REQUEST_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateDenyApprovalRequest = bodyValidation(
+    DENY_APPROVAL_REQUEST_SCHEMA,
+    opts.auditLogger,
+  );
 
   // L2.9 is action-bound at registration. The factory is called once
   // here, the produced NamedMiddleware is then composed with the §6.2
@@ -165,10 +180,10 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/approval-requests",
     {
-      schema: { body: CREATE_APPROVAL_REQUEST_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateCreateApprovalRequest,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
@@ -208,10 +223,10 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/approval-requests/:approvalRequestId/approve",
     {
-      schema: { body: APPROVE_APPROVAL_REQUEST_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateApproveApprovalRequest,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
@@ -254,10 +269,10 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/approval-requests/:approvalRequestId/deny",
     {
-      schema: { body: DENY_APPROVAL_REQUEST_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateDenyApprovalRequest,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,

@@ -40,8 +40,9 @@ Until the live-runtime probes are wired and green:
 - Spec-level tests prove the runtime would produce a safe spec, NOT
   that gVisor enforces the spec.
 - The §29 #38–#43 sandbox-network-egress + #67 quota-trip tests
-  carry `expect.fail("not implemented (Layer 5)")` placeholders so
-  the CI lane that runs them surfaces clearly when they're missing.
+  are `it.todo` markers behind the runsc availability gate so the
+  CI lane can surface missing live probes without making dev hosts
+  fail on placeholders.
 
 The spec-level coverage of those §29 numbers DOES catch the regress
 case where someone adds an unsafe argv flag or mount path — that's

@@ -323,7 +323,7 @@ describe("L4.11 — worker token issuance route", () => {
     expect(audit.calls.find((c) => c.action === "worker.token_issued")).toBeUndefined();
   });
 
-  it("POST with forbidden body fields (workspace_id / actor / capsule_id) → 400 INPUT_INVALID", async () => {
+  it("POST with forbidden body fields (workspace_id / actor / capsule_id) → 400 UNEXPECTED_FIELD", async () => {
     const app = buildApp({
       workerHmacKey: HMAC_KEY,
       runQueryService: makeStubRunSource({ status: "running" }),
@@ -341,7 +341,7 @@ describe("L4.11 — worker token issuance route", () => {
     });
     expect(r.statusCode).toBe(400);
     const body = r.json() as { error: { code: string } };
-    expect(body.error.code).toBe("INPUT_INVALID");
+    expect(body.error.code).toBe("UNEXPECTED_FIELD");
     expect(audit.calls.find((c) => c.action === "worker.token_issued")).toBeUndefined();
   });
 

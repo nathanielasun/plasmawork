@@ -35,10 +35,12 @@ import type {
   MembershipContext,
   WorkspaceContext,
 } from "../../src/middleware/types.js";
+import type { AuditLogger } from "../../src/audit/logger.js";
 
 const VALID_WS = "11111111-1111-4111-8111-111111111111";
 const VALID_REQ = "22222222-2222-4222-8222-222222222222";
 const ACTOR = "33333333-3333-4333-8333-333333333333";
+const auditLogger = { write: async () => {} } as unknown as AuditLogger;
 
 // -------------------------------------------------------------------
 // Stubs
@@ -306,7 +308,7 @@ function buildApp(
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(approvalRoutes, { service, mw, action });
+  app.register(approvalRoutes, { service, auditLogger, mw, action });
   return app;
 }
 

@@ -13,6 +13,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 
 import {
   toolRoutes,
+  type ToolSourceArtifactResolver,
   type ToolRoutesMiddleware,
 } from "../../src/routes/tools.js";
 import { requireRequestId } from "../../src/middleware/requireRequestId.js";
@@ -24,6 +25,7 @@ import type {
   MembershipContext,
   WorkspaceContext,
 } from "../../src/middleware/types.js";
+import type { AuditLogger } from "../../src/audit/logger.js";
 import type {
   CreateToolOptions,
   RequestPromotionOptions,
@@ -37,7 +39,17 @@ import type {
 const VALID_WS = "11111111-1111-4111-8111-111111111111";
 const VALID_TOOL = "44444444-4444-4444-8444-444444444444";
 const GLOBAL_TOOL = "55555555-5555-4555-8555-555555555555";
+const VALID_ARTIFACT = "66666666-6666-4666-8666-666666666666";
 const ACTOR = "33333333-3333-4333-8333-333333333333";
+const auditLogger = { write: async () => {} } as unknown as AuditLogger;
+const sourceArtifacts: ToolSourceArtifactResolver = {
+  async getArtifactOrThrow(_workspaceId: string, _artifactId: string) {
+    return {
+      content_hash: "sha256:abc",
+      storage_path: "tools/foo.py",
+    };
+  },
+};
 
 // -------------------------------------------------------------------
 // Stubs
@@ -300,7 +312,7 @@ function buildApp(
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(toolRoutes, { service, mw });
+  app.register(toolRoutes, { service, auditLogger, sourceArtifacts, mw });
   return app;
 }
 
@@ -337,8 +349,7 @@ describe("L4.4 — tool routes", () => {
       url: `/workspaces/${VALID_WS}/tools`,
       payload: {
         name: "tool-1",
-        content_hash: "sha256:abc",
-        storage_path: "tools/foo.py",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(201);
@@ -369,6 +380,7 @@ describe("L4.4 — tool routes", () => {
       url: `/workspaces/${VALID_WS}/tools`,
       payload: {
         name: "tool-1",
+        source_artifact_id: VALID_ARTIFACT,
         content_hash: "sha256:abc",
         storage_path: "tools/foo.py",
         actor_user_id: "evil",
@@ -394,24 +406,24 @@ describe("L4.4 — tool routes", () => {
     });
   });
 
-  it("PATCH /tools/:id allows name/status updates", async () => {
+  it("PATCH /tools/:id allows name updates only", async () => {
     const app = buildApp(stub.service, makeMiddlewareBundle({}));
     const r = await app.inject({
       method: "PATCH",
       url: `/workspaces/${VALID_WS}/tools/${VALID_TOOL}`,
-      payload: { name: "tool-renamed", status: "candidate" },
+      payload: { name: "tool-renamed" },
     });
     expect(r.statusCode).toBe(200);
     expect(stub.calls.updateTool[0]).toMatchObject({
       workspaceId: VALID_WS,
       toolId: VALID_TOOL,
       name: "tool-renamed",
-      status: "candidate",
       actorUserId: ACTOR,
     });
+    expect(stub.calls.updateTool[0]?.status).toBeUndefined();
   });
 
-  it("PATCH /tools/:id REFUSES status='trusted' with use_promote_request hint (v4 §17)", async () => {
+  it("PATCH /tools/:id rejects any client-supplied status before service", async () => {
     const app = buildApp(stub.service, makeMiddlewareBundle({}));
     const r = await app.inject({
       method: "PATCH",
@@ -419,15 +431,15 @@ describe("L4.4 — tool routes", () => {
       payload: { status: "trusted" },
     });
     expect(r.statusCode).toBe(400);
-    const body = r.json() as { error: { code: string; details?: { reason?: string } } };
-    expect(body.error.code).toBe("INPUT_INVALID");
-    expect(body.error.details?.reason).toBe("use_promote_request");
-    // Service was called and threw — verify call shape, but note
-    // the route did pass through (the refusal is in the service).
+    const body = r.json() as {
+      error: { code: string; details?: { field?: string } };
+    };
+    expect(body.error.code).toBe("UNEXPECTED_FIELD");
+    expect(body.error.details?.field).toBe("status");
     expect(stub.calls.updateTool).toHaveLength(0);
   });
 
-  it("PATCH /tools/:id REFUSES status='validated' with use_promote_request hint", async () => {
+  it("PATCH /tools/:id keeps validated promotion behind promote-request", async () => {
     const app = buildApp(stub.service, makeMiddlewareBundle({}));
     const r = await app.inject({
       method: "PATCH",
@@ -435,9 +447,7 @@ describe("L4.4 — tool routes", () => {
       payload: { status: "validated" },
     });
     expect(r.statusCode).toBe(400);
-    const body = r.json() as { error: { code: string; details?: { reason?: string } } };
-    expect(body.error.code).toBe("INPUT_INVALID");
-    expect(body.error.details?.reason).toBe("use_promote_request");
+    expect(stub.calls.updateTool).toHaveLength(0);
   });
 
   it("POST /tools/:id/promote-request creates pending request", async () => {
@@ -468,8 +478,7 @@ describe("L4.4 — tool routes", () => {
       url: `/workspaces/${VALID_WS}/tools`,
       payload: {
         name: "tool-1",
-        content_hash: "sha256:abc",
-        storage_path: "tools/foo.py",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(403);

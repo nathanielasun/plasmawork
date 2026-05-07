@@ -50,6 +50,7 @@ import type {
   ListAuditEventsResult,
 } from "./../audit/readService.js";
 import type { PreparedOperatorRow } from "./../audit/dbWriter.js";
+import { SecureCoreError } from "../errors/shapes.js";
 
 /**
  * The three operator capabilities. Mirrors the audit_events_capability
@@ -301,20 +302,31 @@ export class OperatorService {
   /**
    * v4 §22.2 destructive remediation. The HTTP route binds this to L2.9
    * `requireApprovalIfHighRisk` (action `platform_operator_access`); by
-   * the time we get here the approval token has been consumed. We emit
-   * paired audit + operator rows and return the row ids so the caller
-   * can correlate. Actual destructive side-effects (delete_session,
-   * revoke_membership, lock_capsule) are stubbed at this layer — the
-   * task scope is the operator-session model + audit emission; concrete
-   * destructive primitives land with their owning subsystems. The
-   * audit row carries the action + target so a future implementer can
-   * walk the operator log to validate every remediation has a paired
-   * destructive primitive ran.
+   * the time we get here the approval token has been consumed.
+   *
+   * Critical fix #7 (fail-closed): destructive side-effects
+   * (delete_session, revoke_membership, lock_capsule) are NOT
+   * implemented at this layer. Returning HTTP 200 + a paired audit row
+   * marked `succeeded` would tell operators "your remediation
+   * happened" while the side-effect was a no-op — a worse outcome
+   * than refusing the request. We instead:
+   *
+   *   1. Write the paired `audit_events` + `operator_events` rows so
+   *      the *attempt* is logged (V4-R7 pairing invariant; the audit
+   *      row carries `result: "failed"` so verifiers can distinguish
+   *      attempted-but-not-shipped from actually-executed).
+   *   2. Throw `SecureCoreError("INTERNAL_ERROR", …, { reason:
+   *      "not_implemented" })` so the route returns HTTP 500 via the
+   *      §3 envelope.
+   *
+   * When a sub-action ships, the implementer wires it up here, flips
+   * `result` back to `"succeeded"`, and removes the throw — the route
+   * code stays the same.
    */
   public async executeRemediation(
     args: ExecuteRemediationArgs,
   ): Promise<ExecuteRemediationResult> {
-    const result = await this.recordOperatorEvent({
+    await this.recordOperatorEvent({
       actorUserId: args.actorUserId,
       sessionId: args.sessionId,
       requestId: args.requestId,
@@ -329,16 +341,17 @@ export class OperatorService {
         target_workspace_id: args.targetWorkspaceId,
         action: args.action,
         target_id: args.targetId,
+        not_implemented: true,
       },
       endedAtSameAsStarted: true,
+      result: "failed",
     });
 
-    return {
-      action: args.action,
-      targetId: args.targetId,
-      auditEventId: result.auditEventId,
-      operatorEventId: result.operatorEventId,
-    };
+    throw new SecureCoreError(
+      "INTERNAL_ERROR",
+      "Operator remediation actions are not yet implemented.",
+      { reason: "not_implemented" },
+    );
   }
 
   /**
@@ -365,13 +378,15 @@ export class OperatorService {
     startedAtOverride?: Date;
     /** When set, override the ended_at clock (e.g. session expiry). */
     endedAtOverride?: Date | null;
+    /** Audit result for the paired audit row. Defaults to succeeded. */
+    result?: "succeeded" | "failed";
   }): Promise<{ auditEventId: string; operatorEventId: string }> {
     const auditRow = await this.auditLogger.write({
       workspaceId: args.targetWorkspaceId,
       actorUserId: args.actorUserId,
       actorType: "operator",
       action: args.auditAction,
-      result: "succeeded",
+      result: args.result ?? "succeeded",
       requestId: args.requestId,
       metadata: args.auditMetadata,
     });

@@ -32,6 +32,69 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-07: Secure-core Layer-4 route and worker hardening
+
+### Affected subsystem
+- `packages/secure_core/src/routes`
+- `packages/secure_core/src/workspaces`
+- `packages/secure_core/src/workers`
+- `packages/secure_core/src/operator`
+- `packages/secure_core/test`
+- `scripts/dev/check_repo_conventions.sh`
+- `AGENTS.md` / `CLAUDE.md`
+
+### Symptoms
+Layer-4 review found route-level security drift that could bypass the
+accepted v4 plan's server-derived identity, approval, and quota rules.
+Several protected routes relied on Fastify `schema.body` instead of the
+audit-aware body validator; capsule/tool write APIs accepted
+`content_hash` and `storage_path`; tool PATCH exposed lifecycle `status`;
+workspace membership and operator incident actions lacked complete
+approval/commit-time checks; worker archive uploads reserved extracted
+bytes without committing that reservation; malformed `declared_size`
+could escape as a raw parser error; and operator remediation returned a
+success-shaped result despite no destructive side effect being wired.
+
+### Root cause
+Layer-4 route implementations treated handler-local schemas and service
+stubs as sufficient security boundaries. The v4 rules require
+defense-in-depth at the route boundary, middleware chain, service
+transaction, and worker accounting layer. Those layers were implemented
+in pieces, but not consistently joined across every endpoint.
+
+### Fix
+Added shared route body-validation helpers that invoke
+`validateInputSchema` and wired them into workspace, capsule, tool, run,
+artifact, approval, operator, bootstrap, and worker-token routes. Capsule
+and tool create/update paths now accept `source_artifact_id` and resolve
+`content_hash` / `storage_path` server-side. Tool PATCH no longer accepts
+`status`. Workspace membership mutations require an approval request id,
+pass through L2.9, and re-check `workspace:manage_members` inside the SQL
+transaction before commit. Operator audit/investigate/remediate paths now
+require step-up auth; investigate/remediate require approval. Operator
+remediation records a failed attempt and throws until side effects ship.
+Worker uploads validate `declared_size` syntax before `BigInt`, commit
+both archive and extracted-byte reservations, report `extracted_bytes`,
+and validate Prometheus metric/label identifiers before rendering.
+
+### Regression protection
+- `packages/secure_core/test/routes/{workspaces,capsules,tools,runs,artifacts,approvals,operator,bootstrap,health}.test.ts`
+- `packages/secure_core/test/workers/{tokenRoute,uploadRoute}.test.ts`
+- `packages/secure_core/test/operatorService.test.ts`
+- `scripts/dev/check_repo_conventions.sh`
+- `npm --prefix packages/secure_core run typecheck`
+- `npm --prefix packages/secure_core test`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not treat Fastify body schemas, request-body storage facts, or
+success-shaped stubs as security enforcement. Protected body validation
+must be audit-aware; lifecycle and storage facts are derived server-side;
+high-risk actions consume L2.9 approval before side effects; services
+re-check privilege in the commit transaction; and writers that create
+derived artifacts must account and clean up every file they produce.
+
 ## 2026-05-06: Secure-core Layer-2 traversal and input-boundary hardening
 
 ### Affected subsystem

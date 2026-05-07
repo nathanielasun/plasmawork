@@ -31,10 +31,13 @@ import type {
   RemoveMemberOptions,
   WorkspaceService,
 } from "../../src/workspaces/service.js";
+import type { AuditLogger } from "../../src/audit/logger.js";
 
 const VALID_WS = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER = "22222222-2222-4222-8222-222222222222";
 const ACTOR = "33333333-3333-4333-8333-333333333333";
+const VALID_APPROVAL_REQ = "44444444-4444-4444-8444-444444444444";
+const auditLogger = { write: async () => {} } as unknown as AuditLogger;
 
 // -------------------------------------------------------------------
 // Stubs
@@ -152,6 +155,7 @@ const baseMembership: MembershipContext = {
 function makeMiddlewareBundle(opts: {
   authed?: boolean;
   manageMembersAllowed?: boolean;
+  approvalAllowed?: boolean;
 }): WorkspaceRoutesMiddleware {
   const wrap = (
     name:
@@ -195,6 +199,14 @@ function makeMiddlewareBundle(opts: {
     enforceUniformNotFound: wrap("enforceUniformNotFound"),
     requireWorkspaceMembership: wrap("requireWorkspaceMembership"),
     requireManageMembers: wrap("requireCapability"),
+    requireApprovalIfHighRiskFactory: () => ({
+      name: "requireApprovalIfHighRisk",
+      handler: async () => {
+        if (opts.approvalAllowed === false) {
+          throw new SecureCoreError("APPROVAL_REQUIRED", "approval required.");
+        }
+      },
+    }),
   };
 }
 
@@ -246,7 +258,7 @@ function buildApp(
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(workspaceRoutes, { service, mw });
+  app.register(workspaceRoutes, { service, auditLogger, mw });
   return app;
 }
 
@@ -334,7 +346,11 @@ describe("L4.1 — workspace + members routes", () => {
     const r = await app.inject({
       method: "POST",
       url: `/workspaces/${VALID_WS}/members`,
-      payload: { user_id: OTHER_USER, role_name: "Researcher" },
+      payload: {
+        target_user_id: OTHER_USER,
+        role_name: "Researcher",
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
     });
     expect(r.statusCode).toBe(201);
     expect(stub.calls.addMember[0]).toMatchObject({
@@ -353,7 +369,11 @@ describe("L4.1 — workspace + members routes", () => {
     const r = await app.inject({
       method: "POST",
       url: `/workspaces/${VALID_WS}/members`,
-      payload: { user_id: OTHER_USER, role_name: "Researcher" },
+      payload: {
+        target_user_id: OTHER_USER,
+        role_name: "Researcher",
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
     });
     expect(r.statusCode).toBe(403);
     expect(stub.calls.addMember).toHaveLength(0);
@@ -364,7 +384,7 @@ describe("L4.1 — workspace + members routes", () => {
     const r = await app.inject({
       method: "PATCH",
       url: `/workspaces/${VALID_WS}/members/${OTHER_USER}`,
-      payload: { role_name: "Reviewer" },
+      payload: { role_name: "Reviewer", approval_request_id: VALID_APPROVAL_REQ },
     });
     expect(r.statusCode).toBe(200);
     expect(stub.calls.changeMemberRole[0]).toMatchObject({
@@ -380,7 +400,7 @@ describe("L4.1 — workspace + members routes", () => {
     const r = await app.inject({
       method: "PATCH",
       url: `/workspaces/${VALID_WS}/members/not-uuid`,
-      payload: { role_name: "Reviewer" },
+      payload: { role_name: "Reviewer", approval_request_id: VALID_APPROVAL_REQ },
     });
     expect(r.statusCode).toBe(404);
   });
@@ -390,6 +410,7 @@ describe("L4.1 — workspace + members routes", () => {
     const r = await app.inject({
       method: "DELETE",
       url: `/workspaces/${VALID_WS}/members/${OTHER_USER}`,
+      payload: { approval_request_id: VALID_APPROVAL_REQ },
     });
     expect(r.statusCode).toBe(204);
     expect(stub.calls.removeMember[0]).toMatchObject({
@@ -408,6 +429,7 @@ describe("L4.1 — workspace + members routes", () => {
     const r = await app.inject({
       method: "DELETE",
       url: `/workspaces/${VALID_WS}/members/${OTHER_USER}`,
+      payload: { approval_request_id: VALID_APPROVAL_REQ },
     });
     expect(r.statusCode).toBe(404);
   });

@@ -16,9 +16,10 @@
  * middleware doesn't model the global-trusted case.
  *
  * v4 §17 — promote-to-validated/trusted is a high-risk action. The
- * PATCH path REFUSES `status='validated'` and `status='trusted'`
- * with INPUT_INVALID + `{ reason: "use_promote_request" }`. The
- * actual flip is owned by the L4.6 approval-decide endpoint.
+ * PATCH path does not expose `status` at all; lifecycle transitions
+ * are owned by the promote-request / approval-decide flow. The service
+ * still refuses direct validated/trusted status changes for non-route
+ * callers as defense-in-depth.
  *
  * Read endpoints skip CSRF (idempotent) and `requireApprovalIfHighRisk`.
  * Write endpoints include the full chain. None of these routes
@@ -34,7 +35,13 @@ import {
   type NamedMiddleware,
 } from "../middleware/compose.js";
 import type { ToolService } from "../tools/service.js";
-import { SecureCoreError, NotFoundError } from "../errors/shapes.js";
+import {
+  InputInvalidError,
+  SecureCoreError,
+  NotFoundError,
+} from "../errors/shapes.js";
+import type { AuditLogger } from "../audit/logger.js";
+import { bodyValidation } from "./validation.js";
 
 /**
  * The middleware bundle the registering app provides. Each entry is
@@ -62,7 +69,21 @@ export interface ToolRoutesMiddleware {
 
 export interface ToolRoutesOptions {
   readonly service: ToolService;
+  readonly auditLogger: AuditLogger;
+  readonly sourceArtifacts: ToolSourceArtifactResolver;
   readonly mw: ToolRoutesMiddleware;
+}
+
+export interface ToolSourceArtifact {
+  readonly storage_path: string;
+  readonly content_hash: string | null;
+}
+
+export interface ToolSourceArtifactResolver {
+  getArtifactOrThrow(
+    workspaceId: string,
+    artifactId: string,
+  ): Promise<ToolSourceArtifact>;
 }
 
 const UUID_V4 =
@@ -77,12 +98,10 @@ function assertUuid(value: unknown, label: string): string {
 
 interface CreateToolBody {
   name: string;
-  content_hash: string;
-  storage_path: string;
+  source_artifact_id: string;
 }
 interface UpdateToolBody {
   name?: string;
-  status?: string;
 }
 interface PromoteRequestBody {
   target_status: "candidate" | "validated" | "trusted";
@@ -91,11 +110,10 @@ interface PromoteRequestBody {
 const CREATE_TOOL_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["name", "content_hash", "storage_path"],
+  required: ["name", "source_artifact_id"],
   properties: {
     name: { type: "string", minLength: 1, maxLength: 200 },
-    content_hash: { type: "string", minLength: 1, maxLength: 256 },
-    storage_path: { type: "string", minLength: 1, maxLength: 1024 },
+    source_artifact_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
 
@@ -105,14 +123,6 @@ const UPDATE_TOOL_SCHEMA = {
   minProperties: 1,
   properties: {
     name: { type: "string", minLength: 1, maxLength: 200 },
-    status: {
-      type: "string",
-      // Schema accepts every CHECK-allowed status; the service
-      // refuses validated/trusted with the use_promote_request
-      // hint so the error message is actionable. (Refusing here
-      // would surface as a generic Ajv error.)
-      enum: ["draft", "candidate", "validated", "trusted", "deprecated"],
-    },
   },
 } as const;
 
@@ -133,6 +143,37 @@ export const toolRoutes: FastifyPluginAsync<ToolRoutesOptions> = async (
   opts,
 ) => {
   const { service, mw } = opts;
+  const validateCreateTool = bodyValidation(
+    CREATE_TOOL_SCHEMA,
+    opts.auditLogger,
+  );
+  const validateUpdateTool = bodyValidation(
+    UPDATE_TOOL_SCHEMA,
+    opts.auditLogger,
+  );
+  const validatePromotionRequest = bodyValidation(
+    PROMOTE_REQUEST_SCHEMA,
+    opts.auditLogger,
+  );
+
+  async function resolveSourceArtifact(
+    workspaceId: string,
+    artifactId: string,
+  ): Promise<{ contentHash: string; storagePath: string }> {
+    const artifact = await opts.sourceArtifacts.getArtifactOrThrow(
+      workspaceId,
+      artifactId,
+    );
+    if (artifact.content_hash === null || artifact.content_hash.length === 0) {
+      throw new InputInvalidError("Source artifact must have a content hash.", {
+        field: "source_artifact_id",
+      });
+    }
+    return {
+      contentHash: artifact.content_hash,
+      storagePath: artifact.storage_path,
+    };
+  }
 
   // -------------------------------------------------------------------
   // GET /workspaces/:workspaceId/tools
@@ -166,10 +207,10 @@ export const toolRoutes: FastifyPluginAsync<ToolRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/tools",
     {
-      schema: { body: CREATE_TOOL_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateCreateTool,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
@@ -182,11 +223,15 @@ export const toolRoutes: FastifyPluginAsync<ToolRoutesOptions> = async (
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
       assertUuid(req.params.workspaceId, "workspaceId");
+      const source = await resolveSourceArtifact(
+        req.params.workspaceId,
+        req.body.source_artifact_id,
+      );
       const row = await service.createTool({
         workspaceId: req.params.workspaceId,
         name: req.body.name,
-        contentHash: req.body.content_hash,
-        storagePath: req.body.storage_path,
+        contentHash: source.contentHash,
+        storagePath: source.storagePath,
         actorUserId: req.auth.userId,
         requestId: req.requestId,
       });
@@ -229,10 +274,10 @@ export const toolRoutes: FastifyPluginAsync<ToolRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/tools/:toolId",
     {
-      schema: { body: UPDATE_TOOL_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateUpdateTool,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
@@ -246,25 +291,10 @@ export const toolRoutes: FastifyPluginAsync<ToolRoutesOptions> = async (
       }
       assertUuid(req.params.workspaceId, "workspaceId");
       assertUuid(req.params.toolId, "toolId");
-      // Defense-in-depth: refuse promotion-status changes at the route
-      // boundary too. The service enforces the same rule (so any
-      // non-route caller stays gated), but the route refusal makes
-      // the contract explicit at the HTTP edge and lets the
-      // route-level test exercise the rule without the DB.
-      // v4 §17 — promote-to-validated/trusted is a high-risk action
-      // owned by the L4.6 approval-decide endpoint.
-      if (req.body.status === "trusted" || req.body.status === "validated") {
-        throw new SecureCoreError(
-          "INPUT_INVALID",
-          "Use promote-request for validated/trusted transitions.",
-          { reason: "use_promote_request" },
-        );
-      }
       const row = await service.updateTool({
         workspaceId: req.params.workspaceId,
         toolId: req.params.toolId,
         name: req.body.name,
-        status: req.body.status,
         actorUserId: req.auth.userId,
         requestId: req.requestId,
       });
@@ -281,10 +311,10 @@ export const toolRoutes: FastifyPluginAsync<ToolRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/tools/:toolId/promote-request",
     {
-      schema: { body: PROMOTE_REQUEST_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validatePromotionRequest,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,

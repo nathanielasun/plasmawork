@@ -87,6 +87,14 @@ describe("L4.12 — health/readiness/metrics", () => {
     expect(() => reg.inc("foo", {}, Infinity)).toThrow(/non-negative finite/);
   });
 
+  it("MetricsRegistry refuses invalid metric and label names", () => {
+    const reg = new MetricsRegistry();
+    expect(() => reg.inc("bad-name", {}, 1)).toThrow(/invalid metric name/);
+    expect(() => reg.inc("good_name_total", { "bad-label": "x" })).toThrow(
+      /invalid metric label/,
+    );
+  });
+
   it("MetricsRegistry escapes label values", () => {
     const reg = new MetricsRegistry();
     reg.inc("evil_total", { msg: 'has "quotes" and \\backslashes' });

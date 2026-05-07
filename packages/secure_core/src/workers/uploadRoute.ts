@@ -309,6 +309,31 @@ export const workerUploadRoute: FastifyPluginAsync<
     // worker could declare 1 KiB and stream maxUploadBytes — bypassing
     // the stored-byte quota.
     const maxUploadBytes = opts.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
+    // Major 2 fix: validate declared_size syntax BEFORE BigInt() so
+    // malformed input ("abc", "1e6", "-5", "") returns a typed
+    // WORKER_UPLOAD_DENIED + audit trail rather than a raw SyntaxError
+    // escaping into the Fastify error handler. Only decimal-integer
+    // strings are accepted; floats, hex, scientific notation, and
+    // signed forms are rejected.
+    if (
+      fields.declared_size !== undefined &&
+      !/^\d+$/.test(fields.declared_size)
+    ) {
+      file.file.resume();
+      await opts.auditLogger.write({
+        workspaceId: claims.workspace_id,
+        actorUserId: claims.requested_by_user_id,
+        actorType: "worker",
+        action: "worker.upload_denied",
+        result: "denied",
+        requestId: req.requestId,
+        metadata: { denied_reason: "oversize" },
+      });
+      throw new WorkerUploadDeniedError(
+        "declared_size must be a non-negative decimal integer.",
+        { reason: "oversize" },
+      );
+    }
     const declared = fields.declared_size
       ? BigInt(fields.declared_size)
       : BigInt(maxUploadBytes);
@@ -429,6 +454,10 @@ export const workerUploadRoute: FastifyPluginAsync<
     // total exceeds the original reservation, we abort the upload
     // (release + audit) so a worker can't ship a tiny zip-bomb that
     // expands past quota.
+    let extractedReservation: { reservationId: string; expiresAt: Date } | null =
+      null;
+    let extractedBytesTotal = 0n;
+    let extractDirToCleanup: string | null = null;
     if (kind === "archive") {
       const archiveFormat: ArchiveFormat = fields.artifact_name.endsWith(".tar")
         || fields.artifact_name.endsWith(".tar.gz")
@@ -436,6 +465,7 @@ export const workerUploadRoute: FastifyPluginAsync<
         ? "tar"
         : "zip";
       const extractDir = `${destinationPath}.extracted`;
+      extractDirToCleanup = extractDir;
       let extractedBytes = 0n;
       try {
         await mkdir(extractDir, { recursive: true });
@@ -496,12 +526,14 @@ export const workerUploadRoute: FastifyPluginAsync<
       // disk usage. If total > declared, refuse + clean up.
       if (extractedBytes > 0n) {
         try {
-          await opts.storageReservations.reserveBytes({
-            workspaceId: claims.workspace_id,
-            requestedBy: claims.requested_by_user_id,
-            bytes: extractedBytes,
-            requestId: req.requestId,
-          });
+          extractedReservation =
+            await opts.storageReservations.reserveBytes({
+              workspaceId: claims.workspace_id,
+              requestedBy: claims.requested_by_user_id,
+              bytes: extractedBytes,
+              requestId: req.requestId,
+            });
+          extractedBytesTotal = extractedBytes;
         } catch {
           // Quota exhausted by the extracted content. Roll back the
           // archive + extracted tree + the original reservation.
@@ -541,12 +573,79 @@ export const workerUploadRoute: FastifyPluginAsync<
       }
     }
 
-    // Commit the reservation against the actual bytes written.
-    await opts.storageReservations.commitReservation({
-      reservationId: reservation.reservationId,
-      workspaceId: claims.workspace_id,
-      requestId: req.requestId,
-    });
+    // Commit BOTH reservations (archive + extracted) against the actual
+    // bytes written. Critical fix #6: prior to this both reservations
+    // were created but only the first committed; the extracted-bytes
+    // reservation fell to the §21.3 expiration sweep so quota was
+    // returned silently to the workspace. On any commit failure we
+    // RELEASE every reservation we hold so accounting is consistent.
+    try {
+      await opts.storageReservations.commitReservation({
+        reservationId: reservation.reservationId,
+        workspaceId: claims.workspace_id,
+        requestId: req.requestId,
+      });
+      if (extractedReservation !== null) {
+        await opts.storageReservations.commitReservation({
+          reservationId: extractedReservation.reservationId,
+          workspaceId: claims.workspace_id,
+          requestId: req.requestId,
+        });
+      }
+    } catch (err) {
+      try {
+        await unlink(destinationPath);
+      } catch {
+        // already absent
+      }
+      if (extractDirToCleanup !== null) {
+        try {
+          await rm(extractDirToCleanup, { recursive: true, force: true });
+        } catch {
+          // sweep
+        }
+      }
+      // Release every reservation that survived to this point. If the
+      // archive commit succeeded but the extracted commit threw, the
+      // archive reservation is already committed and cannot be
+      // released — but the extracted one MUST still be cleared so
+      // quota does not double-count. Best-effort: failures here drop
+      // to the sweep.
+      try {
+        await opts.storageReservations.releaseReservation({
+          reservationId: reservation.reservationId,
+          workspaceId: claims.workspace_id,
+          requestId: req.requestId,
+        });
+      } catch {
+        // sweep
+      }
+      if (extractedReservation !== null) {
+        try {
+          await opts.storageReservations.releaseReservation({
+            reservationId: extractedReservation.reservationId,
+            workspaceId: claims.workspace_id,
+            requestId: req.requestId,
+          });
+        } catch {
+          // sweep
+        }
+      }
+      await opts.auditLogger.write({
+        workspaceId: claims.workspace_id,
+        actorUserId: claims.requested_by_user_id,
+        actorType: "worker",
+        action: "worker.upload_denied",
+        result: "denied",
+        requestId: req.requestId,
+        metadata: { denied_reason: "quota_exceeded" },
+      });
+      if (err instanceof WorkerUploadDeniedError) throw err;
+      throw new WorkerUploadDeniedError(
+        "Failed to commit reservation.",
+        { reason: "quota_exceeded" },
+      );
+    }
 
     const info: WrittenArtifactInfo = {
       workspaceId: claims.workspace_id,
@@ -562,6 +661,13 @@ export const workerUploadRoute: FastifyPluginAsync<
       await opts.onWritten(info);
     }
 
+    // Major 5 fix: include extracted_bytes in the response so callers
+    // can observe the total disk footprint of an archive upload.
+    // Audit metadata's `bytes_committed` is the SUM of the archive +
+    // extracted bytes — quota accounting is observable on the audit
+    // trail, not just the response shape.
+    const totalCommitted =
+      BigInt(limiter.bytesWritten) + extractedBytesTotal;
     await opts.auditLogger.write({
       workspaceId: claims.workspace_id,
       actorUserId: claims.requested_by_user_id,
@@ -570,7 +676,7 @@ export const workerUploadRoute: FastifyPluginAsync<
       result: "succeeded",
       requestId: req.requestId,
       metadata: {
-        bytes_committed: limiter.bytesWritten.toString(),
+        bytes_committed: totalCommitted.toString(),
       },
     });
 
@@ -578,6 +684,7 @@ export const workerUploadRoute: FastifyPluginAsync<
       ok: true,
       artifact_kind: kind,
       bytes: limiter.bytesWritten,
+      extracted_bytes: Number(extractedBytesTotal),
     });
   });
 };

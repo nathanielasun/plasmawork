@@ -62,6 +62,8 @@ import type {
   RunQueryService,
   RunKeysetCursor,
 } from "../runs/queryService.js";
+import type { AuditLogger } from "../audit/logger.js";
+import { bodyValidation } from "./validation.js";
 
 export interface RunRoutesMiddleware {
   readonly requireAuth: NamedMiddleware;
@@ -79,6 +81,7 @@ export interface RunRoutesMiddleware {
 export interface RunRoutesOptions {
   readonly stateMachine: RunStateMachine;
   readonly queryService: RunQueryService;
+  readonly auditLogger: AuditLogger;
   readonly mw: RunRoutesMiddleware;
 }
 
@@ -120,7 +123,7 @@ const CREATE_RUN_SCHEMA = {
   additionalProperties: false,
   required: ["backend"],
   properties: {
-    backend: { type: "string", minLength: 1, maxLength: 100 },
+    backend: { type: "string", enum: ["local"] },
     capsule_version_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
@@ -257,6 +260,8 @@ export const runRoutes: FastifyPluginAsync<RunRoutesOptions> = async (
   opts,
 ) => {
   const { stateMachine, queryService, mw } = opts;
+  const validateCreateRun = bodyValidation(CREATE_RUN_SCHEMA, opts.auditLogger);
+  const validateCancelRun = bodyValidation(CANCEL_RUN_SCHEMA, opts.auditLogger);
 
   // -------------------------------------------------------------------
   // POST /workspaces/:workspaceId/capsules/:capsuleId/runs — create
@@ -267,10 +272,10 @@ export const runRoutes: FastifyPluginAsync<RunRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/capsules/:capsuleId/runs",
     {
-      schema: { body: CREATE_RUN_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateCreateRun,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,
@@ -387,10 +392,10 @@ export const runRoutes: FastifyPluginAsync<RunRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/runs/:runId/cancel",
     {
-      schema: { body: CANCEL_RUN_SCHEMA },
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.enforceCsrfForStateChange,
+        validateCancelRun,
         mw.attachAuditActor,
         mw.loadWorkspace,
         mw.enforceUniformNotFound,

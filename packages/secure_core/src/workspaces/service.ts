@@ -24,6 +24,7 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import type { TransactionSql } from "postgres";
 
 import type { SecureCorePool } from "../db/pool.js";
 import {
@@ -31,7 +32,11 @@ import {
   workspaceMemberships,
 } from "../db/schema.js";
 import type { AuditLogger } from "../audit/logger.js";
-import { NotFoundError, SecureCoreError } from "../errors/shapes.js";
+import {
+  NotFoundError,
+  PermissionDeniedError,
+  SecureCoreError,
+} from "../errors/shapes.js";
 
 export interface WorkspaceRow {
   id: string;
@@ -97,6 +102,29 @@ export class WorkspaceService {
     this.#pool = opts.pool;
     this.#auditLogger = opts.auditLogger;
     this.#creatorRoleName = opts.creatorRoleName ?? "WorkspaceAdmin";
+  }
+
+  async #assertCanManageMembersAtCommit(
+    sql: TransactionSql,
+    workspaceId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    const rows = await sql<{ ok: number }[]>`
+      SELECT 1 AS ok
+      FROM workspace_memberships m
+      JOIN role_permissions rp ON rp.role_id = m.role_id
+      WHERE m.workspace_id = ${workspaceId}
+        AND m.user_id = ${actorUserId}
+        AND m.removed_at IS NULL
+        AND rp.capability = 'workspace:manage_members'
+      LIMIT 1
+    `;
+    if (rows.length === 0) {
+      throw new PermissionDeniedError(
+        "Workspace membership changed before commit.",
+        { capability: "workspace:manage_members" },
+      );
+    }
   }
 
   /**
@@ -256,6 +284,11 @@ export class WorkspaceService {
     }
     const sqlClient = this.#pool.sql;
     return await sqlClient.begin(async (tx) => {
+      await this.#assertCanManageMembersAtCommit(
+        tx,
+        opts.workspaceId,
+        opts.actorUserId,
+      );
       // Resolve target role id.
       const roleRows = await tx<{ id: string }[]>`
         SELECT id FROM roles WHERE name = ${opts.roleName}
@@ -346,6 +379,11 @@ export class WorkspaceService {
   ): Promise<MembershipRow> {
     const sqlClient = this.#pool.sql;
     return await sqlClient.begin(async (tx) => {
+      await this.#assertCanManageMembersAtCommit(
+        tx,
+        opts.workspaceId,
+        opts.actorUserId,
+      );
       const roleRows = await tx<{ id: string }[]>`
         SELECT id FROM roles WHERE name = ${opts.newRoleName}
       `;
@@ -433,6 +471,11 @@ export class WorkspaceService {
   public async removeMember(opts: RemoveMemberOptions): Promise<void> {
     const sqlClient = this.#pool.sql;
     await sqlClient.begin(async (tx) => {
+      await this.#assertCanManageMembersAtCommit(
+        tx,
+        opts.workspaceId,
+        opts.actorUserId,
+      );
       const updated = await tx<{ role_id: string }[]>`
         UPDATE workspace_memberships
         SET removed_at = now()

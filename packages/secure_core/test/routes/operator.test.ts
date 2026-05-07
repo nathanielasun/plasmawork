@@ -35,11 +35,13 @@ import type {
   AuditEventOutputRow,
   ListAuditEventsResult,
 } from "../../src/audit/readService.js";
+import type { AuditLogger } from "../../src/audit/logger.js";
 
 const VALID_WS = "11111111-1111-4111-8111-111111111111";
 const VALID_TARGET = "44444444-4444-4444-8444-444444444444";
 const VALID_APPROVAL_REQ = "55555555-5555-4555-8555-555555555555";
 const ACTOR = "33333333-3333-4333-8333-333333333333";
+const auditLogger = { write: async () => {} } as unknown as AuditLogger;
 
 interface ServiceCalls {
   list: ListAuditEventsCrossWorkspaceArgs[];
@@ -247,7 +249,7 @@ function buildApp(
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(operatorRoutes, { service, mw });
+  app.register(operatorRoutes, { service, auditLogger, mw });
   return app;
 }
 
@@ -305,11 +307,21 @@ describe("L4.10 — operator routes", () => {
   });
 
   it("POST /operator/incident/:ws/investigate happy path", async () => {
-    const app = buildApp(stub.service, makeMiddlewareBundle({}));
+    const app = buildApp(
+      stub.service,
+      makeMiddlewareBundle({ approvalAccepted: true }),
+    );
     const r = await app.inject({
       method: "POST",
       url: `/operator/incident/${VALID_WS}/investigate`,
-      payload: { reason: "looking into anomaly", ttl_seconds: 3600 },
+      payload: {
+        reason: "looking into anomaly",
+        ttl_seconds: 3600,
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
+      headers: {
+        "x-approval-token": "raw-approval-token-from-out-of-band-channel",
+      },
     });
     expect(r.statusCode).toBe(201);
     const body = r.json() as { session_id: string; expires_at: string };
@@ -330,7 +342,12 @@ describe("L4.10 — operator routes", () => {
     const r = await app.inject({
       method: "POST",
       url: `/operator/incident/${VALID_WS}/investigate`,
-      payload: { reason: "x", ttl_seconds: 3600 },
+      payload: {
+        reason: "x",
+        ttl_seconds: 3600,
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
+      headers: { "x-approval-token": "valid-token" },
     });
     expect(r.statusCode).toBe(403);
     expect(stub.calls.investigate).toHaveLength(0);
@@ -342,11 +359,19 @@ describe("L4.10 — operator routes", () => {
     // with a non-empty reason + ttl + workspaceId is the route's
     // contribution to the pairing invariant. Service-level paired-row
     // tests live next to the service.
-    const app = buildApp(stub.service, makeMiddlewareBundle({}));
+    const app = buildApp(
+      stub.service,
+      makeMiddlewareBundle({ approvalAccepted: true }),
+    );
     const r = await app.inject({
       method: "POST",
       url: `/operator/incident/${VALID_WS}/investigate`,
-      payload: { reason: "audit anomaly", ttl_seconds: 7200 },
+      payload: {
+        reason: "audit anomaly",
+        ttl_seconds: 7200,
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
+      headers: { "x-approval-token": "valid-token" },
     });
     expect(r.statusCode).toBe(201);
     expect(stub.calls.investigate).toHaveLength(1);
@@ -378,6 +403,26 @@ describe("L4.10 — operator routes", () => {
     expect(calls.invoked).toBe(1);
     // Service is not invoked when approval rejects.
     expect(stub.calls.remediate).toHaveLength(0);
+  });
+
+  it("POST /operator/incident/:ws/investigate without approval token → 403", async () => {
+    const calls = { invoked: 0 };
+    const app = buildApp(
+      stub.service,
+      makeMiddlewareBundle({ approvalCalls: calls }),
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/operator/incident/${VALID_WS}/investigate`,
+      payload: {
+        reason: "audit anomaly",
+        ttl_seconds: 3600,
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(calls.invoked).toBe(1);
+    expect(stub.calls.investigate).toHaveLength(0);
   });
 
   it("POST /operator/incident/:ws/remediate with valid approval succeeds", async () => {
@@ -448,7 +493,12 @@ describe("L4.10 — operator routes", () => {
     const r = await app.inject({
       method: "POST",
       url: `/operator/incident/not-a-uuid/investigate`,
-      payload: { reason: "x", ttl_seconds: 3600 },
+      payload: {
+        reason: "x",
+        ttl_seconds: 3600,
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
+      headers: { "x-approval-token": "valid-token" },
     });
     expect(r.statusCode).toBe(404);
     expect(stub.calls.investigate).toHaveLength(0);
@@ -459,7 +509,11 @@ describe("L4.10 — operator routes", () => {
     const r = await app.inject({
       method: "POST",
       url: `/operator/incident/${VALID_WS}/investigate`,
-      payload: { reason: "x", ttl_seconds: 9 * 60 * 60 },
+      payload: {
+        reason: "x",
+        ttl_seconds: 9 * 60 * 60,
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
     });
     expect(r.statusCode).toBe(400);
     expect(stub.calls.investigate).toHaveLength(0);

@@ -11,6 +11,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 
 import {
   capsuleRoutes,
+  type CapsuleSourceArtifactResolver,
   type CapsuleRoutesMiddleware,
 } from "../../src/routes/capsules.js";
 import { requireRequestId } from "../../src/middleware/requireRequestId.js";
@@ -26,6 +27,7 @@ import type {
   MembershipContext,
   WorkspaceContext,
 } from "../../src/middleware/types.js";
+import type { AuditLogger } from "../../src/audit/logger.js";
 import type {
   CapsuleRow,
   CapsuleVersionLockService,
@@ -43,6 +45,16 @@ const NEW_CAP = "33333333-3333-4333-8333-333333333333";
 const ACTOR = "44444444-4444-4444-8444-444444444444";
 const VERSION_A = "55555555-5555-4555-8555-555555555555";
 const VERSION_B = "66666666-6666-4666-8666-666666666666";
+const VALID_ARTIFACT = "77777777-7777-4777-8777-777777777777";
+const auditLogger = { write: async () => {} } as unknown as AuditLogger;
+const sourceArtifacts: CapsuleSourceArtifactResolver = {
+  async getArtifactOrThrow(_workspaceId: string, _artifactId: string) {
+    return {
+      content_hash: "sha256:abc",
+      storage_path: "ws/cap-x/v1.tar",
+    };
+  },
+};
 
 interface ServiceCalls {
   listCapsules: string[];
@@ -235,7 +247,12 @@ function buildApp(
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(capsuleRoutes, { service, mw });
+  app.register(capsuleRoutes, {
+    service,
+    auditLogger,
+    sourceArtifacts,
+    mw,
+  });
   return app;
 }
 
@@ -287,8 +304,7 @@ describe("L4.2 — capsule routes", () => {
       url: `/workspaces/${VALID_WS}/capsules`,
       payload: {
         name: "cap-x",
-        content_hash: "sha256:abc",
-        storage_path: "ws/cap-x/v1.tar",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(201);
@@ -308,6 +324,7 @@ describe("L4.2 — capsule routes", () => {
       url: `/workspaces/${VALID_WS}/capsules`,
       payload: {
         name: "cap-x",
+        source_artifact_id: VALID_ARTIFACT,
         content_hash: "sha256:abc",
         storage_path: "ws/cap-x/v1.tar",
         actor_user_id: "evil",
@@ -322,7 +339,7 @@ describe("L4.2 — capsule routes", () => {
     const r = await app.inject({
       method: "POST",
       url: `/workspaces/${VALID_WS}/capsules`,
-      payload: { name: "cap-x", content_hash: "sha256:abc" },
+      payload: { name: "cap-x" },
     });
     expect(r.statusCode).toBe(400);
   });
@@ -337,8 +354,7 @@ describe("L4.2 — capsule routes", () => {
       url: `/workspaces/${VALID_WS}/capsules`,
       payload: {
         name: "cap-x",
-        content_hash: "sha256:abc",
-        storage_path: "ws/cap-x/v1.tar",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(403);
@@ -352,8 +368,7 @@ describe("L4.2 — capsule routes", () => {
       url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}`,
       headers: { "if-match": VERSION_A },
       payload: {
-        content_hash: "sha256:def",
-        storage_path: "ws/cap/v2.tar",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(200);
@@ -373,8 +388,7 @@ describe("L4.2 — capsule routes", () => {
       method: "PATCH",
       url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}`,
       payload: {
-        content_hash: "sha256:def",
-        storage_path: "ws/cap/v2.tar",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(400);
@@ -403,8 +417,7 @@ describe("L4.2 — capsule routes", () => {
       url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}`,
       headers: { "if-match": VERSION_A },
       payload: {
-        content_hash: "sha256:def",
-        storage_path: "ws/cap/v2.tar",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(409);
@@ -432,8 +445,7 @@ describe("L4.2 — capsule routes", () => {
       url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}`,
       headers: { "if-match": VERSION_A },
       payload: {
-        content_hash: "sha256:def",
-        storage_path: "ws/cap/v2.tar",
+        source_artifact_id: VALID_ARTIFACT,
       },
     });
     expect(r.statusCode).toBe(403);

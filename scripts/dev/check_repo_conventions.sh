@@ -2068,9 +2068,9 @@ check_grep_in_file 'composeMiddleware' \
 check_grep_in_file 'promote-request' \
   packages/secure_core/src/routes/tools.ts \
   "L4.4 ships POST /tools/:id/promote-request endpoint (v4 §10.2)"
-check_grep_in_file 'use_promote_request' \
+check_grep_absent_in_file 'req\.body\.status' \
   packages/secure_core/src/routes/tools.ts \
-  "L4.4 PATCH refuses status=trusted/validated with use_promote_request hint (v4 §17)"
+  "L4.4 PATCH does not expose lifecycle status at the route boundary (v4 §17)"
 check_grep_in_file 'use_promote_request' \
   packages/secure_core/src/tools/service.ts \
   "L4.4 ToolService refuses validated/trusted PATCH transitions (defense in depth)"
