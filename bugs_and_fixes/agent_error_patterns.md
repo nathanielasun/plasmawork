@@ -596,6 +596,31 @@ Inspect `scripts/test/*.sh` for `.venv/bin/python` or the shared environment-sel
 
 ---
 
+## Error Pattern: Shell wrapper owns passthrough parsing
+
+### Why it is bad
+Shell-specific argument parsing can pass on one platform and fail on another.
+The concrete failure was `scripts/dev/run_backend.sh` declaring
+`EXTRA_ARGS=()` and then expanding `"${EXTRA_ARGS[@]}"` under `set -u`.
+macOS Bash 3.2 treats an empty array expansion as an unbound variable, so
+the no-extra-arguments backend path failed before Python started.
+
+### Required behavior
+Wrappers that need passthrough arguments should delegate to a shared Python
+launcher and pass `"$@"` unchanged. Platform wrappers (`.sh`, `.ps1`, `.cmd`)
+may locate Python, but parser behavior and backend command assembly live in
+the Python launcher. Regression tests cover the no-extra-args path and
+argument-boundary preservation.
+
+### Detection
+- Static: shell wrappers for backend/dev entrypoints must not contain
+  shell-owned passthrough arrays such as `EXTRA_ARGS` or `[@]` expansion.
+- Behavioral: run the wrapper with no user passthrough args while
+  `SIMWORKBENCH_PYTHON` points at a fake capture interpreter; assert the
+  example runner path is passed without an unbound-variable error.
+
+---
+
 ## Error Pattern: Implementing the agent's checklist instead of the plan's deliverable list
 
 ### Why it is bad

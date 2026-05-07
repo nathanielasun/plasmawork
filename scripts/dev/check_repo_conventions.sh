@@ -277,6 +277,11 @@ check_file_exists tests/unit/test_paths.py
 check_file_exists tests/integration/test_runtime_pause_resume.py
 check_file_exists tests/regression/test_runtime_writes_only_to_temp_runs.py
 check_grep_absent_in_file 'Backend runtime is scheduled for Phase 1A-1C' scripts/dev/run_backend.sh "scripts/dev/run_backend.sh is no longer the Phase-0 stub"
+check_file_executable scripts/dev/run_backend.py "cross-shell backend launcher executable"
+check_file_executable scripts/dev/run_backend.ps1 "PowerShell backend launcher executable"
+check_file_executable scripts/dev/run_backend.cmd "cmd.exe backend launcher executable"
+check_grep_absent_in_file 'EXTRA_ARGS' scripts/dev/run_backend.sh "run_backend.sh delegates argument parsing"
+check_file_exists tests/regression/test_run_backend_launcher.py
 check_file_exists examples/simple_rate_equations/run.py
 
 # ---------------------------------------------------------------------------

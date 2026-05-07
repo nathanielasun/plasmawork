@@ -140,6 +140,7 @@ Until Phase 0.5 deployment-specific live probes are green in the target runtime,
 - Validation tests assert scientific properties (dimensions, conservation, analytical limits, convergence, benchmark reproduction). Performance tests must not silently relax correctness tolerances.
 - **Test fixtures are deep-copied when mutated.** A module-level dict like `MINIMAL_SPEC = {...}` is shared across tests. Any test that derives a variant must use `copy.deepcopy(FIXTURE)` — never `dict(FIXTURE)`, `{**FIXTURE}`, `FIXTURE.copy()`, or list-slice copies — because those leave nested lists/dicts shared, and the next test inherits the pollution. Better: factory functions or `pytest.fixture` with `scope="function"`. See `bugs_and_fixes/agent_error_patterns.md` "Shallow-copying a mutable test fixture".
 - **Test wrappers prefer the repo virtualenv.** `scripts/test/*.sh` resolve a Python interpreter in the order `SIMWORKBENCH_PYTHON` → `.venv/bin/python` → bare `python`. Tests must run from a clean shell without manual `source .venv/bin/activate`.
+- **Cross-shell launchers keep parsing in Python.** Dev entrypoints that need passthrough arguments should delegate to a Python launcher rather than owning Bash arrays or shell-specific parsing. Bash 3 with `set -u` treats empty array expansion as unbound, so wrappers must pass `"$@"` to the launcher and regression-test the no-extra-args path.
 
 ---
 

@@ -14,7 +14,14 @@ export default function Usage() {
 ./scripts/dev/run_ui.sh
 
 # Backend / API
-./scripts/dev/run_backend.sh`}</code>
+./scripts/dev/run_backend.sh
+
+# Windows PowerShell / cmd.exe
+.\\scripts\\dev\\run_backend.ps1
+scripts\\dev\\run_backend.cmd
+
+# Shell-neutral
+python scripts/dev/run_backend.py`}</code>
       </pre>
 
       <h2>Creating an experiment manually</h2>

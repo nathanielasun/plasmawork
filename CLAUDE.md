@@ -69,6 +69,10 @@ scripts/dev/run_ui.sh
 # Run the Python backend / API server
 scripts/dev/run_backend.sh
 
+# Windows PowerShell / cmd.exe equivalents
+scripts/dev/run_backend.ps1
+scripts/dev/run_backend.cmd
+
 # Run the docs site
 scripts/docs/dev.sh
 ```
@@ -130,6 +134,7 @@ Current status:
 - Vitest + React 18 StrictMode renders components twice. Prefer `screen.getAllByText("X")` or scope with `within(...)`.
 - Every new FastAPI endpoint adds matching types to `apps/workbench-ui/src/api/client.ts` before UI code uses it. UI components import the typed client; they do not call `fetch` directly.
 - Use `tsc --noEmit && vite build`, not `tsc -b`, because `tsc -b` can leak `.js` and `.d.ts` into `src/`.
+- Keep dev-launcher argument parsing in Python, not shell arrays. macOS Bash 3 with `set -u` treats empty array expansion as unbound, so wrappers should delegate `"$@"` to a Python launcher and regression-test the no-extra-args path.
 - Read the latest 4–8 entries in `bugs_and_fixes/agent_error_patterns.md` before any close commit. Six consecutive phases shipped incomplete closes; yes, apparently the universe required empirical repetition.
 - `rate_equation_0d` under `packages/physics_modules/species/` is the Phase 1 canonical solver and reference module for ModelSpec / ModuleMatcher tests.
 - HDF5 metadata can silently drop list-shaped fields. Cross-format parity tests must prove every documented field round-trips.

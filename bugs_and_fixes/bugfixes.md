@@ -32,6 +32,39 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-07: Backend launcher failed on empty Bash array expansion
+
+### Affected subsystem
+- `scripts/dev/run_backend.*`
+- `tests/regression/test_run_backend_launcher.py`
+
+### Symptoms
+Running `./scripts/dev/run_backend.sh` on macOS failed before Python started:
+`line 45: EXTRA_ARGS[@]: unbound variable`.
+
+### Root cause
+The Bash wrapper used `set -u`, initialized `EXTRA_ARGS=()`, and expanded
+`"${EXTRA_ARGS[@]}"` when no passthrough arguments were provided. macOS Bash
+3.2 treats that empty array expansion as an unbound variable. The wrapper
+therefore encoded shell-version-specific parsing behavior into a dev
+entrypoint.
+
+### Fix
+Moved backend launcher parsing into `scripts/dev/run_backend.py` and reduced
+the Unix wrapper to a Python-launcher delegate that passes `"$@"` unchanged.
+Added PowerShell and cmd.exe wrappers that call the same Python launcher, so
+Unix and Windows shells share one parser and backend command assembly path.
+
+### Regression protection
+- `tests/regression/test_run_backend_launcher.py`
+- `scripts/dev/check_repo_conventions.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not reintroduce shell-owned passthrough arrays for dev launchers. Keep
+argument parsing in the shared Python launcher and test the no-extra-args path.
+
 ## 2026-05-07: Session introspection hid zero-capability workspace memberships
 
 ### Affected subsystem
