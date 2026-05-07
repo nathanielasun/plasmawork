@@ -9,6 +9,9 @@ Implementation history and architectural decision record for the Scientific Simu
 | `timeline.md` | Chronological log of major implementation milestones |
 | `architectural_decisions/ADR-NNNN-*.md` | Architectural decision records |
 | `milestones/phase_NN_*.md` | Phase-level milestone notes and gate criteria |
+| `tool_construction_methodology_plan.md` | Draft post-plan methodology for repo-local tool-construction agent skill and general tool UI bindings |
+| `secure_frontend_readiness_plan.md` | Secure frontend readiness and backend dependency plan |
+| `phase_05_security_implementation_plan.md` | Secure multi-user implementation decomposition and review protocol |
 
 ## When to update
 

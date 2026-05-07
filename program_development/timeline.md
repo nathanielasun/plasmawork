@@ -4,6 +4,24 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-07 (Tool construction methodology and UI binding plan)
+
+### Completed
+- Drafted `program_development/tool_construction_methodology_plan.md` as a post-plan implementation proposal for a repo-local tool-construction agent skill and a general UI workbench for running tools, data I/O, artifact outputs, and safe diagram rendering.
+- Grounded the plan in the current tool registry/API/UI state: existing `/api/tools` endpoints, strict `tool.yaml` metadata, lifecycle gates, templates, and the current Tools panel.
+- Added implementation stages covering skill packaging, tool metadata expansion, tool run/artifact runtime, UI bindings, secure workspace routes, documentation, examples, tests, and convention-checker coverage.
+- Indexed the new planning artifact in `program_development/README.md`.
+
+### Open questions
+- Approve or revise the proposed repo-local skill path: `.agents/skills/simworkbench-tool-construction/`.
+- Choose the final diagram render spec and dependency strategy before UI implementation.
+- Decide whether local synchronous `execute` remains long term or becomes only a compatibility wrapper around tool runs.
+
+### Next steps
+- After approval, implement Stage 1 first: repo-local skill skeleton, deterministic tool-package checker, short AGENTS/CLAUDE lookup pointers, and convention-checker assertions.
+
+---
+
 ## 2026-05-07 (Deprecated phase-state contract drift sweep)
 
 ### Completed
