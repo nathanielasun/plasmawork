@@ -1,18 +1,17 @@
 /**
  * DocsViewer test — verifies the canonical-source rule from AGENTS.md.
  *
- * The user-facing surface is intentionally minimal: a horizontal nav
- * of page links, then the page body. No hero, no architectural
- * exposition. This test pins:
- *   1. One nav link per discovered page.
+ * The user-facing surface is a categorized documentation browser with a
+ * collapsible/searchable sidebar. This test pins:
+ *   1. Canonical pages are reachable through the sidebar.
  *   2. The actual on-disk page body renders when the slug is selected.
  *   3. The viewer's source loads from `docs_site/` via
  *      `import.meta.glob`, not by inlining doc text.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { describe, it, expect } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, it, expect } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import DocsViewer from "../components/DocsViewer";
 
@@ -28,24 +27,55 @@ function renderAt(initialPath: string) {
 }
 
 describe("DocsViewer", () => {
-  it("renders one nav link per discovered docs page", async () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("renders canonical pages in a categorized documentation sidebar", async () => {
     renderAt("/docs/overview");
-    await waitFor(() => {
-      expect(screen.getByText("Overview")).toBeInTheDocument();
+    await screen.findByText("What this is");
+    const nav = screen.getByRole("navigation", {
+      name: /Documentation sections/i,
     });
-    // Common canonical pages are present.
-    expect(screen.getByText("Architecture")).toBeInTheDocument();
-    expect(screen.getByText("Usage")).toBeInTheDocument();
+    expect(within(nav).getByText("Get Started")).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /Architecture/i })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /Using the Workbench/i })).toBeInTheDocument();
+  });
+
+  it("filters pages with sidebar search", async () => {
+    renderAt("/docs/overview");
+    await screen.findByRole("searchbox", { name: /Search documentation/i });
+    fireEvent.change(screen.getByRole("searchbox", { name: /Search documentation/i }), {
+      target: { value: "capsule" },
+    });
+    const nav = screen.getByRole("navigation", {
+      name: /Documentation sections/i,
+    });
+    expect(within(nav).getByRole("link", { name: /Simulation Capsules/i })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: /Installation/i })).not.toBeInTheDocument();
+  });
+
+  it("collapses and expands the documentation sidebar", async () => {
+    renderAt("/docs/overview");
+    const collapse = await screen.findByRole("button", {
+      name: /Collapse documentation sidebar/i,
+    });
+    fireEvent.click(collapse);
+    expect(
+      screen.getByRole("button", { name: /Expand documentation sidebar/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("searchbox", { name: /Search documentation/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Docs")).not.toBeInTheDocument();
   });
 
   it("renders the actual on-disk page body when a slug is selected", async () => {
     renderAt("/docs/overview");
     // The canonical Overview page contains this token (per docs_site/src/content/overview.tsx).
-    await waitFor(() => {
-      expect(
-        screen.getByText(/Scientific Simulation Workbench/),
-      ).toBeInTheDocument();
-    });
+    expect(
+      await screen.findByText(/paper-to-experiment platform/),
+    ).toBeInTheDocument();
   });
 
   it("source references docs_site and import.meta.glob without inlining body", () => {

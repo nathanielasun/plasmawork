@@ -121,6 +121,7 @@ const baseAudit: AuditContext = {
 
 interface BundleOpts {
   authed?: boolean;
+  assuranceLevel?: "aal1" | "aal2" | "aal3";
   auditReadAllowed?: boolean;
   investigateAllowed?: boolean;
   remediateAllowed?: boolean;
@@ -149,7 +150,10 @@ function makeMiddlewareBundle(opts: BundleOpts): OperatorRoutesMiddleware {
         if (opts.authed === false) {
           throw new SecureCoreError("UNAUTHENTICATED", "no auth.");
         }
-        req.auth = baseAuth;
+        req.auth = {
+          ...baseAuth,
+          assuranceLevel: opts.assuranceLevel ?? baseAuth.assuranceLevel,
+        };
       }
       if (label === "attachAuditActor") req.audit = baseAudit;
       if (label === "auditRead" && opts.auditReadAllowed === false) {
@@ -422,6 +426,30 @@ describe("L4.10 — operator routes", () => {
     });
     expect(r.statusCode).toBe(403);
     expect(calls.invoked).toBe(1);
+    expect(stub.calls.investigate).toHaveLength(0);
+  });
+
+  it("POST /operator/incident/:ws/investigate refuses low assurance before approval token consumption", async () => {
+    const calls = { invoked: 0 };
+    const app = buildApp(
+      stub.service,
+      makeMiddlewareBundle({
+        assuranceLevel: "aal1",
+        approvalCalls: calls,
+      }),
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/operator/incident/${VALID_WS}/investigate`,
+      payload: {
+        reason: "audit anomaly",
+        ttl_seconds: 3600,
+        approval_request_id: VALID_APPROVAL_REQ,
+      },
+      headers: { "x-approval-token": "valid-token" },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(calls.invoked).toBe(0);
     expect(stub.calls.investigate).toHaveLength(0);
   });
 

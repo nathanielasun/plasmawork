@@ -3,8 +3,8 @@ export default function SecurityApprovals() {
     <article>
       <h1>Security: Approval Flow</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for durable, human-controlled
-        approvals.
+        High-risk actions require durable, human-controlled approvals before
+        side effects occur.
       </p>
 
       <h2>Approval purpose</h2>
@@ -27,7 +27,7 @@ export default function SecurityApprovals() {
 
       <h2>Rules</h2>
       <ul>
-        <li>AI agents and workers cannot grant high-risk approvals.</li>
+        <li>AI assistants and workers cannot grant high-risk approvals.</li>
         <li>Approval creation and approval decision are separate actions.</li>
         <li>Expired, revoked, reused, or context-mismatched approvals fail closed.</li>
         <li>Approval failures emit audit events without exposing unrelated workspace details.</li>

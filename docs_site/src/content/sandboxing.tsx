@@ -3,9 +3,9 @@ export default function Sandboxing() {
     <article>
       <h1>Sandboxing</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for execution isolation. See
-        ADR-0009 for the runtime decision; this page summarizes the user-facing
-        guarantees.
+        Sandboxing defines the user-facing execution guarantees for generated
+        code, imported tools, workers, and trusted tools. ADR-0009 records the
+        runtime decision.
       </p>
 
       <h2>Sandbox guarantee</h2>

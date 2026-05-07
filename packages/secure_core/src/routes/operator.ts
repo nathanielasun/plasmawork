@@ -40,10 +40,10 @@ import {
   composeMiddleware,
   type NamedMiddleware,
 } from "../middleware/compose.js";
+import { withOperatorStepUp } from "../middleware/operatorStepUp.js";
 import {
   InputInvalidError,
   NotFoundError,
-  PermissionDeniedError,
   SecureCoreError,
 } from "../errors/shapes.js";
 import type {
@@ -226,17 +226,6 @@ export interface OperatorRoutesOptions {
   readonly mw: OperatorRoutesMiddleware;
 }
 
-function assertOperatorStepUp(req: {
-  auth?: { assuranceLevel: "aal1" | "aal2" | "aal3" };
-}): void {
-  if (req.auth?.assuranceLevel !== "aal2" && req.auth?.assuranceLevel !== "aal3") {
-    throw new PermissionDeniedError(
-      "Operator access requires step-up authentication.",
-      { reason: "step_up_required" },
-    );
-  }
-}
-
 export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
   app: FastifyInstance,
   opts,
@@ -251,6 +240,24 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     opts.auditLogger,
   );
   const approvalIfHighRisk = mw.requireApprovalIfHighRiskFactory();
+  const requireOperatorAuditRead = withOperatorStepUp({
+    middleware: mw.requireOperatorAuditRead,
+    capability: "platform:audit_read",
+    auditLogger: opts.auditLogger,
+    message: "Operator access requires step-up authentication.",
+  });
+  const requireOperatorIncidentInvestigate = withOperatorStepUp({
+    middleware: mw.requireOperatorIncidentInvestigate,
+    capability: "platform:incident_investigate",
+    auditLogger: opts.auditLogger,
+    message: "Operator access requires step-up authentication.",
+  });
+  const requireOperatorIncidentRemediate = withOperatorStepUp({
+    middleware: mw.requireOperatorIncidentRemediate,
+    capability: "platform:incident_remediate",
+    auditLogger: opts.auditLogger,
+    message: "Operator access requires step-up authentication.",
+  });
 
   // -------------------------------------------------------------------
   // GET /operator/audit-events  — cross-workspace audit read
@@ -262,14 +269,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       preHandler: composeMiddleware([
         mw.requireAuth,
         mw.attachAuditActor,
-        mw.requireOperatorAuditRead,
+        requireOperatorAuditRead,
       ]),
     },
     async (req) => {
       if (req.auth === undefined) {
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
-      assertOperatorStepUp(req);
       const limit = parseLimit(req.query.limit);
       const cursor =
         req.query.cursor !== undefined
@@ -309,7 +315,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         mw.enforceCsrfForStateChange,
         validateInvestigate,
         mw.attachAuditActor,
-        mw.requireOperatorIncidentInvestigate,
+        requireOperatorIncidentInvestigate,
         approvalIfHighRisk,
       ]),
     },
@@ -317,7 +323,6 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       if (req.auth === undefined) {
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
-      assertOperatorStepUp(req);
       const workspaceId = assertUuid(req.params.workspaceId, "workspaceId");
       const result = await service.enterInvestigation({
         actorUserId: req.auth.userId,
@@ -348,7 +353,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         mw.enforceCsrfForStateChange,
         validateRemediate,
         mw.attachAuditActor,
-        mw.requireOperatorIncidentRemediate,
+        requireOperatorIncidentRemediate,
         approvalIfHighRisk,
       ]),
     },
@@ -356,7 +361,6 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       if (req.auth === undefined) {
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
-      assertOperatorStepUp(req);
       const workspaceId = assertUuid(req.params.workspaceId, "workspaceId");
       const result = await service.executeRemediation({
         actorUserId: req.auth.userId,

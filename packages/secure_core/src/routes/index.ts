@@ -60,10 +60,23 @@ export {
 } from "./auth.js";
 
 export {
+  sessionRoutes,
+  CURRENT_SESSION_RESPONSE_SCHEMA,
+  type SessionRoutesOptions,
+  type SessionRoutesMiddleware,
+} from "./session.js";
+
+export {
   operatorRoutes,
   type OperatorRoutesOptions,
   type OperatorRoutesMiddleware,
 } from "./operator.js";
+
+export {
+  securityDashboardRoutes,
+  type SecurityDashboardRoutesOptions,
+  type SecurityDashboardRoutesMiddleware,
+} from "./securityDashboard.js";
 
 export {
   runRoutes,

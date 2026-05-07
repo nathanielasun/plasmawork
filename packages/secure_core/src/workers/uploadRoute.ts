@@ -43,6 +43,7 @@ import {
 } from "./deriveArtifactPath.js";
 import type { WorkspacePathBuilder } from "../paths/builder.js";
 import type { AuditLogger } from "../audit/logger.js";
+import type { NamedMiddleware } from "../middleware/compose.js";
 import type {
   StorageReservationService,
 } from "../quotas/storageReservations.js";
@@ -71,6 +72,8 @@ export interface WorkerUploadRouteOptions {
   readonly onWritten?: (info: WrittenArtifactInfo) => Promise<void>;
   /** Optional clock seam for token expiry tests. */
   readonly now?: () => number;
+  /** Optional named policy limiter, normally `worker.upload`. */
+  readonly rateLimit?: NamedMiddleware;
 }
 
 export interface WrittenArtifactInfo {
@@ -203,7 +206,12 @@ export const workerUploadRoute: FastifyPluginAsync<
     },
   });
 
-  app.post("/uploads", async (req, reply) => {
+  app.post(
+    "/uploads",
+    opts.rateLimit === undefined
+      ? {}
+      : { preHandler: [opts.rateLimit.handler] },
+    async (req, reply) => {
     const presented = req.headers[WORKER_AUTH_HEADER];
     const rawToken = typeof presented === "string" ? presented : null;
     if (rawToken === null) {
@@ -686,5 +694,6 @@ export const workerUploadRoute: FastifyPluginAsync<
       bytes: limiter.bytesWritten,
       extracted_bytes: Number(extractedBytesTotal),
     });
-  });
+    },
+  );
 };

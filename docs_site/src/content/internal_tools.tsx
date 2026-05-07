@@ -3,9 +3,9 @@ export default function InternalTools() {
     <article>
       <h1>Internal Tools</h1>
       <p className="page-status">
-        Phase 3 finalized: Tool SDK, registry, seven category templates,
-        Tools tab in the workbench UI, lifecycle gating, and the
-        <code> absorption_spectrum_diagnostic</code> reference example.
+        Internal tools are registered, inspectable extensions for import,
+        diagnostics, visualization, validation, export, and assisted analysis.
+        They are governed by lifecycle gates rather than ad-hoc scripts.
       </p>
 
       <h2>What they are</h2>
@@ -13,7 +13,7 @@ export default function InternalTools() {
         Internal tools are small, registered components — diagnostic tools,
         data importers, visualization tools, solver adapters, parameter-sweep
         helpers, paper parsers, validation tools, exporters. They are how
-        users (and agents) extend the workbench without forking it.
+        teams extend the workbench without forking it.
       </p>
 
       <h2>Categories</h2>
@@ -31,7 +31,7 @@ export default function InternalTools() {
           <tr><td>Diagnostic</td><td>absorption spectrum plotter, energy budget, density histogram</td></tr>
           <tr><td>Visualization</td><td>2D particle viewer, field animation, phase-space viewer</td></tr>
           <tr><td>Export</td><td>notebook exporter, report generator, openPMD exporter</td></tr>
-          <tr><td>Agent</td><td>paper summarizer, equation extractor, parameter matcher</td></tr>
+          <tr><td>Automation</td><td>paper summarizer, equation extractor, parameter matcher</td></tr>
           <tr><td>Validation</td><td>conservation checker, convergence tester, benchmark comparator</td></tr>
         </tbody>
       </table>
@@ -52,13 +52,13 @@ export default function InternalTools() {
         <code>{`draft → candidate → validated → trusted → deprecated`}</code>
       </pre>
       <p>
-        Agents may produce <code>draft</code> and <code>candidate</code>
-        tools. Promotion to <code>validated</code> requires the tool's
+        New tools start as <code>draft</code> or <code>candidate</code>.
+        Promotion to <code>validated</code> requires the tool's
         tests + reference cases to pass; promotion to <code>trusted</code>
         requires explicit human approval (plan §9.5). The lifecycle is
         enforced by the registry — illegal transitions raise{" "}
         <code>LifecycleError</code> and the API surfaces them as 400s, so
-        the rule cannot be bypassed by agents calling the SDK directly.
+        the rule cannot be bypassed by calling the SDK directly.
       </p>
 
       <h2>Tutorial — author the absorption-spectrum diagnostic</h2>
@@ -78,7 +78,7 @@ export default function InternalTools() {
         <code> src/tool.py</code>, and <code>README.md</code>. Open them
         and replace the <code>TEMPLATE</code> placeholder with your tool's
         real name. Or use the UI's <strong>Internal Tools → New Tool from
-        Template</strong> button (Phase 3D).
+        Template</strong> button.
       </p>
 
       <h3>2. Declare inputs and outputs in tool.yaml</h3>
@@ -126,7 +126,7 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
         only <code>simworkbench.units.Q(values, "&lt;unit&gt;")</code>{" "}
         passes. <code>execute</code> wraps validate-then-run for callers,
         and the registry uses the same wrapper, so behavior is identical
-        between the UI, agents, and direct Python invocations.
+        between the UI, assisted workflows, and direct Python invocations.
       </p>
 
       <h3>4. Add tests</h3>
@@ -154,9 +154,9 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
       <p>
         Click <strong>Promote to candidate</strong> in the detail panel
         to advance the lifecycle. <code>candidate → validated</code> and
-        <code> validated → trusted</code> require an explicit human flag;
-        the API rejects agent-driven promotion to those states with a 400
-        and the rule explanation.
+        <code> validated → trusted</code> require explicit human approval;
+        the API rejects unapproved promotion attempts with a 400 and the rule
+        explanation.
       </p>
 
       <h2>Imported tools</h2>

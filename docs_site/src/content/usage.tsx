@@ -3,9 +3,9 @@ export default function Usage() {
     <article>
       <h1>Usage</h1>
       <p className="page-status">
-        Phase 1 complete. End-to-end flow: load a ModelSpec, build an
-        Experiment, run via the Runner (or the UI), inspect diagnostics, and
-        view plots. Capsule save/load lands in Phase 2.
+        Start here when you want to run the workbench locally, create or load a
+        structured experiment, execute it, inspect diagnostics, and preserve
+        the result as a simulation capsule.
       </p>
 
       <h2>Starting the workbench</h2>
@@ -17,12 +17,12 @@ export default function Usage() {
 ./scripts/dev/run_backend.sh`}</code>
       </pre>
 
-      <h2>Creating an experiment manually (Phase 1)</h2>
+      <h2>Creating an experiment manually</h2>
       <p>
-        The current minimum workflow is: load a <code>ModelSpec</code>, bind it
-        to an <code>Experiment</code>, choose backend/run/diagnostic config, and
-        save or reload the experiment YAML. Running the experiment starts in
-        Workstream 1C.
+        The minimum Python workflow is: load a <code>ModelSpec</code>, bind it
+        to an <code>Experiment</code>, choose backend/run/diagnostic config,
+        then save or reload the experiment YAML before running it through the
+        runtime.
       </p>
       <pre>
         <code>{`from simworkbench import Experiment
@@ -53,13 +53,13 @@ reloaded = load_experiment("temp_runs/simple_rate_equations_experiment.yaml")`}<
         <li>Code viewer — see exactly what was run.</li>
         <li>Diagnostics panel — line plots, heatmaps, statistics tables.</li>
         <li>Validation panel — dimensional checks, conservation, benchmark comparison.</li>
-        <li>Provenance panel — environment, seeds, agent trace, package versions.</li>
+        <li>Provenance panel — environment, seeds, automation trace, package versions.</li>
       </ul>
 
-      <h2>What this page should cover when expanded</h2>
+      <h2>Next things to verify</h2>
       <ul>
         <li>End-to-end walkthrough with a real laser-species example.</li>
-        <li>UI screenshots for each panel.</li>
+        <li>Panel-by-panel UI behavior for run controls, diagnostics, validation, and provenance.</li>
         <li>Common keyboard shortcuts and live-streaming behavior.</li>
       </ul>
     </article>

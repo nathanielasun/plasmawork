@@ -3,12 +3,11 @@ export default function Overview() {
     <article>
       <h1>Overview</h1>
       <p className="page-status">
-        Phase 1 complete (2026-05-02, after review-fix sweep). All six
-        workstreams 1A–1F shipped: ModelSpec, units, runtime with
-        checkpointing, seven physics modules with three runnable examples,
-        diagnostics + plotters, FastAPI backend, Vite + React UI, and
-        minimal <code>.lxp/</code> capsule save/reload. Phase 2 finalizes
-        the capsule bulk-data format per ADR-0002.
+        Current capability: the workbench can load structured ModelSpecs,
+        run local simulations, inspect diagnostics, package results as
+        portable capsules, validate artifacts, generate/review code inside
+        capsule boundaries, and expose secure multi-user scaffolding for
+        workspace-scoped operation.
       </p>
 
       <h2>What this is</h2>
@@ -47,15 +46,15 @@ Exportable reproducible simulation capsule (.lxp/)`}</code>
         <li>Modular composition — paper-derived simulations are built from validated reusable modules.</li>
         <li>Hardware-invariant interface, hardware-specialized backends.</li>
         <li>Reproducibility by default — every run is a saveable, reloadable, exportable capsule.</li>
-        <li>Agentic assistance with human audit gates.</li>
+        <li>AI-assisted drafting with human review and audit gates for high-risk actions.</li>
       </ul>
 
-      <h2>What this page should cover when expanded</h2>
+      <h2>Where to go next</h2>
       <ul>
-        <li>The end-to-end paper-to-experiment workflow with screenshots.</li>
-        <li>The simulation capsule concept and why it matters.</li>
-        <li>Validation status labels and what each one means in practice.</li>
-        <li>Pointers to the architecture, capsule, and validation pages.</li>
+        <li>Use <strong>Installation</strong> to set up the local environment.</li>
+        <li>Use <strong>Using the Workbench</strong> for launch commands and the basic experiment flow.</li>
+        <li>Use <strong>Simulation Capsules</strong> to understand the saved artifact format.</li>
+        <li>Use <strong>Validation</strong> to interpret status labels and benchmark evidence.</li>
       </ul>
     </article>
   );

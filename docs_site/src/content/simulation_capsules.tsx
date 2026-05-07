@@ -3,8 +3,9 @@ export default function SimulationCapsules() {
     <article>
       <h1>Simulation Capsules</h1>
       <p className="page-status">
-        Phase 2 finalized: <code>v0.1</code> manifest schema, HDF5 bulk data,
-        export + fork system, and a six-tab inspection UI.
+        Capsules are the durable unit of simulation work: portable,
+        inspectable, forkable experiment bundles with explicit manifest,
+        results, validation, and provenance records.
       </p>
 
       <h2>What a capsule is</h2>
@@ -36,8 +37,8 @@ export default function SimulationCapsules() {
     validity_domain.md
     units_report.md
   src/
-    generated/        ← agent writes here
-    user_edits/       ← user edits only — agents must not overwrite
+    generated/        # generated or assistant-authored code
+    user_edits/       # user-maintained code; never silently overwritten
     kernels/
   configs/
     run_config.yaml
@@ -47,7 +48,7 @@ export default function SimulationCapsules() {
     initial_conditions.h5
     cached_coefficients.zarr
   results/
-    diagnostics.h5      ← canonical (Phase 2A); diagnostics.json kept for legacy capsules
+    diagnostics.h5      # canonical diagnostics; diagnostics.json accepted for legacy capsules
     plots/
     checkpoints/
   validation/
@@ -64,7 +65,7 @@ export default function SimulationCapsules() {
   README.md`}</code>
       </pre>
 
-      <h2>What capsules support (Phase 2)</h2>
+      <h2>What capsules support</h2>
       <ul>
         <li>Save</li>
         <li>Load</li>
@@ -84,16 +85,16 @@ export default function SimulationCapsules() {
         <li>In-flight runs live in <code>temp_runs/&lt;run_id&gt;/</code>.</li>
         <li>Promotion to a capsule moves the directory to <code>simulation_capsules/&lt;name&gt;.lxp/</code>.</li>
         <li>Forking creates a new capsule that records the parent's source-aggregate hash in <code>provenance.lock</code> as <code>parent_capsule_hash</code>.</li>
-        <li><code>provenance/</code> is append-only after creation. The agent_trace writer refuses overwrites and refuses any action targeting <code>src/user_edits/</code>.</li>
+        <li><code>provenance/</code> is append-only after creation. Automation trace writers refuse overwrites and refuse any action targeting <code>src/user_edits/</code>.</li>
       </ul>
 
       <h2>Bulk-data choice</h2>
       <p>
         ADR-0002 selects <strong>HDF5</strong> (<code>h5py</code>) for capsule
-        bulk data. Zarr is deferred to Phase 8 if HPC parallel-write parity
-        becomes the constraint. Phase 1's minimal capsule wrote
-        <code>diagnostics.json</code>; Phase 2A writes
-        <code>diagnostics.h5</code> and the inspection API accepts both.
+        bulk data. Zarr remains an extension point if HPC parallel-write
+        parity becomes the constraint. Current capsules write
+        <code>diagnostics.h5</code>; the inspection API still accepts
+        <code>diagnostics.json</code> for older local capsules.
       </p>
 
       <h2>Migrations</h2>

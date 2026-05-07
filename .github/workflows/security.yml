@@ -5,9 +5,17 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+  schedule:
+    # Deployment live probes are opt-in inside their jobs; this schedule keeps
+    # the workflow available for protected-runtime checks without adding secrets
+    # to the default PR lane.
+    - cron: "17 5 * * *"
 
 permissions:
   contents: read
+  pull-requests: read
+  security-events: write
 
 jobs:
   secure-core-security:
@@ -35,3 +43,142 @@ jobs:
 
       - name: Run Layer 5 security gate
         run: scripts/test/security.sh
+
+      - name: Run supply-chain security guard
+        run: scripts/test/security_supply_chain.sh
+
+  secure-core-db-live-probes:
+    name: secure-core-db-live-probes
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      PLASMAWORK_SECRETS_PROVIDER: env
+      PLASMAWORK_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/secure_core/package-lock.json
+
+      - name: Install secure_core dependencies
+        run: npm --prefix packages/secure_core ci
+
+      - name: Run live DB role probes
+        run: scripts/test/security_live_db.sh
+
+  secure-core-runsc-live-probes:
+    name: secure-core-runsc-live-probes
+    runs-on: [self-hosted, linux, runsc]
+    if: github.event_name != 'pull_request' && vars.PLASMAWORK_RUNSC_LIVE_PROBES == '1'
+    environment: security-live
+    env:
+      NODE_ENV: test
+      PLASMAWORK_RUNSC_PROBES: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Preflight runsc availability
+        run: runsc --version
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/secure_core/package-lock.json
+
+      - name: Install secure_core dependencies
+        run: npm --prefix packages/secure_core ci
+
+      - name: Run live runsc probes
+        run: scripts/test/security_live_runsc.sh
+
+  secure-core-worm-live-probes:
+    name: secure-core-worm-live-probes
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && vars.PLASMAWORK_WORM_LIVE_PROBES == '1'
+    environment: security-live
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NODE_ENV: test
+      PLASMAWORK_ANCHOR_LIVE_PROBES: "1"
+      PLASMAWORK_ANCHOR_PROVIDER: s3
+      PLASMAWORK_ANCHOR_S3_BUCKET: ${{ vars.PLASMAWORK_ANCHOR_S3_BUCKET }}
+      PLASMAWORK_ANCHOR_S3_REGION: ${{ vars.PLASMAWORK_ANCHOR_S3_REGION }}
+      PLASMAWORK_ANCHOR_S3_ENDPOINT: ${{ vars.PLASMAWORK_ANCHOR_S3_ENDPOINT }}
+      PLASMAWORK_ANCHOR_S3_KEY_PREFIX: ${{ vars.PLASMAWORK_ANCHOR_S3_KEY_PREFIX || 'ci/live-worm-probes' }}
+      PLASMAWORK_ANCHOR_RETENTION_DAYS: ${{ vars.PLASMAWORK_ANCHOR_RETENTION_DAYS || '1' }}
+      AWS_REGION: ${{ vars.PLASMAWORK_ANCHOR_S3_REGION }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials for WORM probe
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.PLASMAWORK_WORM_PROBE_ROLE_ARN }}
+          aws-region: ${{ vars.PLASMAWORK_ANCHOR_S3_REGION }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/secure_core/package-lock.json
+
+      - name: Install secure_core dependencies
+        run: npm --prefix packages/secure_core ci
+
+      - name: Run live WORM Object-Lock probes
+        run: scripts/test/security_live_worm.sh
+
+  codeql-typescript:
+    name: codeql-typescript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+
+  dependency-license-review:
+    name: dependency-license-review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Dependency and license review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          license-check: true
+          deny-licenses: AGPL-1.0, AGPL-3.0, GPL-2.0, GPL-3.0, LGPL-2.0, LGPL-2.1, LGPL-3.0

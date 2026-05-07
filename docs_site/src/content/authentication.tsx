@@ -3,10 +3,9 @@ export default function SecurityAuthentication() {
     <article>
       <h1>Security: Authentication</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation. This page describes the public
-        authentication model at a policy level; implementation details,
-        provider internals, secret names, and production endpoints are
-        intentionally omitted.
+        This page describes the public authentication model at a policy level.
+        Implementation details, provider internals, secret names, and
+        production endpoints are intentionally omitted.
       </p>
 
       <h2>Principles</h2>
@@ -23,6 +22,12 @@ export default function SecurityAuthentication() {
         user to an actor type and a set of live memberships. The secure-core
         boundary recomputes effective roles and capabilities from server-side
         records instead of accepting privilege claims from clients.
+      </p>
+      <p>
+        The frontend-facing session introspection route is
+        <code>GET /auth/session</code>. It returns server-derived identity,
+        assurance level, live workspace memberships, role names, and
+        capabilities; it accepts no request body.
       </p>
       <p>
         Session refresh, revocation, idle timeout, and disabled-user handling

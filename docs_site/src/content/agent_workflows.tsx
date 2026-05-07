@@ -1,19 +1,20 @@
 export default function AgentWorkflows() {
   return (
     <article>
-      <h1>Agent Workflows</h1>
+      <h1>Automation and Review Workflows</h1>
       <p className="page-status">
-        Phase 4 (paper ingestion) implemented. Phases 5–6 expand into
-        ModelSpec generation and sandboxed code generation.
+        Assisted workflows cover paper ingestion, interpretation drafting,
+        candidate code generation, and review summaries. They do not replace
+        human review, validation, or approval gates for privileged actions.
       </p>
 
-      <h2>Phase 4 — paper ingestion</h2>
+      <h2>Paper ingestion</h2>
       <p>
         Imports a paper file (Markdown <em>and PDF</em>; PDF text
         extraction uses <code>pypdf</code>, a hard dependency of
         <code>simworkbench</code>) into a capsule's{" "}
         <code>paper_sources/</code> and runs five deterministic
-        extractors plus a template interpretation agent. Every artifact
+        extractors plus a template interpretation draft. Every artifact
         is explicitly marked <em>needs human review</em>; edits go
         through <code>POST /api/papers/&lt;capsule&gt;/edit</code> and
         append to <code>provenance/agent_trace.md</code>.
@@ -22,8 +23,7 @@ export default function AgentWorkflows() {
       <h3>Outputs (under <code>paper_sources/</code>)</h3>
       <ul>
         <li><code>&lt;source&gt;.md</code> or <code>&lt;source&gt;.pdf</code>
-        {" "}— the paper file copied verbatim (plan §4A "Preserve source
-        files").</li>
+        {" "}— the paper file copied verbatim.</li>
         <li><code>extracted_text.md</code> — plain-text body of the
         paper. Identity for Markdown sources; <code>pypdf</code>-extracted
         text for PDFs (page count recorded in the ingestion artifacts).</li>
@@ -35,12 +35,11 @@ export default function AgentWorkflows() {
         confidence + source line numbers.</li>
         <li><code>extracted_parameters.yaml</code> — parameters with
         units, flagging <code>missing_units</code> rows that need a human
-        reviewer (plan §22 — never fabricate units).</li>
+        reviewer. Missing units are surfaced; they are not fabricated.</li>
         <li><code>paper_summary.md</code>, <code>assumptions.md</code>,{" "}
         <code>validity_domain.md</code>, <code>implementation_plan.md</code>{" "}
-        — agent-generated interpretation drafts. Plan §Phase 4 forbids
-        treating these as trusted; Phase 5's ModelSpec generation only
-        consumes them after a human reviewer has approved.</li>
+        — assisted interpretation drafts. Treat these as review inputs, not
+        trusted scientific facts.</li>
       </ul>
 
       <h3>Try it</h3>
@@ -74,27 +73,22 @@ Validation and review
 Promotion or rejection`}</code>
       </pre>
 
-      <h2>Agent roles</h2>
+      <h2>Automation roles</h2>
       <table>
         <thead>
-          <tr><th>Role</th><th>Responsibility</th><th>Phase enabled</th></tr>
+          <tr><th>Role</th><th>Responsibility</th><th>Primary surface</th></tr>
         </thead>
         <tbody>
-          <tr><td>Orchestrator</td><td>Maintains task graph, merges parallel work</td><td>6</td></tr>
-          <tr><td>Repository steward</td><td>Enforces structure, docs, conventions</td><td>0</td></tr>
-          <tr><td>Paper ingestion</td><td>Extracts paper content</td><td>4</td></tr>
-          <tr><td>Physics interpretation</td><td>Converts paper claims to assumptions</td><td>4</td></tr>
-          <tr><td>ModelSpec</td><td>Generates and validates structured spec</td><td>5</td></tr>
-          <tr><td>Module retrieval</td><td>Finds reusable modules</td><td>5</td></tr>
-          <tr><td>Code generation</td><td>Writes candidate implementation</td><td>6</td></tr>
-          <tr><td>Numerical methods</td><td>Reviews solver / stability</td><td>6</td></tr>
-          <tr><td>Backend optimization</td><td>Chooses execution backend</td><td>8</td></tr>
-          <tr><td>Validation</td><td>Creates and runs validation tests</td><td>6</td></tr>
-          <tr><td>Visualization</td><td>Builds plots and panels</td><td>6</td></tr>
-          <tr><td>Documentation</td><td>Updates docs, README, guides</td><td>1</td></tr>
-          <tr><td>Bug memory</td><td>Checks <code>bugs_and_fixes/</code> before edits</td><td>1</td></tr>
-          <tr><td>Security / sandbox</td><td>Prevents unsafe file or execution behavior</td><td>4</td></tr>
-          <tr><td>Release</td><td>Packages stable builds and examples</td><td>7</td></tr>
+          <tr><td>Orchestrator</td><td>Maintains task graph and merges parallel work</td><td>Assisted workflow runner</td></tr>
+          <tr><td>Paper ingestion</td><td>Extracts paper content</td><td>Papers and capsule source pages</td></tr>
+          <tr><td>Physics interpretation</td><td>Converts paper claims to assumptions for review</td><td>ModelSpec drafting</td></tr>
+          <tr><td>Module retrieval</td><td>Finds reusable modules and reports gaps</td><td>Module registry</td></tr>
+          <tr><td>Code generation</td><td>Writes candidate implementation in generated areas</td><td>Capsule code panel</td></tr>
+          <tr><td>Numerical methods</td><td>Reviews solver choice and stability risks</td><td>Validation panel</td></tr>
+          <tr><td>Backend optimization</td><td>Chooses execution backend within policy</td><td>Run configuration</td></tr>
+          <tr><td>Visualization</td><td>Builds plots and panels</td><td>Diagnostics panel</td></tr>
+          <tr><td>Documentation</td><td>Updates docs, README, and guides after behavior changes</td><td>Documentation browser</td></tr>
+          <tr><td>Security / sandbox</td><td>Prevents unsafe file or execution behavior</td><td>Security operations</td></tr>
         </tbody>
       </table>
 
@@ -108,7 +102,7 @@ Promotion or rejection`}</code>
         <li>Destructive git operations</li>
       </ul>
 
-      <h2>What agents must not do</h2>
+      <h2>What automation must not do</h2>
       <ul>
         <li>Write outside <code>local_cache/</code>, <code>temp_imports/</code>, <code>temp_runs/</code>, <code>simulation_capsules/</code>.</li>
         <li>Overwrite <code>&lt;capsule&gt;/src/user_edits/</code>.</li>
@@ -117,10 +111,10 @@ Promotion or rejection`}</code>
         <li>Hide assumptions behind opaque generated code.</li>
       </ul>
 
-      <h2>Phase 10 — autonomy</h2>
+      <h2>Autonomous experiment assistance</h2>
       <p>
-        Phase 10 ships the <code>simworkbench.autonomy</code> module:
-        an autonomous experiment-design loop with hard budget caps and
+        The <code>simworkbench.autonomy</code> module provides an autonomous
+        experiment-design loop with hard budget caps and
         single-use approval tokens. The four autonomy surfaces are
         data-emitting (the user reviews the output before any
         privileged action runs):
@@ -136,14 +130,14 @@ Promotion or rejection`}</code>
           <code>SmokeRunner.run(experiment)</code> → a
           <code>SmokeReport</code> with diagnostics interpretation,
           instability flags, and suggested parameter adjustments. The
-          agent NEVER auto-applies adjustments; the user reviews.
+          assistant never auto-applies adjustments; the user reviews.
         </li>
         <li>
           <code>ControlledSweepAgent(budget=N)</code> wraps the Phase-9
           <code>SweepEngine</code> with a hard budget cap, monitors
           run-by-run, summarises trends, and recommends the next bounded
-          sweep. The agent constructor and <code>launch</code> expose
-          NO bypass kwargs.
+          sweep. The constructor and <code>launch</code> expose no budget
+          bypass arguments.
         </li>
         <li>
           <code>ScientificReviewer.write(capsule)</code> writes
@@ -156,7 +150,7 @@ Promotion or rejection`}</code>
         </li>
       </ul>
       <p>
-        Plan §22 (Scientific Accuracy Policy) is enforced by
+        Scientific accuracy policy is enforced by
         <code>capsule_status_for_plan(plan)</code> — any placeholder
         coefficient pins the capsule to <code>exploratory</code>; only
         a human reviewer can graduate it to <code>validated</code>.
@@ -168,10 +162,10 @@ Promotion or rejection`}</code>
         contract.
       </p>
 
-      <h2>What this page should cover when expanded</h2>
+      <h2>Still missing from this guide</h2>
       <ul>
         <li>Walkthrough of the full pipeline against a real paper.</li>
-        <li>Agent trace format and how to inspect it.</li>
+        <li>Automation trace format and how to inspect it.</li>
         <li>Approval-gate UI flows.</li>
       </ul>
     </article>

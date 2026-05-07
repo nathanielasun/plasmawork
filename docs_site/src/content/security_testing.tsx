@@ -3,9 +3,10 @@ export default function SecurityTesting() {
     <article>
       <h1>Security Testing</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for security regression coverage.
-        This page intentionally describes test categories and expected
-        guarantees, not exploit-ready commands or production probes.
+        Security tests protect authentication, authorization, workspace
+        isolation, approvals, sandboxing, audit chains, and operator access.
+        This page describes guarantees, not exploit-ready commands or
+        production probes.
       </p>
 
       <h2>Test categories</h2>
@@ -31,6 +32,17 @@ export default function SecurityTesting() {
         The security suite is a required merge gate once secure-core code is
         active. Tests run against clean fixtures and restricted runtime roles
         where applicable. CI must not depend on production secrets.
+      </p>
+      <p>
+        The default PR lane runs <code>scripts/test/security.sh</code> without
+        deployment credentials. Live-runtime checks are separate protected
+        lanes: <code>security_live_db.sh</code> provisions an ephemeral
+        PostgreSQL service through <code>PLASMAWORK_TEST_DB_URL</code>,
+        <code>security_live_runsc.sh</code> requires
+        <code>PLASMAWORK_RUNSC_PROBES=1</code> and a runner with
+        <code>runsc</code> installed, and <code>security_live_worm.sh</code>
+        requires <code>PLASMAWORK_ANCHOR_LIVE_PROBES=1</code> plus a dedicated
+        Object-Lock probe bucket.
       </p>
 
       <h2>Documentation parity</h2>

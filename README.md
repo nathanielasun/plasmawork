@@ -44,7 +44,9 @@ See [`program_development/milestones/`](./program_development/milestones/) for p
 
 > **Reading the status table above as "production-ready" would be a mistake.** All ten phases ship as planned, but the convention checker verifies *structural* completeness, not scientific capability. Read [`LIMITATIONS.md`](./LIMITATIONS.md) for the honest, kept-current map of what works today (real numerical core, schemas, sweep / UQ / optimization, FastAPI + UI, approval gates) and what is heuristic / template / stub (the autonomy "agents", paper interpretation drafts, the C++/CUDA solver suite — `axpy` only —, real laser–plasma physics modules).
 
-Secure multi-user scaffolding is implemented through the Phase 0.5 Layer-5 integration gate in `packages/secure_core/`: server-derived identity, workspace-scoped object access, approval middleware, append-only audit/provenance chains, WORM anchor verification, sandbox spec guards, security docs, and CI wiring are covered by `scripts/test/security.sh`, `scripts/test/all.sh`, and `packages/secure_core/test/security/section29_coverage.test.ts`. Deployment-specific live probes for gVisor, database roles, and WORM object-lock infrastructure remain environment-gated and must pass in the target runtime lane before production multi-user operation.
+Secure multi-user scaffolding is implemented through the Phase 0.5 Layer-5 integration gate in `packages/secure_core/`: server-derived identity, workspace-scoped object access, approval middleware, append-only audit/provenance chains, WORM anchor verification, sandbox spec guards, security docs, and CI wiring are covered by `scripts/test/security.sh`, `scripts/test/all.sh`, and `packages/secure_core/test/security/section29_coverage.test.ts`. Deployment-specific live probes now have dedicated CI entrypoints: `scripts/test/security_live_db.sh` (`PLASMAWORK_TEST_DB_URL`), `scripts/test/security_live_runsc.sh` (`PLASMAWORK_RUNSC_PROBES=1` plus a runner with `runsc`), and `scripts/test/security_live_worm.sh` (`PLASMAWORK_ANCHOR_LIVE_PROBES=1` plus `PLASMAWORK_ANCHOR_S3_*`). These target-runtime lanes must pass before production multi-user operation.
+
+Secure frontend readiness is tracked in [`program_development/secure_frontend_readiness_plan.md`](./program_development/secure_frontend_readiness_plan.md). Frontend-facing secure-core route metadata and response contracts live in `packages/secure_core/src/client/contracts.ts`; the current contract includes `GET /auth/session` for server-derived app-shell identity/capability gating and marks operator remediation as fail-closed until backend side effects exist. The workbench UI now includes a **Security Ops** route (`/security`) that binds to the secure-core session and security-dashboard read paths, labels fixture fallback when the secure backend is not mounted locally, and renders fail-closed/deployment-gated routes as disabled controls rather than hidden buttons.
 
 ---
 
@@ -121,9 +123,10 @@ The UI, backend, capsule, kernel, and export scripts exist so documented command
 ./scripts/test/validation.sh    # tests/validation (scientific properties)
 ./scripts/test/performance.sh   # tests/performance
 ./scripts/test/security.sh      # secure_core §29 security gate
+./scripts/test/security_supply_chain.sh  # CI supply-chain guard
 ```
 
-`./scripts/test/all.sh` runs the hard repository conventions plus the current test suite, including the secure_core security gate. It intentionally does not include open-workstream TODO assertions; use `./scripts/dev/check_repo_conventions.sh --include-open-workstreams` when inspecting the active implementation backlog.
+`./scripts/test/all.sh` runs the hard repository conventions plus the current test suite, including the secure_core security gate. The supply-chain guard is CI-oriented because npm audit and dependency review are network-backed. `all.sh` intentionally does not include open-workstream TODO assertions; use `./scripts/dev/check_repo_conventions.sh --include-open-workstreams` when inspecting the active implementation backlog.
 
 See `tests/README.md` for the testing strategy (also plan §20).
 
@@ -136,7 +139,7 @@ See `tests/README.md` for the testing strategy (also plan §20).
 ./scripts/docs/build.sh  # static build
 ```
 
-The documentation site is served at `http://localhost:3000` by default. The same source pages are loaded inside the workbench UI under the **Documentation** panel — there is one canonical doc source.
+The documentation site is served at `http://localhost:3000` by default. The same source pages are loaded inside the workbench UI under the **Documentation** panel, where they are organized with a searchable, collapsible sidebar. There is one canonical doc source.
 
 ---
 

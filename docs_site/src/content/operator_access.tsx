@@ -3,7 +3,8 @@ export default function OperatorAccess() {
     <article>
       <h1>Operator Access</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for platform and break-glass access.
+        Operator access is a constrained platform-administration path for
+        maintenance, incident response, and tightly scoped recovery.
       </p>
 
       <h2>Purpose</h2>
@@ -16,6 +17,7 @@ export default function OperatorAccess() {
       <h2>Required controls</h2>
       <ul>
         <li>Operator sessions are time-limited and reason-bound.</li>
+        <li>Platform capability checks include recent step-up authentication before high-risk approval tokens are consumed.</li>
         <li>Every platform capability use emits an audit event and an operator event.</li>
         <li>Operator capabilities are split by purpose rather than bundled into a single global role.</li>
         <li>Break-glass use is reviewable after the fact through the audit and operator chains.</li>

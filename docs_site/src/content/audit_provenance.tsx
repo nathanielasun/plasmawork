@@ -3,8 +3,8 @@ export default function SecurityAuditProvenance() {
     <article>
       <h1>Security: Audit and Provenance</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for tamper-evident audit,
-        provenance, and operator records.
+        Audit, provenance, and operator records provide tamper-evident history
+        for security decisions, scientific lineage, and platform access.
       </p>
 
       <h2>Three event streams</h2>

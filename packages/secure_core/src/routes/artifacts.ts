@@ -74,6 +74,7 @@ export const DEFAULT_MAX_EXPORT_BYTES = 10 * 1024 ** 3;
  * pattern.
  */
 export interface ArtifactRoutesMiddleware {
+  readonly enforceArtifactExportRateLimit?: NamedMiddleware;
   readonly requireAuth: NamedMiddleware;
   readonly enforceCsrfForStateChange: NamedMiddleware;
   readonly attachAuditActor: NamedMiddleware;
@@ -239,6 +240,32 @@ export const artifactRoutes: FastifyPluginAsync<ArtifactRoutesOptions> = async (
   const approvalIfHighRisk = mw.requireApprovalIfHighRiskFactory(
     "artifact_export",
   );
+  const exportPreHandler = mw.enforceArtifactExportRateLimit === undefined
+    ? composeMiddleware([
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateExport,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireArtifactRead,
+        mw.enforceArtifactWorkspaceScope,
+        approvalIfHighRisk,
+      ])
+    : composeMiddleware([
+        mw.enforceArtifactExportRateLimit,
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateExport,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireArtifactRead,
+        mw.enforceArtifactWorkspaceScope,
+        approvalIfHighRisk,
+      ]);
 
   // -------------------------------------------------------------------
   // GET /workspaces/:workspaceId/artifacts — list
@@ -317,18 +344,7 @@ export const artifactRoutes: FastifyPluginAsync<ArtifactRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/artifacts/:artifactId/export",
     {
-      preHandler: composeMiddleware([
-        mw.requireAuth,
-        mw.enforceCsrfForStateChange,
-        validateExport,
-        mw.attachAuditActor,
-        mw.loadWorkspace,
-        mw.enforceUniformNotFound,
-        mw.requireWorkspaceMembership,
-        mw.requireArtifactRead,
-        mw.enforceArtifactWorkspaceScope,
-        approvalIfHighRisk,
-      ]),
+      preHandler: exportPreHandler,
     },
     async (req, reply) => {
       if (req.auth === undefined) {

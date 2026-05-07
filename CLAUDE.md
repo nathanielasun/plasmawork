@@ -16,7 +16,7 @@ Treat these as load-bearing. Do not reinterpret them because a local task seems 
    - the relevant `docs_site/src/content/<page>` file;
    - `README.md`;
    - the in-program docs viewer when applicable.
-2. Maintain documentation as TypeScript/MDX under `docs_site/`.
+2. Maintain documentation as TypeScript/MDX under `docs_site/`. The in-program docs viewer uses the searchable, collapsible sidebar metadata in `apps/workbench-ui/src/components/DocsViewer.tsx` (`DOC_PAGE_META`, `DOC_SECTIONS`), and the standalone docs site uses `docs_site/src/pages/docsPages.ts`; update both metadata maps whenever docs pages are added, renamed, or substantially repurposed. Docs content should read as a user/developer manual, not as phase/workstream closure notes or agent-only instructions.
 3. Maintain a root-level `README.md`.
 4. Maintain `.gitignore`. Never commit local caches, temp simulation files, intermediate imports, generated outputs, `.env` files, or secrets.
 5. Maintain `bugs_and_fixes/` and `program_development/`.
@@ -338,9 +338,11 @@ Never accept client-provided server-derived fields, at any nesting depth. This i
 Hard security rules:
 
 - Derive identity, workspace, role, and audit actor server-side.
+- Malformed authenticated context fails closed; never coerce `unauthenticated` into a privileged actor type for audit or authorization.
 - Protected JSON-body routes run audit-aware `validateInputSchema` / `bodyValidation`; do not rely only on Fastify `schema.body`.
 - Accept object references such as `source_artifact_id`; derive `content_hash`, `storage_path`, and lifecycle `status` server-side.
-- High-risk route handlers consume an L2.9 approval token before side effects, and privilege-bearing services re-check live capability inside the transaction before commit.
+- Current-session and workspace-membership read models preserve live memberships even when the role grants zero capabilities; capability joins for listing use left joins and may return an empty capability set.
+- High-risk route handlers consume an L2.9 approval token before side effects, but mandatory privilege preconditions such as operator step-up auth run before that token is consumed. Privilege-bearing services re-check live capability inside the transaction before commit.
 - Worker/sandbox writers reserve and commit quota for every derived artifact; failed paths clean up every file they created.
 - Never write workspace artifacts outside the server-generated workspace path.
 - Never bypass authorization checks for convenience.

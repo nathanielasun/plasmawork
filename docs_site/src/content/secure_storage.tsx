@@ -3,14 +3,16 @@ export default function SecurityStorage() {
     <article>
       <h1>Security: Storage</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for safe, workspace-scoped storage.
+        Secure storage keeps browser, worker, and assisted-workflow inputs away
+        from privileged filesystem facts such as final paths, hashes, and
+        lifecycle state.
       </p>
 
       <h2>Storage boundary</h2>
       <p>
         The server derives all storage paths from workspace, object, and
-        artifact records. Workers, agents, and browser clients submit object
-        identifiers and artifact metadata; they do not provide trusted
+        artifact records. Workers, assisted workflows, and browser clients
+        submit object identifiers and artifact metadata; they do not provide trusted
         filesystem paths or storage prefixes.
       </p>
 

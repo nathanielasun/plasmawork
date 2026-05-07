@@ -32,6 +32,222 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-07: Session introspection hid zero-capability workspace memberships
+
+### Affected subsystem
+- `packages/secure_core/src/auth/sessionService.ts`
+- `packages/secure_core/test/auth/sessionService.test.ts`
+
+### Symptoms
+The new `/auth/session` SQL reader joined `workspace_memberships` to
+`role_permissions` with an inner join. A user with a live workspace
+membership whose role currently grants no capabilities would disappear
+from the current-session response instead of appearing with an empty
+capability list.
+
+### Root cause
+The read model reused the capability-resolution join as if permissions
+were required for membership visibility. Membership liveness and
+capability grants are separate facts; the UI needs both, including the
+zero-capability state.
+
+### Fix
+The session reader now uses `LEFT JOIN role_permissions` and accepts
+`NULL` capability rows. Grouping preserves the live membership and
+returns `capabilities: []` when no valid permissions are attached.
+
+### Regression protection
+- `packages/secure_core/test/auth/sessionService.test.ts`
+- `scripts/dev/check_repo_conventions.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Read models that summarize membership plus capabilities must not make
+capability rows a prerequisite for returning the membership. Use a left
+join and test the zero-capability state.
+
+## 2026-05-07: Worker token route upgraded malformed actor context in audit
+
+### Affected subsystem
+- `packages/secure_core/src/workers/tokenRoute.ts`
+- `packages/secure_core/test/workers/tokenRoute.test.ts`
+
+### Symptoms
+The worker-token issuance route contained a defensive audit expression
+that mapped `req.auth.actorType === "unauthenticated"` to
+`"operator"` when emitting `worker.token_issued`. Production
+`requireAuth` derives `"human"` today, but the branch was still an
+unsafe fallback: a malformed authenticated context would be upgraded
+in audit accountability instead of rejected.
+
+### Root cause
+The route tried to paper over an impossible auth shape at the audit
+emission site. Security-sensitive code should fail closed on malformed
+server-derived context, not coerce it into a privileged actor type.
+
+### Fix
+The handler now rejects `actorType: "unauthenticated"` after `requireAuth`
+and before run lookup/token issuance. Successful audit rows use
+`req.auth.actorType` directly without any privileged fallback.
+
+### Regression protection
+- `packages/secure_core/test/workers/tokenRoute.test.ts`
+- `scripts/dev/check_repo_conventions.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not "normalize" malformed auth context into a privileged actor type
+for audit or authorization. If authenticated context is internally
+inconsistent, reject before side effects.
+
+## 2026-05-07: Operator step-up ran after approval consumption
+
+### Affected subsystem
+- `packages/secure_core/src/routes/operator.ts`
+- `packages/secure_core/src/routes/securityDashboard.ts`
+- `packages/secure_core/src/middleware/operatorStepUp.ts`
+- `packages/secure_core/test/routes/{operator,securityDashboard}.test.ts`
+
+### Symptoms
+Operator routes enforced AAL2/AAL3 step-up authentication inside the
+handler. For high-risk operator incident routes, L2.9 approval-token
+middleware ran in `preHandler` before the handler-level step-up check.
+An AAL1 operator session with a valid approval token could consume the
+token and then be rejected for missing step-up. Step-up denials also did
+not emit a `permission.denied` audit row, so denied-access dashboard
+counters missed that class of refusal.
+
+### Root cause
+Step-up was modeled as route business logic instead of part of the
+authorization middleware chain. That placed it after approval-token
+consumption and outside the audited denial path.
+
+### Fix
+Added `withOperatorStepUp`, a decorator for platform capability
+middleware. It runs the existing platform capability check and then
+checks AAL2/AAL3 in the same `requireCapability` slot, before
+`requireApprovalIfHighRisk`. On denial it writes `permission.denied`
+with `denied_reason: "step_up_required"` and the relevant platform
+capability. Operator routes and the security dashboard route now use
+the decorator.
+
+### Regression protection
+- `packages/secure_core/test/routes/operator.test.ts`
+- `packages/secure_core/test/routes/securityDashboard.test.ts`
+- `scripts/dev/check_repo_conventions.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Privilege preconditions that can reject a request must run before
+single-use approval tokens are consumed. Handler-level checks are too
+late for high-risk routes if L2.9 lives in `preHandler`.
+
+## 2026-05-07: Security operations backend wiring hardening
+
+### Affected subsystem
+- `packages/secure_core/src/security`
+- `packages/secure_core/src/routes`
+- `packages/secure_core/src/middleware`
+- `packages/secure_core/src/rateLimits`
+- `packages/secure_core/test/{security,middleware,rateLimits}`
+
+### Symptoms
+The initial security-operations slice exposed dashboard primitives but
+left several backend prerequisites incomplete for frontend work: the
+dashboard route had only an injected reader interface, no SQL-backed
+service; the operator dashboard route was exported but not composed
+with real auth/platform-capability middleware; named rate-limit
+policies existed but route plugins had no typed hook for the named
+policies; and the new platform-capability check initially considered
+active membership rows without proving the associated workspace was
+still live.
+
+### Root cause
+The first slice stopped at module boundaries. Security declarations
+were present, but not all had a production composition point. The
+platform capability implementation reused membership rows without
+carrying the standard "live workspace" predicate into the operator
+authorization query.
+
+### Fix
+Added `SecurityDashboardService` and `SqlSecurityDashboardDataSource`
+for audit-read-pool-backed dashboard data, a stable dashboard response
+schema, `registerSecurityOperationsRoutes`, `buildDashboardVerifiers`,
+and `startPeriodicAuditChainVerifier`. Added
+`requirePlatformCapability` and made it require an active membership
+attached to a non-deleted workspace. Added route hooks plus a
+`buildSecurityRouteRateLimitMiddleware` factory for named auth, upload,
+run, approval, and export rate-limit policies.
+
+### Regression protection
+- `packages/secure_core/test/security/dashboardService.test.ts`
+- `packages/secure_core/test/security/operations.test.ts`
+- `packages/secure_core/test/middleware/requirePlatformCapability.test.ts`
+- `packages/secure_core/test/rateLimits/policies.test.ts`
+- `scripts/dev/check_repo_conventions.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not stop at route exports or policy tables for security work.
+Security features need a production composition seam, live-data source,
+and negative tests for stale membership/workspace state. Platform
+capability grants must include the same live-membership and
+live-workspace predicates as workspace-scoped authorization.
+
+## 2026-05-07: Security operations scaffolding enforcement drift
+
+### Affected subsystem
+- `packages/secure_core/src/rateLimits`
+- `packages/secure_core/src/audit`
+- `packages/secure_core/src/secrets`
+- `packages/secure_core/test/{rateLimits,audit,secrets}`
+
+### Symptoms
+The first security-operations slice introduced rate-limit policy
+metadata, a periodic audit-chain verifier job, and production secrets
+validation. Review found three subtle drifts before commit: named
+rate-limit policies could still default to IP scoping unless every
+caller remembered a custom extractor; a verifier exception could escape
+the periodic job as an unhandled rejection instead of an audit-visible
+verification failure; and production secrets validation treated a blank
+`AWS_REGION` as authoritative even when `AWS_DEFAULT_REGION` was set,
+while not refusing `AWS_SESSION_TOKEN`.
+
+### Root cause
+The implementation modeled the desired security controls, but some
+controls lived in metadata or happy-path helpers rather than in the
+runtime enforcement path. Negative tests covered declared coverage, but
+not miswired middleware scope, thrown verifier dependencies, or blank
+environment fallback.
+
+### Fix
+Rate-limit policies now derive their runtime key extractor from
+`keyScope` by default and fail closed when account/workspace scoped
+middleware is registered before the required context exists. Worker
+upload rate limits hash the presented worker token rather than storing
+the raw token as a key. The periodic verifier converts thrown verifier
+dependencies into `verifier_error` failure reports and prevents timer
+callbacks from creating unhandled rejections. Production secrets
+validation now selects the first non-blank AWS region and rejects static
+session-token credentials.
+
+### Regression protection
+- `packages/secure_core/test/rateLimits/policies.test.ts`
+- `packages/secure_core/test/audit/periodicVerifier.test.ts`
+- `packages/secure_core/test/secrets/productionValidation.test.ts`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Security policy declarations are not enforcement. A named policy must
+own its default runtime behavior, background verifier jobs must turn
+dependency failures into auditable outcomes, and production environment
+fallbacks must ignore blank variables rather than treating them as set.
+
 ## 2026-05-07: Secure-core Layer-5 security gate completion
 
 ### Affected subsystem

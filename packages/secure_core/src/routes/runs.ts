@@ -66,6 +66,7 @@ import type { AuditLogger } from "../audit/logger.js";
 import { bodyValidation } from "./validation.js";
 
 export interface RunRoutesMiddleware {
+  readonly enforceRunCreateRateLimit?: NamedMiddleware;
   readonly requireAuth: NamedMiddleware;
   readonly enforceCsrfForStateChange: NamedMiddleware;
   readonly attachAuditActor: NamedMiddleware;
@@ -262,6 +263,28 @@ export const runRoutes: FastifyPluginAsync<RunRoutesOptions> = async (
   const { stateMachine, queryService, mw } = opts;
   const validateCreateRun = bodyValidation(CREATE_RUN_SCHEMA, opts.auditLogger);
   const validateCancelRun = bodyValidation(CANCEL_RUN_SCHEMA, opts.auditLogger);
+  const createRunPreHandler = mw.enforceRunCreateRateLimit === undefined
+    ? composeMiddleware([
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateCreateRun,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireRunCreate,
+      ])
+    : composeMiddleware([
+        mw.enforceRunCreateRateLimit,
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateCreateRun,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireRunCreate,
+      ]);
 
   // -------------------------------------------------------------------
   // POST /workspaces/:workspaceId/capsules/:capsuleId/runs — create
@@ -272,16 +295,7 @@ export const runRoutes: FastifyPluginAsync<RunRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/capsules/:capsuleId/runs",
     {
-      preHandler: composeMiddleware([
-        mw.requireAuth,
-        mw.enforceCsrfForStateChange,
-        validateCreateRun,
-        mw.attachAuditActor,
-        mw.loadWorkspace,
-        mw.enforceUniformNotFound,
-        mw.requireWorkspaceMembership,
-        mw.requireRunCreate,
-      ]),
+      preHandler: createRunPreHandler,
     },
     async (req, reply) => {
       if (req.auth === undefined) {

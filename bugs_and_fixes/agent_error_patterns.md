@@ -21,6 +21,71 @@ How to spot the mistake — grep pattern, code review heuristic, or test.
 
 ---
 
+## Error Pattern: Security route export without production composition
+
+### Why it is bad
+An exported route plugin proves only that a test can inject stub
+middleware. It does not prove the production service derives identity,
+checks live platform capability, uses a read-role data source, or starts
+background verification jobs. Frontend work built on that route will
+exercise mocks while the real backend remains unwired.
+
+### Required behavior
+- Every security route has a production composition helper or app wiring
+  path that constructs real middleware and services.
+- Operator/platform checks verify live membership and the liveness of
+  the workspace carrying the grant, unless an ADR creates a separate
+  global grant table.
+- Named policy tables expose a middleware factory or service hook used
+  by route composition, not only documentation.
+
+### Detection
+- Grep for a route export and then for a registration helper that binds
+  real `requireAuth`, capability middleware, and service dependencies.
+- Tests should hit the composed route, not only the plugin with stubs.
+- Negative tests should cover removed memberships and deleted workspaces
+  for platform grants.
+
+### Bug log
+- 2026-05-07 *Security operations backend wiring hardening*: dashboard
+  route/service/policy pieces existed but were not fully composed; the
+  platform-capability predicate initially omitted workspace liveness.
+
+---
+
+## Error Pattern: Security policy is declared but not bound to runtime behavior
+
+### Why it is bad
+A policy table that says `keyScope: "workspace"` or a background job
+that says "verifies every chain" can pass documentation and convention
+checks while the runtime still uses a weaker default, such as per-IP
+keys or unhandled promise rejection. Security metadata is only useful
+when the enforcement layer consumes it by default.
+
+### Required behavior
+- Named security policies derive runtime middleware behavior from the
+  policy record unless a route deliberately overrides it.
+- Scoped policies fail closed when registered before the server-derived
+  context they require.
+- Background verifier jobs convert dependency failures into auditable
+  failure outcomes and must not create unhandled rejections.
+
+### Detection
+- Grep for policy fields such as `keyScope`, `surface`, or `required`
+  and verify they are consumed by the runtime builder, not only tests.
+- Add a negative test that intentionally omits required context and
+  expects a fail-closed error.
+- Add a test where an injected verifier throws and assert an audit row
+  is emitted with a closed failure reason.
+
+### Bug log
+- 2026-05-07 *Security operations scaffolding enforcement drift*:
+  rate-limit `keyScope` was declarative only unless callers supplied a
+  custom extractor, and periodic verifier exceptions could escape the
+  job. Fix: policy-derived extractors plus auditable `verifier_error`.
+
+---
+
 ## Error Pattern: Security invariant lives in docs but not in the enforcement layer
 
 ### Why it is bad
@@ -2039,6 +2104,72 @@ an out-of-band approval into a bearer capability.
 
 ---
 
+## Error Pattern: Privilege precondition enforced after approval token consumption
+
+### Why it is bad
+Single-use approval tokens are security state, not a retryable form
+field. If a route consumes an approval token in `preHandler` and only
+later checks another mandatory privilege precondition in the handler
+(for example operator step-up auth), a request that should have been
+rejected cleanly burns the token and creates confusing audit/state
+transitions.
+
+### Required behavior
+- Mandatory privilege preconditions run before L2.9 consumes approval
+  tokens.
+- The denial path emits an audit row before throwing.
+- For operator routes, platform capability and AAL2/AAL3 step-up are
+  combined in the `requireCapability` slot so both precede
+  `requireApprovalIfHighRisk`.
+
+### Detection
+- In route files, search for `requireApprovalIfHighRisk` in `preHandler`
+  and then inspect the handler body for additional `throw
+  PermissionDeniedError` / `assert*StepUp` calls. Those checks are too
+  late unless they are duplicated earlier in middleware.
+- Add a regression test with a low-assurance session and a valid-looking
+  approval header; assert the approval middleware/service is not invoked.
+
+### Bug log
+- 2026-05-07 *Operator step-up ran after approval consumption*: operator
+  incident routes checked AAL2/AAL3 inside the handler after L2.9 ran.
+  Fix: `withOperatorStepUp` decorates platform capability middleware so
+  step-up denial happens, and is audited, before approval-token
+  consumption.
+
+---
+
+## Error Pattern: Malformed auth context normalized into a privileged actor
+
+### Why it is bad
+Server-derived auth context is already a security boundary. If a route
+encounters an internally inconsistent context such as
+`actorType="unauthenticated"` after `requireAuth`, converting it to
+`operator` or `human` for convenience corrupts audit accountability and
+can mask a broken upstream middleware.
+
+### Required behavior
+- Routes fail closed when authenticated context carries an impossible or
+  inconsistent actor shape.
+- Audit rows use the server-derived actor type directly after validation;
+  no privileged fallback mappings.
+- Tests cover the malformed internal context and assert no privileged
+  audit event is emitted.
+
+### Detection
+- Grep for ternaries or fallback maps involving `unauthenticated`,
+  `operator`, and `human` near audit writes.
+- Treat "this cannot happen" branches in security code as refusal paths,
+  not normalization paths.
+
+### Bug log
+- 2026-05-07 *Worker token route upgraded malformed actor context in
+  audit*: `workerTokenRoute` converted `unauthenticated` to `operator`
+  when emitting `worker.token_issued`. Fix: reject malformed auth context
+  before issuing a token or writing audit.
+
+---
+
 ## Error Pattern: Security CI inherits production-secret-shaped environment
 
 ### Why it is bad
@@ -2064,3 +2195,34 @@ control.
   environment variables. Fix: `scripts/test/security.sh` now checks a
   denylist before running the §29 suite, and the default CI workflow avoids
   production secrets.
+
+---
+
+## Error Pattern: Capability joins that erase memberships
+
+### Why it is bad
+Membership and capability grants are related but distinct facts. A read
+model that inner-joins `workspace_memberships` to `role_permissions`
+turns "member with no capabilities" into "not a member." That hides
+important UI state, complicates operator/debug flows, and can mask role
+configuration drift.
+
+### Required behavior
+- Membership visibility queries preserve live memberships even when the
+  role grants zero capabilities.
+- Capability sets are derived from the joined permission rows and may be
+  empty.
+- Tests include at least one role with no permission rows.
+
+### Detection
+- Search session/workspace read models for `JOIN role_permissions`.
+  If the query is intended to list memberships rather than enforce one
+  specific capability, it should usually be a left join.
+- Add a regression row with `capability: null` and assert the membership
+  remains present with `capabilities: []`.
+
+### Bug log
+- 2026-05-07 *Session introspection hid zero-capability workspace
+  memberships*: `/auth/session` used an inner join from memberships to
+  role permissions. Fix: use `LEFT JOIN role_permissions` and group null
+  capability rows into an empty capability list.

@@ -45,6 +45,11 @@ docs_site/src/**/*.d.ts
 .pnp
 .pnp.js
 
+# Local npm install artifacts for packages that do not currently version locks.
+# `packages/secure_core/package-lock.json` is intentionally tracked.
+apps/workbench-ui/package-lock.json
+docs_site/package-lock.json
+
 # Local program directories — keep folders, ignore contents
 local_cache/*
 temp_imports/*
@@ -93,6 +98,7 @@ simulation_capsules/*
 local_cache/secrets/secrets.local.json
 
 # IDE / editor
+.claude/
 .vscode/
 .idea/
 *.pem

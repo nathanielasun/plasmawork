@@ -3,7 +3,8 @@ export default function SecurityRolesPermissions() {
     <article>
       <h1>Security: Roles and Permissions</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for capability-based access control.
+        Roles and permissions describe what an authenticated actor may do
+        inside a workspace or platform administration context.
       </p>
 
       <h2>Capability model</h2>

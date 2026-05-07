@@ -3,12 +3,9 @@ export default function Validation() {
     <article>
       <h1>Validation</h1>
       <p className="page-status">
-        Phase 7 complete. The workbench now has the core
-        <code>simworkbench.validation_library</code> helpers plus module-local
-        benchmarks for validated physics modules. Repository-level validation
-        tests still live under <code>tests/validation/</code>; module-specific
-        benchmark gates live beside each module under
-        <code>packages/physics_modules/&lt;domain&gt;/&lt;name&gt;/tests/</code>.
+        Validation is the boundary between a runnable simulation and a result
+        that can be interpreted scientifically. Treat unvalidated or
+        exploratory output as provisional until the relevant checks pass.
       </p>
 
       <h2>Validation categories</h2>
@@ -63,7 +60,7 @@ export default function Validation() {
         <li>Recommended next validation steps.</li>
       </ul>
 
-      <h2>Agent rules around validation</h2>
+      <h2>Review rules around validation</h2>
       <ul>
         <li>Never lower a tolerance to make a failing validation test pass without an ADR.</li>
         <li>Never switch backends to make output look better.</li>

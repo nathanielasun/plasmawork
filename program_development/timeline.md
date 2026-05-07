@@ -4,6 +4,45 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-07 (Documentation browser restyle and manual copy cleanup)
+
+### Completed
+- Replaced the in-app documentation page selector with a searchable, collapsible, categorized sidebar in `DocsViewer.tsx`.
+- Updated docs styling guidance so documentation navigation remains a manual-style sidebar instead of returning to the prior horizontal button row.
+- Rewrote high-traffic documentation pages to emphasize current capabilities, workflows, guarantees, validation posture, and security operations instead of phase/workstream closure language.
+- Updated `AGENTS.md`, `CLAUDE.md`, `README.md`, and `STYLING.md` so future major updates keep `docs_site/src/content/` and the docs viewer sidebar metadata synchronized.
+
+### Next steps
+- Keep documentation page metadata (`DOC_PAGE_META`, `DOC_SECTIONS`) current whenever docs pages are added, renamed, or repurposed.
+
+---
+
+## 2026-05-07 (Post-Layer-5 security operations construction starts)
+
+### Completed
+- **Admin/security dashboard construction.** Added secure-core dashboard aggregation for audit/provenance/operator chain health, external-anchor lag, denied-access spikes, and sandbox-violation counters. Added `GET /operator/security-dashboard`, gated by step-up auth plus `platform:audit_read`.
+- **Abuse-control policy registry.** Added named rate-limit policies for auth, worker uploads, run creation, approval request/consume, and artifact export. Tests assert every required abuse-control surface has a policy and that `keyScope` drives the default runtime limiter key.
+- **Production secret validation.** Added production AWS-secrets-provider validation and rotation-event checks so production cannot silently fall back to local/env secrets, direct `PLASMAWORK_SECRET_*` variables, or static AWS credential env vars.
+- **CI security gates.** Added leak/license guard primitives, high-confidence tracked-file leak scan tests, a CI supply-chain script, CodeQL SAST, dependency review, and license-deny policy wiring in `.github/workflows/security.yml`.
+- **Periodic verifier job.** Added a periodic audit-chain verifier that checks audit, provenance, and operator chains and emits typed success/failure audit events for operator follow-up, including fail-closed `verifier_error` results when an injected verifier dependency throws.
+- **Backend composition hardening.** Added SQL-backed dashboard data source/service, production security-operations route registration, platform-capability middleware, and named route rate-limit middleware factory. Platform grants now require active membership tied to a non-deleted workspace.
+- **Secure frontend readiness planning.** Added `program_development/secure_frontend_readiness_plan.md`, frontend-facing secure-core route/readiness contracts in `packages/secure_core/src/client/contracts.ts`, and a docs page that identifies ready, fail-closed, deployment-gated, and planned secure UI surfaces.
+- **Session introspection for frontend app shell.** Added `GET /auth/session` plus SQL-backed session reader so the future secure UI can load server-derived identity, assurance level, live workspace memberships, roles, and capabilities without client-supplied privilege claims.
+- **Workbench UI secure binding pass.** Added the `/security` route with a secure-core browser client, explicit fixtures, server-derived session display, dashboard health cards, route-readiness table, and disabled fail-closed/deployment-gated controls. Refactored the Tools panel toward the shared dashboard/list/detail styling pattern while preserving registry, import, test, export, docs, and lifecycle bindings.
+- **Deployment live-probe CI lanes.** Added protected live-probe entrypoints and workflow jobs for DB role checks, gVisor/runsc checks, and WORM Object-Lock read/delete-refusal checks. The default PR security lane remains secrets-free; deployment jobs are non-PR and env-gated.
+- **Documentation.** Added the Security Operations docs page and registered it in the docs site; README now lists the CI supply-chain guard separately from the local hard gate.
+
+### Open questions
+- The dashboard backend now has a real route composition seam and SQL/verifier service. The workbench `/security` route can render against it when the secure backend is mounted; otherwise it labels fixture fallback for local layout review.
+- The secure frontend plan now marks `GET /auth/session` ready for app-shell capability gating and keeps operator remediation disabled until real side effects exist.
+- The CI supply-chain lane is network-backed and intentionally not part of local `scripts/test/all.sh`.
+
+### Next steps
+- Add branch-protection required-check configuration outside the repo and enable the deployment-specific live-probe variables in the target GitHub environment.
+- Build the full secure-core composition root before comprehensive frontend construction.
+
+---
+
 ## 2026-05-07 (Phase 0.5 Layer 5 security gate complete)
 
 ### Completed

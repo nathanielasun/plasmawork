@@ -3,7 +3,9 @@ export default function Troubleshooting() {
     <article>
       <h1>Troubleshooting</h1>
       <p className="page-status">
-        Phase 0 skeleton. Real entries are added when real bugs are encountered.
+        Use this page to decide whether a problem is a local setup issue, a
+        validation failure, a security/permission rejection, or a known bug
+        with an existing regression note.
       </p>
 
       <h2>Where to look first</h2>
@@ -18,7 +20,7 @@ export default function Troubleshooting() {
         </li>
         <li>
           <code>bugs_and_fixes/agent_error_patterns.md</code> — recurring
-          agent mistakes and how to detect them.
+          automation and development mistakes and how to detect them.
         </li>
         <li>
           <code>program.log</code> — runtime log (gitignored). The format is
@@ -26,7 +28,7 @@ export default function Troubleshooting() {
         </li>
       </ol>
 
-      <h2>Common questions (placeholders)</h2>
+      <h2>Common questions</h2>
 
       <h3>The convention checker fails</h3>
       <p>
@@ -45,10 +47,10 @@ export default function Troubleshooting() {
 
       <h3>A documented script is missing</h3>
       <p>
-        That is a Phase 0 convention failure. The README may document planned
+        That is a convention failure. The README may document planned
         commands before the subsystem exists, but the command path itself must
-        exist and either dispatch to the implementation or print the phase
-        where implementation is scheduled.
+        exist and either dispatch to the implementation or explain why the
+        command is unavailable.
       </p>
 
       <h3>A simulation runs but produces nonsense</h3>
@@ -59,15 +61,15 @@ export default function Troubleshooting() {
         ModelSpec for unit mismatches.
       </p>
 
-      <h3>An agent overwrote my edits</h3>
+      <h3>Automation overwrote my edits</h3>
       <p>
-        This must not happen. Agents write only to{" "}
+        This must not happen. Generated changes belong in{" "}
         <code>&lt;capsule&gt;/src/generated/</code>. If you find changes in{" "}
-        <code>&lt;capsule&gt;/src/user_edits/</code> attributable to an agent,
-        log it as an entry in <code>agent_error_patterns.md</code> and file a
-        bug. The provenance trace at{" "}
-        <code>&lt;capsule&gt;/provenance/agent_trace.md</code> identifies the
-        responsible agent run.
+        <code>&lt;capsule&gt;/src/user_edits/</code> attributable to an
+        assisted workflow, log it as an entry in
+        <code>agent_error_patterns.md</code> and file a bug. The provenance
+        trace at <code>&lt;capsule&gt;/provenance/agent_trace.md</code>
+        identifies the responsible run.
       </p>
 
       <h3>I get permission errors writing to /tmp</h3>
@@ -79,11 +81,11 @@ export default function Troubleshooting() {
         it in <code>bugs_and_fixes/bugfixes.md</code>.
       </p>
 
-      <h2>What this page should cover when expanded</h2>
+      <h2>Still missing from this guide</h2>
       <ul>
         <li>Real diagnostic flowcharts for the most common failure modes.</li>
         <li>Backend-specific troubleshooting (CUDA, MPI, external PIC).</li>
-        <li>How to read the agent trace and the provenance lock.</li>
+        <li>How to read the automation trace and the provenance lock.</li>
       </ul>
     </article>
   );

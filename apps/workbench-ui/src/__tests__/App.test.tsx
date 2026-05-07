@@ -56,6 +56,7 @@ describe("App shell", () => {
       "Generated Code",
       "Comparisons",
       "Autonomy",
+      "Security Ops",
       "Documentation",
     ]) {
       expect(within(nav).getByText(label)).toBeInTheDocument();
@@ -72,10 +73,14 @@ describe("App shell", () => {
     expect(screen.getByText("Run Controls")).toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: /collapse sidebar/i });
     fireEvent.click(toggle);
-    // After collapsing the full label is replaced by the short variant.
+    // After collapsing, the rail is icon-only visually while retaining
+    // accessible names for screen readers and tooltips.
     expect(screen.queryByText("Run Controls")).not.toBeInTheDocument();
     const nav = screen.getByRole("navigation");
-    expect(within(nav).getByText("Run")).toBeInTheDocument();
+    expect(within(nav).queryByText("Run")).not.toBeInTheDocument();
+    expect(
+      within(nav).getByRole("link", { name: "Run Controls" }),
+    ).toBeInTheDocument();
     // Toggle aria-label flips so a screen reader knows what it does next.
     expect(
       screen.getByRole("button", { name: /expand sidebar/i }),

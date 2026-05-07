@@ -15,6 +15,7 @@ import {
   type RunRoutesMiddleware,
 } from "../../src/routes/runs.js";
 import { requireRequestId } from "../../src/middleware/requireRequestId.js";
+import type { NamedMiddleware } from "../../src/middleware/compose.js";
 import { toHttpResponse } from "../../src/errors/mapper.js";
 import {
   SecureCoreError,
@@ -275,9 +276,7 @@ type Role =
   | "requireRunCancel";
 
 function makeMiddlewareBundle(opts: BundleOptions): RunRoutesMiddleware {
-  const wrap = (
-    role: Role,
-  ): RunRoutesMiddleware[keyof RunRoutesMiddleware] => ({
+  const wrap = (role: Role): NamedMiddleware => ({
     name:
       role === "requireRunCreate" || role === "requireRunCancel"
         ? "requireCapability"

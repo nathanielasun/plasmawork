@@ -47,6 +47,14 @@ export {
 } from "./verifier.js";
 
 export {
+  PeriodicAuditChainVerifier,
+  type PeriodicAuditChainVerifierOptions,
+  type PeriodicVerifierRun,
+  type PeriodicVerifierResult,
+  type VerifierByLogType,
+} from "./periodicVerifier.js";
+
+export {
   AnchorCommitter,
   type AnchorCommitterOptions,
   type CommitTipOptions,

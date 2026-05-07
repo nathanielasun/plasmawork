@@ -3,8 +3,8 @@ export default function SecurityWorkspaces() {
     <article>
       <h1>Security: Workspaces</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for workspace isolation and
-        object-access policy.
+        Workspaces are the multi-user isolation boundary for capsules, runs,
+        tools, artifacts, approvals, quotas, and provenance records.
       </p>
 
       <h2>Isolation model</h2>
@@ -30,9 +30,9 @@ export default function SecurityWorkspaces() {
       <h2>Storage locality</h2>
       <p>
         Derived artifacts are stored under workspace-scoped prefixes and are
-        written only through server-side path builders. Workers and agents
-        submit object references or artifacts to controlled upload flows; they
-        do not choose final storage locations.
+        written only through server-side path builders. Workers, assisted
+        workflows, and browser clients submit object references or artifacts to
+        controlled upload flows; they do not choose final storage locations.
       </p>
 
       <h2>Failure behavior</h2>

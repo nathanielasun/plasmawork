@@ -3,8 +3,9 @@ export default function ModuleDevelopment() {
     <article>
       <h1>Module Development</h1>
       <p className="page-status">
-        Phase 7 complete. Registry v1 modules declare lifecycle status,
-        dependencies, benchmark references, and backend compatibility.
+        Physics modules are reusable scientific components. Each module must
+        declare units, validity limits, tests, benchmarks, dependencies, and
+        backend compatibility before it can be trusted by default.
       </p>
 
       <h2>Where modules live</h2>
@@ -28,8 +29,9 @@ export default function ModuleDevelopment() {
         <code>{`draft → candidate → validated → trusted → deprecated`}</code>
       </pre>
       <p>
-        Agents may create <code>draft</code> and <code>candidate</code>.
-        Promotion to <code>validated</code> requires the criteria below, a
+        New or assisted modules start as <code>draft</code> or
+        <code>candidate</code>. Promotion to <code>validated</code> requires
+        the criteria below, a
         passing declared test run, and a single-use human approval token.
         Local reviewers create that token with
         <code>python -m simworkbench.modules.approve</code>; the registry

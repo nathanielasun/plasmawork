@@ -103,7 +103,11 @@ describe("ToolList", () => {
     });
     render(<ToolList />);
     await screen.findByText("absorption_spectrum_diagnostic");
-    fireEvent.click(screen.getByText("absorption_spectrum_diagnostic"));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /absorption_spectrum_diagnostic/i,
+      }),
+    );
     await waitFor(() => {
       expect(screen.getByText("Find absorption peaks.")).toBeInTheDocument();
       // Ports rendered.

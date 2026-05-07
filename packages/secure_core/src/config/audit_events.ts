@@ -77,6 +77,8 @@ export const AUDIT_EVENTS = [
   "db.migration_applied",
   "bootstrap.completed",
   "log_chain.anchor_committed",
+  "log_chain.verification_succeeded",
+  "log_chain.verification_failed",
 
   // Quota + rate limit
   "quota.exceeded",

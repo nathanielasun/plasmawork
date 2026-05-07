@@ -3,9 +3,9 @@ export default function Architecture() {
     <article>
       <h1>Architecture</h1>
       <p className="page-status">
-        Phase 1 complete. ModelSpec IR, units, runtime, diagnostics, the
-        FastAPI backend, and the Vite + React UI shell are all implemented.
-        Phase 2 finalizes the simulation capsule format.
+        The workbench is split into a Python simulation/runtime layer, a
+        TypeScript UI and documentation layer, secure multi-user scaffolding,
+        and capsule-oriented storage boundaries.
       </p>
 
       <h2>System layout</h2>
@@ -14,24 +14,23 @@ export default function Architecture() {
 docs_site/                TypeScript/MDX documentation
 packages/
   core/                   ModelSpec, runtime, registry, units, validation
-  agent_orchestration/    paper ingestion, codegen, review agents (Phase 4+)
+  agent_orchestration/    paper ingestion, code generation, review automation
   physics_modules/        laser, plasma, species, MD, phase_transition, PDE, MC
   solver_backends/        python_cpu, numba_cpu, cpp, fortran, cuda, kokkos, petsc, amrex, external_pic
   visualization/          plotters, viewers, dashboards, exporters
   internal_tools/         SDK, registry, examples, templates`}</code>
       </pre>
       <p>
-        Phase 0 includes concrete package manifests for the UI and Python core
-        so bootstrap, convention, and future build scripts have stable entry
-        points even before the runtime and UI are implemented.
+        Package manifests and command wrappers are intentionally present even
+        for surfaces that are deployment-gated. Documentation should point at
+        real entrypoints, and an unavailable command should fail with a clear
+        message rather than a missing path.
       </p>
       <p>
-        Phase 1A adds <code>simworkbench.experiment</code> and{" "}
-        <code>simworkbench.serialization</code> for the core experiment model:
-        <code>Experiment</code>, <code>RunConfig</code>,{" "}
-        <code>BackendConfig</code>, <code>DiagnosticConfig</code>, and YAML
-        save/load. Phase 1B adds <code>simworkbench.units</code> and enforces
-        unit-aware ModelSpec boundaries.
+        The core experiment model is built around <code>ModelSpec</code>,
+        <code>Experiment</code>, <code>RunConfig</code>,
+        <code>BackendConfig</code>, <code>DiagnosticConfig</code>, unit-aware
+        boundaries, and explicit serialization.
       </p>
 
       <h2>Dependency direction</h2>
@@ -43,7 +42,7 @@ packages/
         {" "}<code>apps/workbench-ui → core (via API)</code>.
         {" "}<code>docs_site</code> is standalone.
       </p>
-      <p>No package imports its parent — circular imports across phase boundaries are forbidden.</p>
+      <p>No package imports its parent; cross-package coupling goes through documented APIs or registries.</p>
 
       <h2>Process boundaries</h2>
       <ul>
@@ -60,11 +59,11 @@ packages/
         <li><strong>Validation</strong> — every simulation and module carries a validation status label.</li>
       </ul>
 
-      <h2>What this page should cover when expanded</h2>
+      <h2>Operational reading order</h2>
       <ul>
-        <li>Sequence diagrams for: paper import → ModelSpec → run → capsule.</li>
-        <li>Backend selection logic and the policy in <code>configs/backends.yaml</code>.</li>
-        <li>Provenance flow and what is captured at each step.</li>
+        <li>Read <strong>Simulation Capsules</strong> for durable run storage and export behavior.</li>
+        <li>Read <strong>Validation</strong> before trusting numerical output.</li>
+        <li>Read <strong>Security and Operations</strong> pages before enabling multi-user deployment features.</li>
       </ul>
     </article>
   );

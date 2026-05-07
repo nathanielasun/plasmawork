@@ -1907,6 +1907,18 @@ check_grep_in_file 'Security Rules for Multi-User Workbench Work' CLAUDE.md \
 check_file_executable scripts/test/security.sh "scripts/test/security.sh runs §29 spec-level invariants"
 check_grep_in_file 'vitest run test/security' scripts/test/security.sh \
   "security.sh actually runs the §29 suite under packages/secure_core/test/security/"
+check_file_executable scripts/test/security_live_db.sh \
+  "security_live_db.sh executable"
+check_file_executable scripts/test/security_live_runsc.sh \
+  "security_live_runsc.sh executable"
+check_file_executable scripts/test/security_live_worm.sh \
+  "security_live_worm.sh executable"
+check_grep_in_file 'PLASMAWORK_TEST_DB_URL' scripts/test/security_live_db.sh \
+  "DB live-probe script requires PLASMAWORK_TEST_DB_URL"
+check_grep_in_file 'runsc --version' scripts/test/security_live_runsc.sh \
+  "runsc live-probe script fails closed when runsc is absent"
+check_grep_in_file 'PLASMAWORK_ANCHOR_LIVE_PROBES' scripts/test/security_live_worm.sh \
+  "WORM live-probe script requires explicit live-probe opt-in"
 check_file_exists packages/secure_core/test/security/sandbox.test.ts
 check_grep_in_file '§29 #38' packages/secure_core/test/security/sandbox.test.ts \
   "§29 #38 (egress default-deny) covered by spec-level invariant"
@@ -1938,6 +1950,10 @@ check_grep_in_file 'extracted' \
 
 section "secure_core Layer-5 integration testing + CI"
 check_file_exists packages/secure_core/test/security/section29_coverage.test.ts
+check_file_exists packages/secure_core/test/security/wormLive.test.ts \
+  "WORM Object-Lock live probe test"
+check_grep_in_file 'DeleteObjectCommand' packages/secure_core/test/security/wormLive.test.ts \
+  "WORM live probe attempts delete of pinned retained object"
 for n in $(seq 1 84); do
   check_grep_in_file "§29 #${n} —" \
     packages/secure_core/test/security/section29_coverage.test.ts \
@@ -1955,6 +1971,18 @@ check_grep_in_file 'scripts/test/security\.sh' .github/workflows/security.yml \
   "L5.3 CI workflow invokes scripts/test/security.sh"
 check_grep_in_file 'secure-core-security' .github/workflows/security.yml \
   "L5.3 CI exposes a branch-protection-ready job name"
+check_grep_in_file 'secure-core-db-live-probes' .github/workflows/security.yml \
+  "CI exposes DB live-probe job"
+check_grep_in_file 'secure-core-runsc-live-probes' .github/workflows/security.yml \
+  "CI exposes runsc live-probe job"
+check_grep_in_file 'secure-core-worm-live-probes' .github/workflows/security.yml \
+  "CI exposes WORM live-probe job"
+check_grep_in_file 'PLASMAWORK_TEST_DB_URL' .github/workflows/security.yml \
+  "CI wires PLASMAWORK_TEST_DB_URL for DB live probes"
+check_grep_in_file 'PLASMAWORK_RUNSC_PROBES' .github/workflows/security.yml \
+  "CI wires PLASMAWORK_RUNSC_PROBES for runsc live probes"
+check_grep_in_file 'PLASMAWORK_ANCHOR_LIVE_PROBES' .github/workflows/security.yml \
+  "CI wires PLASMAWORK_ANCHOR_LIVE_PROBES for WORM live probes"
 check_grep_in_file 'branch_protection\.bypass' \
   packages/secure_core/src/config/audit_events.ts \
   "L5.3 audit enum includes branch_protection.bypass for admin override ingestion"
@@ -1983,6 +2011,182 @@ check_file_exists program_development/architectural_decisions/ADR-0013-secure-mu
 check_grep_in_file 'ADR-0013-secure-multi-user-foundation' \
   secure_multi_user_scaffolding_plan_v4.md \
   "L5.5 v4 plan references aggregate ADR-0013"
+
+section "secure_core post-Layer-5 security operations"
+check_file_exists packages/secure_core/src/security/dashboard.ts \
+  "security operations dashboard aggregation module"
+check_file_exists packages/secure_core/src/security/dashboardService.ts \
+  "security operations SQL-backed dashboard service"
+check_file_exists packages/secure_core/src/security/operations.ts \
+  "security operations route/verifier composition module"
+check_file_exists packages/secure_core/src/client/contracts.ts \
+  "frontend-facing secure-core route/readiness contracts"
+check_file_exists packages/secure_core/test/client/contracts.test.ts \
+  "frontend secure-core contract tests"
+check_file_exists packages/secure_core/src/routes/session.ts \
+  "frontend session-introspection route"
+check_file_exists packages/secure_core/src/auth/sessionService.ts \
+  "SQL-backed current-session reader"
+check_file_exists packages/secure_core/test/routes/session.test.ts \
+  "session route tests"
+check_file_exists packages/secure_core/test/auth/sessionService.test.ts \
+  "current-session reader tests"
+check_grep_in_file 'operator\.remediate' \
+  packages/secure_core/src/client/contracts.ts \
+  "frontend contract marks operator remediation explicitly"
+check_grep_in_file 'readiness: "fail_closed"' \
+  packages/secure_core/src/client/contracts.ts \
+  "frontend contract carries fail-closed readiness states"
+check_grep_in_file 'auth\.session' \
+  packages/secure_core/src/client/contracts.ts \
+  "frontend contract records session-introspection route"
+check_grep_in_file '/auth/session' \
+  packages/secure_core/src/routes/session.ts \
+  "session route exposes GET /auth/session"
+check_grep_in_file 'CURRENT_SESSION_RESPONSE_SCHEMA' \
+  packages/secure_core/src/routes/session.ts \
+  "session route has explicit response schema"
+check_grep_in_file 'actorType === "unauthenticated"' \
+  packages/secure_core/src/routes/session.ts \
+  "session route rejects malformed unauthenticated actor context"
+check_grep_in_file 'removed_at IS NULL' \
+  packages/secure_core/src/auth/sessionService.ts \
+  "session reader only includes live memberships"
+check_grep_in_file 'deleted_at IS NULL' \
+  packages/secure_core/src/auth/sessionService.ts \
+  "session reader excludes deleted workspaces"
+check_grep_in_file 'LEFT JOIN role_permissions' \
+  packages/secure_core/src/auth/sessionService.ts \
+  "session reader preserves zero-capability memberships"
+check_grep_in_file 'zero capabilities' \
+  AGENTS.md \
+  "AGENTS.md records zero-capability membership read-model rule"
+check_grep_in_file 'zero capabilities' \
+  CLAUDE.md \
+  "CLAUDE.md records zero-capability membership read-model rule"
+check_grep_in_file '/auth/session' \
+  docs_site/src/content/authentication.tsx \
+  "authentication docs document session introspection"
+check_file_exists packages/secure_core/src/routes/securityDashboard.ts \
+  "operator security dashboard route"
+check_file_exists packages/secure_core/test/security/dashboard.test.ts \
+  "security dashboard aggregation tests"
+check_file_exists packages/secure_core/test/security/dashboardService.test.ts \
+  "security dashboard service tests"
+check_file_exists packages/secure_core/test/security/operations.test.ts \
+  "security operations composition tests"
+check_file_exists packages/secure_core/test/routes/securityDashboard.test.ts \
+  "security dashboard route tests"
+check_grep_in_file '/operator/security-dashboard' \
+  packages/secure_core/src/routes/securityDashboard.ts \
+  "security dashboard route is operator-scoped"
+check_file_exists packages/secure_core/src/rateLimits/policies.ts \
+  "named rate-limit policy registry"
+check_file_exists packages/secure_core/test/rateLimits/policies.test.ts \
+  "rate-limit policy coverage tests"
+check_grep_in_file 'ABUSE_CONTROL_SURFACES' \
+  packages/secure_core/src/rateLimits/policies.ts \
+  "rate-limit policy covers abuse-control surfaces"
+check_grep_in_file 'keyExtractorForPolicy' \
+  packages/secure_core/src/rateLimits/policies.ts \
+  "rate-limit policy key scopes drive runtime extraction"
+check_grep_in_file 'buildSecurityRouteRateLimitMiddleware' \
+  packages/secure_core/src/rateLimits/policies.ts \
+  "rate-limit policies expose a route-middleware bundle"
+check_grep_in_file 'enforceRunCreateRateLimit' \
+  packages/secure_core/src/routes/runs.ts \
+  "run create route accepts named rate-limit policy middleware"
+check_grep_in_file 'enforceArtifactExportRateLimit' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "artifact export route accepts named rate-limit policy middleware"
+check_file_exists packages/secure_core/src/middleware/requirePlatformCapability.ts \
+  "platform capability middleware for operator surfaces"
+check_file_exists packages/secure_core/test/middleware/requirePlatformCapability.test.ts \
+  "platform capability middleware tests"
+check_file_exists packages/secure_core/src/middleware/operatorStepUp.ts \
+  "operator step-up decorator middleware"
+check_grep_in_file 'withOperatorStepUp' \
+  packages/secure_core/src/routes/operator.ts \
+  "operator routes run step-up in the capability slot"
+check_grep_in_file 'calls\.invoked\)\.toBe\(0\)' \
+  packages/secure_core/test/routes/operator.test.ts \
+  "operator route test proves step-up rejects before approval consumption"
+check_file_exists packages/secure_core/src/secrets/productionValidation.ts \
+  "production secrets validation module"
+check_file_exists packages/secure_core/test/secrets/productionValidation.test.ts \
+  "production secrets validation tests"
+check_grep_in_file 'validateProductionRotationEvent' \
+  packages/secure_core/src/secrets/productionValidation.ts \
+  "secret rotation validation requires provider version evidence"
+check_file_exists packages/secure_core/src/security/ciGuards.ts \
+  "CI leak/license guard module"
+check_file_exists packages/secure_core/test/security/ciGuards.test.ts \
+  "CI leak/license guard tests"
+check_file_executable scripts/test/security_supply_chain.sh \
+  "security supply-chain test script"
+check_grep_in_file 'security_supply_chain\.sh' \
+  .github/workflows/security.yml \
+  "security CI runs supply-chain guard"
+check_grep_in_file 'github/codeql-action/analyze' \
+  .github/workflows/security.yml \
+  "security CI runs CodeQL SAST"
+check_grep_in_file 'dependency-review-action' \
+  .github/workflows/security.yml \
+  "security CI runs dependency/license review"
+check_file_exists packages/secure_core/src/audit/periodicVerifier.ts \
+  "periodic audit-chain verifier job"
+check_file_exists packages/secure_core/test/audit/periodicVerifier.test.ts \
+  "periodic verifier tests"
+check_grep_in_file 'log_chain\.verification_failed' \
+  packages/secure_core/src/config/audit_events.ts \
+  "periodic verifier failure event is typed"
+check_grep_in_file 'verifier_error' \
+  packages/secure_core/src/audit/periodicVerifier.ts \
+  "periodic verifier converts thrown dependencies into auditable failures"
+check_grep_in_file 'startPeriodicAuditChainVerifier' \
+  packages/secure_core/src/security/operations.ts \
+  "security operations composition starts periodic verifier job"
+check_file_exists docs_site/src/content/security_operations.tsx \
+  "security operations docs page"
+check_file_exists docs_site/src/content/secure_frontend_readiness.tsx \
+  "secure frontend readiness docs page"
+check_grep_in_file 'security-operations' \
+  docs_site/src/pages/docsPages.ts \
+  "security operations docs page is registered"
+check_grep_in_file 'secure-frontend-readiness' \
+  docs_site/src/pages/docsPages.ts \
+  "secure frontend readiness docs page is registered"
+check_file_exists apps/workbench-ui/src/api/secureCoreClient.ts \
+  "workbench secure-core browser client"
+check_file_exists apps/workbench-ui/src/api/secureCoreFixtures.ts \
+  "workbench secure-core explicit fixtures"
+check_file_exists apps/workbench-ui/src/components/security/SecurityOperationsPanel.tsx \
+  "workbench security operations panel"
+check_file_exists apps/workbench-ui/src/__tests__/SecurityOperationsPanel.test.tsx \
+  "workbench security operations panel test"
+check_grep_in_file '/security' \
+  apps/workbench-ui/src/App.tsx \
+  "App.tsx routes /security"
+check_grep_in_file 'fixture fallback' \
+  apps/workbench-ui/src/components/security/SecurityOperationsPanel.tsx \
+  "security UI labels fixture fallback"
+check_grep_in_file 'Disabled until backend readiness changes' \
+  apps/workbench-ui/src/components/security/SecurityOperationsPanel.tsx \
+  "security UI disables fail-closed surfaces"
+check_grep_in_file 'Dashboard / registry pattern' \
+  STYLING.md \
+  "STYLING.md documents dashboard/list/detail layout pattern"
+check_grep_in_file 'Secure UI surfaces' \
+  STYLING.md \
+  "STYLING.md documents secure UI fixture/fail-closed rules"
+check_grep_in_file '/security' \
+  docs_site/src/content/secure_frontend_readiness.tsx \
+  "secure frontend readiness docs mention /security route"
+check_file_exists program_development/secure_frontend_readiness_plan.md \
+  "secure frontend readiness planning document"
+check_grep_in_file 'STYLING\.md' \
+  program_development/secure_frontend_readiness_plan.md \
+  "secure frontend readiness plan references styling source of truth"
 
 section "secure_core Layer-4 routes (L4.1, L4.2, L4.3, L4.4, L4.5, L4.6, L4.7, L4.8, L4.9, L4.10, L4.12)"
 # L4.12 — health / readiness / metrics
@@ -2491,6 +2695,9 @@ check_grep_in_file 'worker.token_issued' \
 check_grep_in_file 'worker.token_issued' \
   packages/secure_core/src/workers/tokenRoute.ts \
   "L4.11 emits worker.token_issued on success"
+check_grep_absent_in_file 'unauthenticated.*operator|operator.*unauthenticated' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 token route never upgrades unauthenticated actor context to operator"
 check_grep_in_file 'RUN_TERMINAL_STATES' \
   packages/secure_core/src/workers/tokenRoute.ts \
   "L4.11 refuses terminal-state runs (completed/failed/cancelled/expired)"

@@ -5,7 +5,7 @@
  * via localStorage.
  */
 import { useEffect, useState } from "react";
-import { NavLink, Route, Routes, Navigate } from "react-router-dom";
+import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import SimulationList from "./components/SimulationList";
 import RunControls from "./components/RunControls";
 import CodeViewer from "./components/CodeViewer";
@@ -20,28 +20,30 @@ import GeneratedCodeView from "./components/codegen/GeneratedCodeView";
 import ComparisonReportPanel from "./components/reports/ComparisonReport";
 import AutonomyPanel from "./components/autonomy/AutonomyPanel";
 import ExamplesGallery from "./components/examples/ExamplesGallery";
+import SecurityOperationsPanel from "./components/security/SecurityOperationsPanel";
 
 interface NavEntry {
   readonly to: string;
   readonly label: string;
-  readonly short: string; // shown when sidebar is collapsed
+  readonly icon: string; // shown when sidebar is collapsed
 }
 
 const NAV: readonly NavEntry[] = [
-  { to: "/examples", label: "Examples", short: "Ex" },
-  { to: "/simulations", label: "Simulations", short: "Sim" },
-  { to: "/runs", label: "Run Controls", short: "Run" },
-  { to: "/code", label: "Code Viewer", short: "Code" },
-  { to: "/diagnostics", label: "Diagnostics", short: "Diag" },
-  { to: "/plots", label: "Plots", short: "Plot" },
-  { to: "/capsules", label: "Capsules", short: "Caps" },
-  { to: "/tools", label: "Tools", short: "Tool" },
-  { to: "/papers", label: "Papers", short: "Pap" },
-  { to: "/proposals", label: "Proposals", short: "Prop" },
-  { to: "/codegen", label: "Generated Code", short: "Gen" },
-  { to: "/comparisons", label: "Comparisons", short: "Comp" },
-  { to: "/autonomy", label: "Autonomy", short: "Auto" },
-  { to: "/docs", label: "Documentation", short: "Docs" },
+  { to: "/examples", label: "Examples", icon: "◇" },
+  { to: "/simulations", label: "Simulations", icon: "◎" },
+  { to: "/runs", label: "Run Controls", icon: "▷" },
+  { to: "/code", label: "Code Viewer", icon: "⌘" },
+  { to: "/diagnostics", label: "Diagnostics", icon: "∿" },
+  { to: "/plots", label: "Plots", icon: "⌁" },
+  { to: "/capsules", label: "Capsules", icon: "▣" },
+  { to: "/tools", label: "Tools", icon: "⚒" },
+  { to: "/papers", label: "Papers", icon: "¶" },
+  { to: "/proposals", label: "Proposals", icon: "△" },
+  { to: "/codegen", label: "Generated Code", icon: "⌬" },
+  { to: "/comparisons", label: "Comparisons", icon: "≋" },
+  { to: "/autonomy", label: "Autonomy", icon: "∞" },
+  { to: "/security", label: "Security Ops", icon: "§" },
+  { to: "/docs", label: "Documentation", icon: "▤" },
 ];
 
 const STORAGE_KEY = "workbench:sidebar-collapsed";
@@ -56,7 +58,10 @@ function readInitialCollapsed(): boolean {
 }
 
 export default function App(): JSX.Element {
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
+  const isDocsRoute =
+    location.pathname === "/docs" || location.pathname.startsWith("/docs/");
 
   useEffect(() => {
     try {
@@ -91,10 +96,13 @@ export default function App(): JSX.Element {
                 <NavLink
                   to={entry.to}
                   className={({ isActive }) => (isActive ? "active" : undefined)}
+                  aria-label={collapsed ? entry.label : undefined}
                   title={collapsed ? entry.label : undefined}
                 >
                   {collapsed ? (
-                    <span className="sidebar-short">{entry.short}</span>
+                    <span className="sidebar-icon" aria-hidden="true">
+                      {entry.icon}
+                    </span>
                   ) : (
                     entry.label
                   )}
@@ -105,7 +113,7 @@ export default function App(): JSX.Element {
         </nav>
         {!collapsed && <p className="phase-tag">Phase 10</p>}
       </aside>
-      <main>
+      <main className={isDocsRoute ? "main-docs" : undefined}>
         <Routes>
           <Route path="/" element={<Navigate to="/examples" replace />} />
           <Route path="/examples" element={<ExamplesGallery />} />
@@ -121,6 +129,7 @@ export default function App(): JSX.Element {
           <Route path="/codegen" element={<GeneratedCodeView />} />
           <Route path="/comparisons" element={<ComparisonReportPanel />} />
           <Route path="/autonomy" element={<AutonomyPanel />} />
+          <Route path="/security" element={<SecurityOperationsPanel />} />
           <Route path="/docs" element={<DocsViewer />} />
           <Route path="/docs/:slug" element={<DocsViewer />} />
           <Route path="*" element={<Navigate to="/examples" replace />} />

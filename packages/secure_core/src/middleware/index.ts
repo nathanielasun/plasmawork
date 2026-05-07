@@ -45,6 +45,14 @@ export {
   type RequireCapabilityDeps,
 } from "./requireCapability.js";
 export {
+  requirePlatformCapability,
+  type RequirePlatformCapabilityDeps,
+} from "./requirePlatformCapability.js";
+export {
+  withOperatorStepUp,
+  type WithOperatorStepUpOptions,
+} from "./operatorStepUp.js";
+export {
   enforceObjectWorkspaceScope,
   type EnforceObjectScopeDeps,
   type ObjectScopeKind,

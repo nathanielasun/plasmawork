@@ -30,11 +30,19 @@ Tests that require a real OS-level enforcer:
 Each is gated on a deployment-side env var:
 - `PLASMAWORK_RUNSC_PROBES=1` for sandbox live probes
 - `PLASMAWORK_TEST_DB_URL=...` for DB privilege probes
-- `PLASMAWORK_ANCHOR_S3_*` for anchor probes
+- `PLASMAWORK_ANCHOR_LIVE_PROBES=1` plus `PLASMAWORK_ANCHOR_S3_*`
+  for anchor probes
 
 Default CI runs the always-on lane through `scripts/test/security.sh`.
-Deployment CI must add dedicated lanes that ship the relevant runtimes;
-dev hosts skip unavailable probes with a clear `it.skipIf` reason.
+Deployment CI uses dedicated entrypoints:
+
+- `scripts/test/security_live_db.sh`
+- `scripts/test/security_live_runsc.sh`
+- `scripts/test/security_live_worm.sh`
+
+Those scripts fail closed when their required environment is missing;
+dev hosts skip unavailable probes with a clear `it.skipIf` reason in
+the always-on suite.
 
 ## What this directory does NOT prove
 

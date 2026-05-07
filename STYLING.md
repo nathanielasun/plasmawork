@@ -1,6 +1,6 @@
 # Workbench UI Styling Guide
 
-**Last updated: 2026-05-05**
+**Last updated: 2026-05-07**
 
 This document is the source of truth for how the workbench UI is styled
 and how that styling should evolve. Companion to `LIMITATIONS.md` (which
@@ -29,6 +29,10 @@ maintenance protocol section.
   rather than re-inventing visual shapes.
 - **One layout shell:** sidebar (collapsible) + main content. Hero
   header → cards → optional KPI strip is the per-panel pattern.
+- **Functional dashboard layouts:** use the shared grid/list/detail
+  classes in `styles.css` for dense operator, registry, and contract
+  panels. These classes exist to prevent overflow, clipped controls, and
+  accidental static mockups.
 - **Per-panel adoption is gradual.** Older panels keep their existing
   element-level styling until they're naturally refactored. Don't do
   a one-shot port of every panel — each refactor is a chance to slip
@@ -215,17 +219,70 @@ Most panels follow:
    KPI strips for at-a-glance numbers.
 4. **Errors** as `<p className="error" role="alert">`.
 
+### Dashboard / registry pattern
+
+Dense operational pages use a stronger layout scaffold:
+
+- `.page-stack` wraps the route and provides consistent vertical rhythm.
+- `.dashboard-grid`, `.dashboard-grid-2`, and `.dashboard-grid-3` provide
+  bounded responsive grids where every child gets `min-width: 0`.
+- `.tools-layout` provides a sticky left registry/list column and a
+  scroll-safe detail column for tool-construction style pages.
+- `.list-row` is the full-width selectable row pattern for registry
+  objects; it keeps status pills visible while truncating long names.
+- `.detail-grid` is the label/value contract view for server-derived
+  objects, manifests, session state, and route metadata.
+- `.table-wrap` is mandatory around wide tables in Cards so the table
+  scrolls internally rather than widening the entire app shell.
+
+Use these classes for security dashboards, tool registries, workspace
+lists, approval queues, and any route-readiness or contract table. Do
+not rebuild the same grid/list/detail pattern with inline styles.
+
+### Secure UI surfaces
+
+Security UI has two extra rules:
+
+- Live backend data is preferred; if a local dev panel uses fixtures, it
+  must label fixture mode visibly.
+- Fail-closed or deployment-gated routes render as disabled controls with
+  the route id and reason. Hiding stubs makes readiness ambiguous and
+  encourages accidental enablement.
+
 ### Docs page
 
-`.docs-page` wraps the docs panel; `.docs-nav` is a horizontal pill row
-above the content; `.docs-content` provides the typography reset
-(78ch max-width, dark code blocks, subtle h2 separators, accent links).
-Pages themselves stay in `docs_site/src/content/<slug>.tsx` as plain HTML;
-the wrapper styling does the work.
+`.docs-page` wraps the documentation browser. It uses an attached two-column
+manual layout: a searchable, collapsible secondary `.docs-sidebar` flush
+against the primary app sidebar and a scrollable reading column in
+`.docs-main`. The docs sidebar is not a floating card/island. Do not restore
+the old horizontal row of 20+ page buttons; long documentation sets need
+categorized dropdown sections similar to Blender/Python/TensorFlow
+documentation. The standalone `docs_site` mirrors the same pattern through
+`docs_site/src/components/Sidebar.tsx`.
 
-`.page-status` is the per-page "Phase N complete" info box: subtle
-`--radius-md` rounding, `validated`-blue fill, block layout. It's
-**not** a pill; the multi-line content needs proper info-box treatment.
+Collapsed side rails are icon/mark-only: no visible label text such as
+`Docs`, `Run`, or `Sim`. Use `aria-label`, `title`, and semantic link/button
+labels for accessibility while keeping the visual rail zen. The documentation
+rail collapse marker is a small outlined document mark; avoid gradient bars or
+smudges in collapsed navigation.
+
+`DocsViewer.tsx` owns documentation navigation metadata:
+
+- `DOC_PAGE_META` gives each page a user-facing title, summary, and search
+  keywords.
+- `DOC_SECTIONS` groups pages into sidebar dropdowns.
+- New docs pages must be added to the appropriate section in the same change
+  that adds `docs_site/src/content/<slug>.tsx`.
+
+Pages themselves stay in `docs_site/src/content/<slug>.tsx` as plain HTML; the
+wrapper styling does the layout and typography work. Documentation content is
+for users and developers, not just implementation agents: prefer current
+capability, workflow, guarantees, and operational guidance over phase/workstream
+completion prose.
+
+`.page-status` is the per-page current-capability note: subtle `--radius-md`
+rounding, `validated`-blue fill, block layout. It is **not** a pill; the
+multi-line content needs proper info-box treatment.
 
 ---
 

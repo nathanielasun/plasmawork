@@ -112,6 +112,7 @@ const baseAudit: AuditContext = {
 
 interface BundleOptions {
   authed?: boolean;
+  actorType?: AuthContext["actorType"];
   workerIssueTokenAllowed?: boolean;
 }
 
@@ -144,7 +145,10 @@ function makeMiddlewareBundle(opts: BundleOptions): WorkerTokenRouteMiddleware {
         if (opts.authed === false) {
           throw new SecureCoreError("UNAUTHENTICATED", "no auth.");
         }
-        req.auth = baseAuth;
+        req.auth = {
+          ...baseAuth,
+          actorType: opts.actorType ?? baseAuth.actorType,
+        };
         return;
       }
       if (name === "attachAuditActor") {
@@ -284,6 +288,22 @@ describe("L4.11 — worker token issuance route", () => {
       payload: {},
     });
     expect(r.statusCode).toBe(403);
+    expect(audit.calls.find((c) => c.action === "worker.token_issued")).toBeUndefined();
+  });
+
+  it("POST refuses malformed unauthenticated actor context instead of auditing it as operator", async () => {
+    const app = buildApp({
+      workerHmacKey: HMAC_KEY,
+      runQueryService: makeStubRunSource({ status: "running" }),
+      auditLogger: audit.logger,
+      mw: makeMiddlewareBundle({ actorType: "unauthenticated" }),
+    });
+    const r = await app.inject({
+      method: "POST",
+      url: `/internal/workers/runs/${RUN_ID}/token`,
+      payload: {},
+    });
+    expect(r.statusCode).toBe(401);
     expect(audit.calls.find((c) => c.action === "worker.token_issued")).toBeUndefined();
   });
 

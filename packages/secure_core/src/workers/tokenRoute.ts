@@ -184,6 +184,12 @@ export const workerTokenRoute: FastifyPluginAsync<
       if (req.auth === undefined) {
         throw new SecureCoreError("UNAUTHENTICATED", "Auth required.");
       }
+      if (req.auth.actorType === "unauthenticated") {
+        throw new SecureCoreError(
+          "UNAUTHENTICATED",
+          "Authenticated actor required.",
+        );
+      }
 
       const runId = assertUuid(req.params.runId, "runId");
 
@@ -241,7 +247,7 @@ export const workerTokenRoute: FastifyPluginAsync<
       await opts.auditLogger.write({
         workspaceId: run.workspaceId,
         actorUserId: req.auth.userId,
-        actorType: req.auth.actorType === "unauthenticated" ? "operator" : req.auth.actorType,
+        actorType: req.auth.actorType,
         action: "worker.token_issued",
         objectType: "run",
         objectId: run.id,

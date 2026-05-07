@@ -12,6 +12,8 @@
  * carries a row pointing at `anchored_row_id = X` for this `log_type`
  * but the local DB no longer contains row X, or contains it with a
  * different `row_hash`, the verifier reports `tail_truncation`. The
+ * periodic job may additionally report `verifier_error` when an injected
+ * verifier throws before returning a structured report. The
  * anchor table is *append-only* and pinned to external WORM by L3.2
  * (the anchor committer); this module only consumes anchors.
  *
@@ -38,7 +40,8 @@ export type VerifyFailureReason =
   | "hash_mismatch"
   | "missing_prev_hash"
   | "tail_truncation"
-  | "external_anchor_mismatch";
+  | "external_anchor_mismatch"
+  | "verifier_error";
 
 export type VerifyReport =
   | { ok: true; rowsVerified: number; tipHash: string | null }

@@ -51,6 +51,11 @@ import type { RecoveryService } from "../auth/recoveryService.js";
  */
 export interface AuthRoutesMiddleware {
   readonly enforceRateLimit: NamedMiddleware;
+  readonly enforcePasswordResetRequestRateLimit?: NamedMiddleware;
+  readonly enforcePasswordResetConsumeRateLimit?: NamedMiddleware;
+  readonly enforceEmailVerifyRequestRateLimit?: NamedMiddleware;
+  readonly enforceEmailVerifyConsumeRateLimit?: NamedMiddleware;
+  readonly enforceMfaRecoveryRateLimit?: NamedMiddleware;
   readonly enforceCsrfForStateChange: NamedMiddleware;
   readonly validateInputSchemaPasswordResetRequest: NamedMiddleware;
   readonly validateInputSchemaPasswordResetConsume: NamedMiddleware;
@@ -149,6 +154,16 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   opts,
 ) => {
   const { service, mw } = opts;
+  const passwordResetRequestRateLimit =
+    mw.enforcePasswordResetRequestRateLimit ?? mw.enforceRateLimit;
+  const passwordResetConsumeRateLimit =
+    mw.enforcePasswordResetConsumeRateLimit ?? mw.enforceRateLimit;
+  const emailVerifyRequestRateLimit =
+    mw.enforceEmailVerifyRequestRateLimit ?? mw.enforceRateLimit;
+  const emailVerifyConsumeRateLimit =
+    mw.enforceEmailVerifyConsumeRateLimit ?? mw.enforceRateLimit;
+  const mfaRecoveryRateLimit =
+    mw.enforceMfaRecoveryRateLimit ?? mw.enforceRateLimit;
 
   // -------------------------------------------------------------------
   // POST /auth/password-reset/request
@@ -157,7 +172,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     "/auth/password-reset/request",
     {
       preHandler: composeMiddleware([
-        mw.enforceRateLimit,
+        passwordResetRequestRateLimit,
         mw.enforceCsrfForStateChange,
         mw.validateInputSchemaPasswordResetRequest,
       ]),
@@ -178,7 +193,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     "/auth/password-reset/consume",
     {
       preHandler: composeMiddleware([
-        mw.enforceRateLimit,
+        passwordResetConsumeRateLimit,
         mw.enforceCsrfForStateChange,
         mw.validateInputSchemaPasswordResetConsume,
       ]),
@@ -200,7 +215,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     "/auth/email-verify/request",
     {
       preHandler: composeMiddleware([
-        mw.enforceRateLimit,
+        emailVerifyRequestRateLimit,
         mw.enforceCsrfForStateChange,
         mw.validateInputSchemaEmailVerifyRequest,
       ]),
@@ -221,7 +236,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     "/auth/email-verify/consume",
     {
       preHandler: composeMiddleware([
-        mw.enforceRateLimit,
+        emailVerifyConsumeRateLimit,
         mw.enforceCsrfForStateChange,
         mw.validateInputSchemaEmailVerifyConsume,
       ]),
@@ -242,7 +257,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     "/auth/mfa-recovery",
     {
       preHandler: composeMiddleware([
-        mw.enforceRateLimit,
+        mfaRecoveryRateLimit,
         mw.enforceCsrfForStateChange,
         mw.validateInputSchemaMfaRecovery,
       ]),

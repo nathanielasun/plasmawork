@@ -68,6 +68,9 @@ function assertUuid(value: unknown, label: string): string {
  * with the `opts.action` — see the action-binding note above.
  */
 export interface ApprovalRoutesMiddleware {
+  readonly enforceApprovalRequestRateLimit?: NamedMiddleware;
+  readonly enforceApprovalConsumeRateLimit?: NamedMiddleware;
+  readonly enforceApprovalDenyRateLimit?: NamedMiddleware;
   readonly requireAuth: NamedMiddleware;
   readonly enforceCsrfForStateChange: NamedMiddleware;
   readonly attachAuditActor: NamedMiddleware;
@@ -165,11 +168,77 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
     DENY_APPROVAL_REQUEST_SCHEMA,
     opts.auditLogger,
   );
+  const createPreHandler = mw.enforceApprovalRequestRateLimit === undefined
+    ? composeMiddleware([
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateCreateApprovalRequest,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireApprovalRequestCapability,
+      ])
+    : composeMiddleware([
+        mw.enforceApprovalRequestRateLimit,
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateCreateApprovalRequest,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireApprovalRequestCapability,
+      ]);
 
   // L2.9 is action-bound at registration. The factory is called once
   // here, the produced NamedMiddleware is then composed with the §6.2
   // chain like any other middleware.
   const approvalIfHighRisk = mw.requireApprovalIfHighRiskFactory(action);
+  const approvePreHandler = mw.enforceApprovalConsumeRateLimit === undefined
+    ? composeMiddleware([
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateApproveApprovalRequest,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        approvalIfHighRisk,
+      ])
+    : composeMiddleware([
+        mw.enforceApprovalConsumeRateLimit,
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateApproveApprovalRequest,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        approvalIfHighRisk,
+      ]);
+  const denyPreHandler = mw.enforceApprovalDenyRateLimit === undefined
+    ? composeMiddleware([
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateDenyApprovalRequest,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireApprovalDecideCapability,
+      ])
+    : composeMiddleware([
+        mw.enforceApprovalDenyRateLimit,
+        mw.requireAuth,
+        mw.enforceCsrfForStateChange,
+        validateDenyApprovalRequest,
+        mw.attachAuditActor,
+        mw.loadWorkspace,
+        mw.enforceUniformNotFound,
+        mw.requireWorkspaceMembership,
+        mw.requireApprovalDecideCapability,
+      ]);
 
   // -------------------------------------------------------------------
   // POST /workspaces/:workspaceId/approval-requests
@@ -180,16 +249,7 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/approval-requests",
     {
-      preHandler: composeMiddleware([
-        mw.requireAuth,
-        mw.enforceCsrfForStateChange,
-        validateCreateApprovalRequest,
-        mw.attachAuditActor,
-        mw.loadWorkspace,
-        mw.enforceUniformNotFound,
-        mw.requireWorkspaceMembership,
-        mw.requireApprovalRequestCapability,
-      ]),
+      preHandler: createPreHandler,
     },
     async (req, reply) => {
       if (req.auth === undefined) {
@@ -223,16 +283,7 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/approval-requests/:approvalRequestId/approve",
     {
-      preHandler: composeMiddleware([
-        mw.requireAuth,
-        mw.enforceCsrfForStateChange,
-        validateApproveApprovalRequest,
-        mw.attachAuditActor,
-        mw.loadWorkspace,
-        mw.enforceUniformNotFound,
-        mw.requireWorkspaceMembership,
-        approvalIfHighRisk,
-      ]),
+      preHandler: approvePreHandler,
     },
     async (req, reply) => {
       assertUuid(req.params.workspaceId, "workspaceId");
@@ -269,16 +320,7 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRoutesOptions> = async (
   }>(
     "/workspaces/:workspaceId/approval-requests/:approvalRequestId/deny",
     {
-      preHandler: composeMiddleware([
-        mw.requireAuth,
-        mw.enforceCsrfForStateChange,
-        validateDenyApprovalRequest,
-        mw.attachAuditActor,
-        mw.loadWorkspace,
-        mw.enforceUniformNotFound,
-        mw.requireWorkspaceMembership,
-        mw.requireApprovalDecideCapability,
-      ]),
+      preHandler: denyPreHandler,
     },
     async (req, reply) => {
       if (req.auth === undefined) {

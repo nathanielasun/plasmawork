@@ -3,8 +3,8 @@ export default function SecurityCapsuleVersioning() {
     <article>
       <h1>Security: Capsule Versioning</h1>
       <p className="page-status">
-        Secure-core Layer 5 documentation for protected simulation capsule
-        versions.
+        Capsule versioning protects reviewed scientific records from silent
+        overwrite while still allowing new versions and forks.
       </p>
 
       <h2>Version protection</h2>
@@ -29,10 +29,10 @@ export default function SecurityCapsuleVersioning() {
         transaction that commits the transition.
       </p>
 
-      <h2>Agent edits</h2>
+      <h2>Assisted edits</h2>
       <p>
         Generated code belongs in generated capsule areas, and user-edited
-        code is not overwritten silently. Agent-produced drafts remain
+        code is not overwritten silently. Assistant-produced drafts remain
         reviewable, inspectable, and tied to assumptions, units, parameters,
         and validation status.
       </p>

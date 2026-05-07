@@ -10,11 +10,11 @@
 # audit-actor consistency, etc.). They run on any dev host.
 #
 # Live runtime probes (gVisor sandbox, DB role separation against a
-# real PostgreSQL, S3 Object Lock anchor invariants) are gated on
-# deployment-side env vars and skip cleanly when those aren't set:
+# real PostgreSQL, S3 Object Lock anchor invariants) run through
+# dedicated deployment-side scripts/jobs:
 #   - PLASMAWORK_RUNSC_PROBES=1   sandbox live probes
 #   - PLASMAWORK_TEST_DB_URL=...  DB role-privilege probes
-#   - PLASMAWORK_ANCHOR_S3_*      anchor probes
+#   - PLASMAWORK_ANCHOR_LIVE_PROBES=1 + PLASMAWORK_ANCHOR_S3_* anchor probes
 # Layer 5 wires those vars in the dedicated CI lane.
 #
 # This script is a hard gate: a failure fails CI. The §30 item #23
@@ -63,4 +63,9 @@ if [[ -n "${PLASMAWORK_TEST_DB_URL:-}" ]]; then
   echo "[security] DB role probes will fire against PLASMAWORK_TEST_DB_URL"
 else
   echo "[security] DB role probes SKIPPED — set PLASMAWORK_TEST_DB_URL to enable"
+fi
+if [[ -n "${PLASMAWORK_ANCHOR_LIVE_PROBES:-}" ]]; then
+  echo "[security] WORM anchor live probes are deployment-scoped; run scripts/test/security_live_worm.sh"
+else
+  echo "[security] WORM anchor live probes SKIPPED — set PLASMAWORK_ANCHOR_LIVE_PROBES=1 in a protected deployment lane"
 fi
