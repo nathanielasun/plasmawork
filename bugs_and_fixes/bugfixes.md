@@ -1414,3 +1414,48 @@ docs, comments, script output, and UI placeholder copy for old phase-state
 claims. A command that exits 0 while saying "not implemented" is not a harmless
 stub after the phase that owns it has closed. Either implement the current
 contract or fail closed with a documented live/deployment-gated path.
+
+## 2026-05-07: Current-contract scanner and context-hygiene policy
+
+### Affected subsystem
+Documentation governance and repository gates: `AGENTS.md`, `CLAUDE.md`,
+`docs_site/src/content/current_contracts.tsx`, `DocsViewer.tsx`,
+`scripts/dev/check_current_contract_language.py`, convention checker, and
+phase-contract regression tests.
+
+### Symptoms
+The first deprecated phase-state sweep fixed known drift, but it still relied
+on scattered hand-written grep assertions. The approved follow-up policy needed
+one focused scanner that understands current contract zones versus historical
+provenance zones, plus a concise context-hygiene rule so agent manuals do not
+grow into redundant, hard-to-search context dumps.
+
+### Root cause
+The repository had durable rules, but the rules were distributed across long
+documents with partial duplication. That increases model context load and makes
+future agents more likely to miss the precise current-contract rule they need.
+
+### Fix
+- Added `scripts/dev/check_current_contract_language.py`, a current-surface
+  scanner that ignores historical/provenance zones and fails on stale
+  phase-state phrases in current docs, scripts, UI copy, runtime messages, and
+  metadata.
+- Wired the scanner into `scripts/dev/check_repo_conventions.sh` and
+  `tests/regression/test_phase_contract_drift.py`.
+- Added `docs_site/src/content/current_contracts.tsx` and registered it in the
+  docs sidebar/manual metadata. The page records approved policy components A-I,
+  including step I for concise, canonical, grep-searchable agent context.
+- Added `DOC-CONTEXT-HYGIENE` / `DOC-CURRENT-CONTRACT` rules to `AGENTS.md` and
+  a concise operational pointer in `CLAUDE.md`.
+
+### Regression protection
+- `scripts/dev/check_current_contract_language.py` must pass in the default
+  convention checker.
+- `tests/regression/test_phase_contract_drift.py` invokes the scanner directly.
+- Docs build/typecheck covers the new manual page and metadata registration.
+
+### Agent warning
+Do not solve context growth by copying another full policy block into every
+manual. Add a lookup tag and link to the canonical owner. If a touched section
+is sprawling, reconstruct that section around a short index, stable tags, and
+links to the dated bug/provenance records.

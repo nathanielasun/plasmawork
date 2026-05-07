@@ -21,35 +21,40 @@ Treat these as load-bearing. Do not reinterpret them because a local task seems 
 4. Maintain `.gitignore`. Never commit local caches, temp simulation files, intermediate imports, generated outputs, `.env` files, or secrets.
 5. Maintain `bugs_and_fixes/` and `program_development/`.
 6. Every documented command path in `README.md`, `CLAUDE.md`, `AGENTS.md`, or docs pages must exist on disk and be executable. If the subsystem is unavailable in the current environment, add a fail-closed executable stub in the same commit as the doc reference.
+7. **DOC-CONTEXT-HYGIENE.** Keep this runbook concise and searchable. Do not
+   paste long policy copies from `AGENTS.md`, `LIMITATIONS.md`, or
+   `bugs_and_fixes/`; link to the canonical owner and keep only the operational
+   command or checklist needed here. Use stable lookup tags from AGENTS when
+   adding durable sections.
 
 ### Scientific and simulation boundaries
 
-7. Generated scientific simulations must be inspectable, editable, modular, exportable, reloadable, and tied to explicit assumptions, units, parameters, and validation checks.
-8. Prefer validated modules over broad approximations. If a coefficient, equation, source, unit, or validity regime is missing, report the gap; do not fabricate.
-9. At scientific boundaries, reject raw floats and unitless numeric strings inside flexible fields such as `dict[str, Any]`, `fields.initialization`, and `interactions.valid_regime`. Use recursive validators.
-10. Generated code belongs in `<capsule>/src/generated/`; user edits belong in `<capsule>/src/user_edits/`. Never overwrite user edits.
-11. Capsule provenance is append-only after completion. To rerun with changes, fork the capsule.
+8. Generated scientific simulations must be inspectable, editable, modular, exportable, reloadable, and tied to explicit assumptions, units, parameters, and validation checks.
+9. Prefer validated modules over broad approximations. If a coefficient, equation, source, unit, or validity regime is missing, report the gap; do not fabricate.
+10. At scientific boundaries, reject raw floats and unitless numeric strings inside flexible fields such as `dict[str, Any]`, `fields.initialization`, and `interactions.valid_regime`. Use recursive validators.
+11. Generated code belongs in `<capsule>/src/generated/`; user edits belong in `<capsule>/src/user_edits/`. Never overwrite user edits.
+12. Capsule provenance is append-only after completion. To rerun with changes, fork the capsule.
 
 ### Gates, checkers, and lifecycle mutations
 
-12. `scripts/dev/check_repo_conventions.sh` is the hard gate for repository health and completed deliverables. It must stay green.
-13. `scripts/dev/check_repo_conventions.sh --include-open-workstreams` is the opt-in TODO gate for open work. It may fail by design and must never be wired into `scripts/test/all.sh`.
-14. Reality-test plan-derived artifacts. The plan is design; the filesystem is truth.
-15. The plan's `§Phase N → Workstream NX` description is the deliverable list. Milestone pre-gate hints are only prompts; enumerate the plan's full bullet list before claiming completion.
-16. Lifecycle promotion gates live at the mutation boundary. Registry methods that rewrite `tool.yaml`, `module.yaml`, backend metadata, or lifecycle state must enforce human approval, scientific evidence, declared test existence, and test execution. UI/API checks may call the registry gate; they are not the gate.
-17. Public lifecycle mutators must not expose bypass flags such as `skip_approval`, `consume_approval=False`, `run_tests=False`, or equivalents.
-18. Registry discovery must fail loudly on invalid metadata. A broken `module.yaml` or `tool.yaml` must produce a path-specific parse error, not disappear behind a silent skip.
-19. Plan-named families are enumerated exactly. A single reference module does not satisfy a family unless the deferral is explicit and pinned by a failing opt-in checker assertion.
+13. `scripts/dev/check_repo_conventions.sh` is the hard gate for repository health and completed deliverables. It must stay green.
+14. `scripts/dev/check_repo_conventions.sh --include-open-workstreams` is the opt-in TODO gate for open work. It may fail by design and must never be wired into `scripts/test/all.sh`.
+15. Reality-test plan-derived artifacts. The plan is design; the filesystem is truth.
+16. The plan's `§Phase N → Workstream NX` description is the deliverable list. Milestone pre-gate hints are only prompts; enumerate the plan's full bullet list before claiming completion.
+17. Lifecycle promotion gates live at the mutation boundary. Registry methods that rewrite `tool.yaml`, `module.yaml`, backend metadata, or lifecycle state must enforce human approval, scientific evidence, declared test existence, and test execution. UI/API checks may call the registry gate; they are not the gate.
+18. Public lifecycle mutators must not expose bypass flags such as `skip_approval`, `consume_approval=False`, `run_tests=False`, or equivalents.
+19. Registry discovery must fail loudly on invalid metadata. A broken `module.yaml` or `tool.yaml` must produce a path-specific parse error, not disappear behind a silent skip.
+20. Plan-named families are enumerated exactly. A single reference module does not satisfy a family unless the deferral is explicit and pinned by a failing opt-in checker assertion.
 
 ### Code-craft invariants
 
-20. Mutating tests must deep-copy fixtures. `data = dict(FIXTURE)` is a trap; use `copy.deepcopy` or fixture factories.
-21. Avoid module-level mutable singleton caches. Use `@functools.lru_cache(maxsize=1)` on factory functions instead of `global` state.
-22. Validators named after an artifact must consume that artifact. `validate_generated_code` imports, parses, or executes generated code; it does not merely reload the upstream spec.
-23. Loop-based validators run contract checks before any `continue`, `break`, or `return` that would skip inputs.
-24. Endpoints named after operations must perform those operations. `/diff` returns a real diff; `/preview` returns a future-state preview; `/validate` validates the named artifact.
-25. Exporters that walk a tree validate the target is outside the source before writing and exclude in-flight archives from the walk.
-26. Regenerate-in-place writers must delete orphaned prior outputs through the same sandbox that gates writes.
+21. Mutating tests must deep-copy fixtures. `data = dict(FIXTURE)` is a trap; use `copy.deepcopy` or fixture factories.
+22. Avoid module-level mutable singleton caches. Use `@functools.lru_cache(maxsize=1)` on factory functions instead of `global` state.
+23. Validators named after an artifact must consume that artifact. `validate_generated_code` imports, parses, or executes generated code; it does not merely reload the upstream spec.
+24. Loop-based validators run contract checks before any `continue`, `break`, or `return` that would skip inputs.
+25. Endpoints named after operations must perform those operations. `/diff` returns a real diff; `/preview` returns a future-state preview; `/validate` validates the named artifact.
+26. Exporters that walk a tree validate the target is outside the source before writing and exclude in-flight archives from the walk.
+27. Regenerate-in-place writers must delete orphaned prior outputs through the same sandbox that gates writes.
 
 ---
 
@@ -565,13 +570,11 @@ echo "Run the documented live-probe lane in a configured deployment environment.
 exit 1
 ```
 
-Before closing a phase or major workstream, run a stale-contract grep over
-current surfaces and reconcile every match that is not purely historical:
+Before closing a phase or major workstream, run the current-contract scanner
+and reconcile every match that is not purely historical:
 
 ```bash
-grep -RInE "currently active|Pending\\.|not implemented yet|scheduled for Phase|lands in Phase|wait for Phase|Phase 0 placeholder|skeleton" \
-  README.md CLAUDE.md docs_site/src/content apps packages scripts \
-  | grep -v "program_development/milestones" || true
+scripts/dev/check_current_contract_language.py
 ```
 
 ---

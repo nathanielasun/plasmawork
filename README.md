@@ -129,6 +129,9 @@ python examples/simple_rate_equations/run.py --max-steps 25 --no-capsule
 # Inspect open workstream TODO assertions. This passes after the Phase 10
 # final close unless a new open workstream has intentionally added TODOs.
 ./scripts/dev/check_repo_conventions.sh --include-open-workstreams
+
+# Scan current user-facing surfaces for stale phase-state contract language
+./scripts/dev/check_current_contract_language.py
 ```
 
 The UI, backend, capsule, kernel, security, and export scripts exist so documented commands do not point at missing files. Deployment-specific commands that cannot run in the local environment fail closed with an explicit explanation.
@@ -177,6 +180,12 @@ See `tests/README.md` for the testing strategy (also plan §20).
 ```
 
 The documentation site is served at `http://localhost:3000` by default. The same source pages are loaded inside the workbench UI under the **Documentation** panel, where they are organized with a searchable, collapsible sidebar. There is one canonical doc source.
+
+The current-vs-historical documentation policy is in
+[`docs_site/src/content/current_contracts.tsx`](./docs_site/src/content/current_contracts.tsx).
+It defines which files are current operating guidance, which files are
+historical provenance, and how agent-facing documents stay concise and
+grep-searchable.
 
 ---
 

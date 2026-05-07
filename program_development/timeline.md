@@ -13,6 +13,8 @@ Chronological log of major implementation work. Most recent entry first.
 - Added executable security helper wrappers for workspace-path, security-header, and schema/route validation checks.
 - Made `postgres_up.sh` fail closed instead of succeeding as a "not implemented" stub; `security.sh` now dispatches live DB/runsc/WORM probe scripts when the corresponding env vars are intentionally set.
 - Added `tests/regression/test_phase_contract_drift.py`, `tests/performance/test_runtime_smoke.py`, stronger Phase-8 HPC wrapper execution coverage, and convention-checker assertions for the drift class.
+- Added `scripts/dev/check_current_contract_language.py`, wired it into the default gate, and documented the approved current-vs-historical contract policy in `docs_site/src/content/current_contracts.tsx`.
+- Added step I context-hygiene rules to keep `AGENTS.md`, `CLAUDE.md`, `LIMITATIONS.md`, bug memory, and provenance docs concise, canonical, and grep-searchable.
 - Logged the recurring error pattern in `bugs_and_fixes/agent_error_patterns.md`, `bugfixes.md`, `regression_tests.md`, `AGENTS.md`, and `CLAUDE.md`.
 
 ### Next steps

@@ -2315,3 +2315,35 @@ automation treats the old phase behavior as successful current behavior.
   obsolete command examples, placeholder UI copy, success-exiting DB bootstrap,
   non-dispatching live probes, and empty performance lane were corrected across
   docs, scripts, core runtime messages, and UI.
+
+---
+
+## Error Pattern: Agent manuals become sprawling duplicate context
+
+### Why it is bad
+Large language models do not reliably use rules they cannot find quickly.
+When the same policy is copied across `AGENTS.md`, `CLAUDE.md`,
+`LIMITATIONS.md`, bug logs, and provenance docs, the copies drift and consume
+context that should be used for the current task.
+
+### Required behavior
+- Choose one canonical owner for each durable rule.
+- Put a concise pointer and stable lookup tag in secondary documents.
+- Use tags such as `DOC-CURRENT-CONTRACT`, `DOC-DOD`, `DOC-PHASE-GATE`,
+  `DOC-SECURITY`, and `DOC-CONTEXT-HYGIENE` near durable sections.
+- When touching a sprawling section, reconstruct that section into a short
+  index plus links rather than appending another long paragraph.
+- Preserve dated incident details in bug/provenance records; do not duplicate
+  them into operational manuals.
+
+### Detection
+- Search for repeated headings or paragraphs across `AGENTS.md`, `CLAUDE.md`,
+  `LIMITATIONS.md`, and `bugs_and_fixes/`.
+- Ask whether a future agent could locate the needed rule with one `rg` query.
+- If a document section has multiple near-identical summaries of the same rule,
+  consolidate it and link to the canonical owner.
+
+### Bug log
+- 2026-05-07 *Current-contract scanner and context-hygiene policy*: added the
+  current-contract docs page, stable lookup tags, and scanner wiring after a
+  stale phase-state sweep exposed how duplicated phase/status text drifted.

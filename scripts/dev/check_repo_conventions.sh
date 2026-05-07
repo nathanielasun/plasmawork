@@ -2782,6 +2782,19 @@ check_file_exists apps/workbench-ui/src/components/autonomy/AutonomyPanel.tsx
 
 section "Deprecated phase-state drift guards"
 check_file_exists tests/regression/test_phase_contract_drift.py
+check_file_executable scripts/dev/check_current_contract_language.py \
+  "current-contract language scanner executable"
+if scripts/dev/check_current_contract_language.py >/tmp/simworkbench_contract_language_check.out 2>&1; then
+  PASS=$((PASS+1))
+  note "current-contract language scanner passes"
+else
+  FAIL=$((FAIL+1))
+  fail "current-contract language scanner failed: $(cat /tmp/simworkbench_contract_language_check.out)"
+fi
+check_file_exists docs_site/src/content/current_contracts.tsx \
+  "current-contract docs page"
+check_grep_in_file 'current_contracts' apps/workbench-ui/src/components/DocsViewer.tsx \
+  "DocsViewer registers current-contract docs page"
 check_grep_absent_in_file 'Runtime execution lands in Workstream 1C' README.md \
   "README no longer advertises runtime as future Phase 1C work"
 check_grep_absent_in_file 'examples/krf_excimer/krf_excimer\.lxp' README.md \

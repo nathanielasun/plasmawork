@@ -33,6 +33,19 @@ def test_public_docs_do_not_advertise_obsolete_phase_commands() -> None:
         assert needle not in readme + claude
 
 
+def test_current_contract_language_scanner_passes() -> None:
+    result = subprocess.run(
+        [str(REPO_ROOT / "scripts" / "dev" / "check_current_contract_language.py")],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Current contract language check passed." in result.stdout
+
+
 def test_core_runtime_errors_do_not_tell_users_to_wait_for_closed_phases() -> None:
     runtime = _text("packages/core/src/simworkbench/runtime/python_cpu.py")
     core_init = _text("packages/core/src/simworkbench/__init__.py")

@@ -78,6 +78,20 @@ const DOC_PAGE_META: Readonly<Record<string, DocPageMeta>> = {
       "compatibility",
     ],
   },
+  current_contracts: {
+    title: "Current Contracts",
+    summary:
+      "Current-vs-historical documentation rules, status terms, and grep-first context hygiene.",
+    keywords: [
+      "contract",
+      "documentation",
+      "status",
+      "historical",
+      "context",
+      "hygiene",
+      "grep",
+    ],
+  },
   architecture: {
     title: "Architecture",
     summary: "Package layout, process boundaries, and dependency direction.",
@@ -191,7 +205,7 @@ const DOC_SECTIONS: readonly DocSection[] = [
     id: "features",
     title: "Features",
     summary: "User-facing capability contracts and compatibility notes.",
-    slugs: ["os_compatibility"],
+    slugs: ["os_compatibility", "current_contracts"],
   },
   {
     id: "workbench",

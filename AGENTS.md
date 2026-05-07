@@ -131,6 +131,32 @@ Until Phase 0.5 deployment-specific live probes are green in the target runtime,
 - Every public Python function gets a docstring stating: purpose, inputs (with units), outputs (with units), assumptions, references.
 - Every TypeScript public API gets a TSDoc block.
 
+## Documentation Context Hygiene and Lookup Schema
+
+Long-lived agent manuals must stay searchable and concise. Do not duplicate
+full policy text across `AGENTS.md`, `CLAUDE.md`, `LIMITATIONS.md`,
+`bugs_and_fixes/`, and `program_development/`; choose one canonical location
+and link to it from the others.
+
+Use stable lookup tags in headings or nearby prose when adding durable rules:
+`DOC-BUG-MEMORY`, `DOC-CURRENT-CONTRACT`, `DOC-DOD`, `DOC-PHASE-GATE`,
+`DOC-SECURITY`, `DOC-STYLE`, `DOC-CONTEXT-HYGIENE`. Future agents should be
+able to find the relevant section with `rg "DOC-CURRENT-CONTRACT"`.
+
+Canonical ownership:
+- `AGENTS.md` owns durable cross-agent rules and Definition of Done.
+- `CLAUDE.md` owns command/runbook details and links back to AGENTS for policy.
+- `LIMITATIONS.md` owns current user-facing capability truth.
+- `bugs_and_fixes/agent_error_patterns.md` owns reusable failure patterns.
+- `bugs_and_fixes/bugfixes.md` owns dated incident autopsies.
+- `program_development/` owns historical provenance, ADRs, and timeline.
+- `docs_site/src/content/` owns user/developer manual pages shown in the UI.
+
+If any of these files becomes hard to scan, reconstruct the touched section in
+the same change: add a short index, collapse repeated text into links, keep the
+key rule and regression reference, and preserve historical entries as history
+rather than copying them into current runbooks.
+
 ---
 
 ## Required Testing Practices
@@ -223,7 +249,7 @@ Until Phase 0.5 deployment-specific live probes are green in the target runtime,
 - Registry discovery must not hide invalid `module.yaml` / `tool.yaml` by silently skipping bad files. Bad metadata is a failed gate, not an absent module.
 - Do not promote a module by trusting `actor="human"` or any other caller-supplied identity. The mutating registry path must consume server/local approval evidence itself.
 - Do not let stale metadata point at missing tests or benchmarks. Every path declared in `module.yaml` is part of the public contract and must resolve during promotion checks.
-- Do not preserve deprecated phase-state behavior after later phases ship. Current commands, runtime errors, UI copy, and docs must describe the present contract; old "lands in Phase N", "pending", or success-exiting "not implemented" stubs are bugs. See `agent_error_patterns.md` "Deprecated phase-state contract survives after later phases ship".
+- Do not preserve deprecated phase-state behavior after later phases ship. Current commands, runtime errors, UI copy, and docs must describe the present contract; old future-phase promises, stale pending labels, or success-exiting unavailable-command stubs are bugs. See `agent_error_patterns.md` "Deprecated phase-state contract survives after later phases ship".
 
 ---
 
@@ -276,9 +302,9 @@ Before flipping any phase status to "Complete":
    Confirm every match agrees with the new status. **Read every match the grep returns**, not just the first paragraph — the same status is often mirrored in a banner *and* a status table within the same file.
 5. Commit the status flip in one commit that touches all status-bearing files at once.
 6. Push (this is a major change per **Autonomous Git Operations**).
-7. Grep current user-facing surfaces for stale phase-state claims before the close commit:
+7. Run the current-contract language scanner before the close commit:
    ```bash
-   grep -RInE "currently active|Pending\\.|not implemented yet|scheduled for Phase|lands in Phase|wait for Phase|Phase 0 placeholder|skeleton" README.md CLAUDE.md docs_site/src/content apps packages scripts | grep -v "program_development/milestones" || true
+   scripts/dev/check_current_contract_language.py
    ```
    Historical ADR/timeline/milestone text may remain historical, but current commands, runtime errors, UI copy, and README/docs examples must not describe a deprecated phase state.
 
@@ -287,7 +313,7 @@ Before flipping any phase status to "Complete":
 Existence checks (steps 1–6 above) are necessary but not sufficient. The convention checker proves files exist. It does not prove that the phase gate's *behaviors* work. Phases 1, 2, 3, 4, and 5 each shipped an incomplete close (Phase 4 twice; Phase 5 once) because the agent confused "all entities exist" or "the gate verb is satisfied" with "the plan's deliverable list is met". Add these sixteen behavioral checks before any close commit:
 
 1. **End-to-end gate walk.** Each plan §Phase-N gate criterion exercised on a real artifact. For "portable, inspectable, reloadable, exportable": save → load → run → export → fork → reload, each step a separate integration test.
-2. **Documented scripts run.** `grep -rn "scheduled for Phase" scripts/` returns no current entrypoint stubs. Every script the README/CLAUDE.md/docs page advertises as runnable either runs successfully on a typical input or fails closed with a documented environment/deployment blocker.
+2. **Documented scripts run.** Every script the README/CLAUDE.md/docs page advertises as runnable either runs successfully on a typical input or fails closed with a documented environment/deployment blocker. The current-contract scanner guards old phase-era stub language in current script output/help text.
 3. **Producer-writer wiring.** Every writer that landed in this phase appears in the producer's call site. Round-trip the producer's output through the writer's `load_*` to catch hand-rolled equivalents that bypass the new writer.
 4. **Validator field parity.** Every new producer output has a matching validator required-field. Diff the validator's `REQUIRED_FILES` and the producer's outputs in the same review.
 5. **Destructive-after-validate in exporters / registries.** Every exporter validates the entire plan before any `rmtree` / `unlink` / write. Tests assert source-survival on self-export. Same rule for registry mutations: `register_from_template`, `set_status`, etc. validate user-controlled names BEFORE any filesystem touch.
@@ -381,8 +407,9 @@ A task is done when:
 8. No local temp/cache/generated files staged.
 9. Generated code remains inspectable, with units and assumptions surfaced.
 10. Default convention checker (`scripts/dev/check_repo_conventions.sh`) passes. If the task added or changed a deliverable that the plan, README, or any milestone references, the checker has been **extended** to assert that deliverable — completed deliverables in default mode, open TODOs in `--include-open-workstreams`.
-11. Every documented command path the change introduced exists on disk as an executable (or stub). Every plan-derived pattern (gitignore rule, filename, identifier) has been reality-tested.
+11. Every documented command path the change introduced exists on disk as an executable or a fail-closed environment-gated command. Every plan-derived pattern (gitignore rule, filename, identifier) has been reality-tested.
 12. **For workstream-completion tasks**: every plan-named entity in `§Phase N → Workstream NX` has been enumerated, asserted in the checker, implemented, and tested. The milestone's Pre-gate hint list has been updated where it disagreed with the plan. If any entity was deferred, the deferral is named in the commit message and an explicit opt-in follow-up checker assertion encodes the deferral. Intentionally failing TODO assertions must not break `scripts/test/all.sh`.
 13. **`LIMITATIONS.md` is current** if the change shipped a capability, promoted a module/backend/tool to `validated` / `trusted`, removed a claimed feature, or otherwise altered what a user can do today. The dated header at the top is bumped in the same commit. Routine bug fixes / refactors / test additions do NOT update LIMITATIONS.md.
 14. **`STYLING.md` is consulted** before any UI styling change, and updated when the change adds a new design token, primitive component, layout pattern, or shifts an existing visual contract. UI styling lives in `apps/workbench-ui/src/styles.css` only — no Tailwind, no per-component CSS files, no inline color literals. The shared `Card` / `Pill` / `Kpi` / `FolderBrowser` primitives are composed; new panels do not re-invent their shapes.
-15. The change is committed. If the change is *major* (per the criteria in **Autonomous Git Operations** above), it has also been pushed to `origin`.
+15. **DOC-CURRENT-CONTRACT / DOC-CONTEXT-HYGIENE:** `scripts/dev/check_current_contract_language.py` passes for current surfaces, and any touched agent/provenance document remains concise, canonical, and grep-searchable rather than duplicating long policy blocks.
+16. The change is committed. If the change is *major* (per the criteria in **Autonomous Git Operations** above), it has also been pushed to `origin`.

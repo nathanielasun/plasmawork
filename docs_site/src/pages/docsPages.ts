@@ -3,6 +3,7 @@ import Overview from "../content/overview";
 import Installation from "../content/installation";
 import Usage from "../content/usage";
 import OperatingSystemCompatibility from "../content/os_compatibility";
+import CurrentContracts from "../content/current_contracts";
 import Architecture from "../content/architecture";
 import ModuleDevelopment from "../content/module_development";
 import InternalTools from "../content/internal_tools";
@@ -65,6 +66,14 @@ export const docsPages: DocPage[] = [
       "Supported local-development platforms, wrappers, and deployment-specific limits.",
     section: "Features",
     Component: OperatingSystemCompatibility,
+  },
+  {
+    slug: "current-contracts",
+    title: "Current Contracts",
+    summary:
+      "Current-vs-historical documentation rules, status terms, and grep-first context hygiene.",
+    section: "Features",
+    Component: CurrentContracts,
   },
   {
     slug: "architecture",
