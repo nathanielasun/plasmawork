@@ -250,6 +250,86 @@ export class AuditReadService {
     };
   }
 
+  /**
+   * Cross-workspace audit read — Phase 0.5 Layer 4 task L4.10.
+   *
+   * v4 §22.2: operator role with `platform:audit_read` may read audit
+   * events across workspaces. The capability check is enforced UPSTREAM
+   * by the operator route's `requireOperatorCapability` middleware; this
+   * method itself takes no capability parameter — it is SELECT-only and
+   * relies on the audit-read pool's role separation (v4 §12.1.3).
+   *
+   * `workspaceId` filter is OPTIONAL: omit to walk every workspace.
+   * Pagination + redaction parity with `listAuditEvents`.
+   */
+  public async listAuditEventsCrossWorkspace(
+    opts: ListAuditEventsOptions & { workspaceId?: string },
+  ): Promise<ListAuditEventsResult> {
+    const fetchLimit = opts.limit + 1;
+    const wsFilter = opts.workspaceId;
+    let rows: RawAuditRow[];
+    if (wsFilter !== undefined && opts.cursor !== undefined) {
+      rows = await this.sql<RawAuditRow[]>`
+        SELECT
+          id, actor_user_id, actor_type, action,
+          object_type, object_id, result, request_id,
+          created_at, metadata
+        FROM audit_events
+        WHERE workspace_id = ${wsFilter}
+          AND (created_at, id) < (${opts.cursor.createdAt}, ${opts.cursor.id})
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${fetchLimit}
+      `;
+    } else if (wsFilter !== undefined) {
+      rows = await this.sql<RawAuditRow[]>`
+        SELECT
+          id, actor_user_id, actor_type, action,
+          object_type, object_id, result, request_id,
+          created_at, metadata
+        FROM audit_events
+        WHERE workspace_id = ${wsFilter}
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${fetchLimit}
+      `;
+    } else if (opts.cursor !== undefined) {
+      rows = await this.sql<RawAuditRow[]>`
+        SELECT
+          id, actor_user_id, actor_type, action,
+          object_type, object_id, result, request_id,
+          created_at, metadata
+        FROM audit_events
+        WHERE (created_at, id) < (${opts.cursor.createdAt}, ${opts.cursor.id})
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${fetchLimit}
+      `;
+    } else {
+      rows = await this.sql<RawAuditRow[]>`
+        SELECT
+          id, actor_user_id, actor_type, action,
+          object_type, object_id, result, request_id,
+          created_at, metadata
+        FROM audit_events
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${fetchLimit}
+      `;
+    }
+
+    const hasMore = rows.length > opts.limit;
+    const surviving = hasMore ? rows.slice(0, opts.limit) : rows;
+    const nextCursor =
+      hasMore && surviving.length > 0
+        ? {
+            createdAt: surviving[surviving.length - 1].created_at,
+            id: surviving[surviving.length - 1].id,
+          }
+        : null;
+
+    return {
+      rows: surviving.map(toAuditOutput),
+      nextCursor,
+    };
+  }
+
   public async listProvenanceEvents(
     workspaceId: string,
     opts: ListAuditEventsOptions,

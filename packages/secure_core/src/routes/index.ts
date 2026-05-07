@@ -42,3 +42,50 @@ export {
   type ApprovalRoutesOptions,
   type ApprovalRoutesMiddleware,
 } from "./approvals.js";
+
+export {
+  bootstrapRoutes,
+  type BootstrapRoutesOptions,
+  type BootstrapRoutesMiddleware,
+} from "./bootstrap.js";
+
+export {
+  authRoutes,
+  type AuthRoutesOptions,
+  type AuthRoutesMiddleware,
+  REQUEST_EMAIL_SCHEMA,
+  PASSWORD_RESET_CONSUME_SCHEMA,
+  EMAIL_VERIFY_CONSUME_SCHEMA,
+  MFA_RECOVERY_SCHEMA,
+} from "./auth.js";
+
+export {
+  operatorRoutes,
+  type OperatorRoutesOptions,
+  type OperatorRoutesMiddleware,
+} from "./operator.js";
+
+export {
+  runRoutes,
+  type RunRoutesOptions,
+  type RunRoutesMiddleware,
+} from "./runs.js";
+
+export {
+  artifactRoutes,
+  type ArtifactRoutesOptions,
+  type ArtifactRoutesMiddleware,
+} from "./artifacts.js";
+
+// L4.11 — worker token issuance (orchestrator-only). Lives in
+// `src/workers/` rather than `src/routes/` because it shares the
+// L3.8 issuer + the L3.9 upload route's worker-internal namespace,
+// but is re-exported here so the routes barrel is the single import
+// surface for app composition.
+export {
+  workerTokenRoute,
+  type WorkerTokenRouteOptions,
+  type WorkerTokenRouteMiddleware,
+  type WorkerTokenRunRecord,
+  type RunRecordSource,
+} from "../workers/tokenRoute.js";

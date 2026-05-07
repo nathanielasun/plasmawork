@@ -65,6 +65,7 @@ export const AUDIT_EVENTS = [
   "sandbox.violation",
   "worker.upload_denied",
   "worker.uploaded",
+  "worker.token_issued", // L4.11 — orchestrator-issued per-run token (v4 §18.1)
 
   // Platform / operator
   "platform.capability_used",

@@ -1936,7 +1936,7 @@ check_grep_in_file 'extracted' \
   packages/secure_core/test/workers/uploadRoute.test.ts \
   "workerUploadRoute archive .extracted dir cleanup is asserted (audit fix #2)"
 
-section "secure_core Layer-4 routes (L4.1, L4.2, L4.4, L4.6, L4.7, L4.12)"
+section "secure_core Layer-4 routes (L4.1, L4.2, L4.3, L4.4, L4.5, L4.6, L4.7, L4.8, L4.9, L4.10, L4.12)"
 # L4.12 — health / readiness / metrics
 check_file_exists packages/secure_core/src/routes/health.ts
 check_file_exists packages/secure_core/src/routes/index.ts
@@ -2003,6 +2003,56 @@ check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|reques
   packages/secure_core/src/routes/capsules.ts \
   "L4.2 capsule routes never read actor identity from req.body (v4 §19.1)"
 check_file_exists packages/secure_core/test/routes/capsules.test.ts
+# L4.3 — run routes
+check_file_exists packages/secure_core/src/routes/runs.ts
+check_file_exists packages/secure_core/src/runs/queryService.ts
+check_file_exists packages/secure_core/test/routes/runs.test.ts
+check_grep_in_file 'export const runRoutes' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 exports runRoutes Fastify plugin"
+check_grep_in_file 'export class RunQueryService' \
+  packages/secure_core/src/runs/queryService.ts \
+  "L4.3 exports RunQueryService"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 run routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'capsules/:capsuleId/runs' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 declares POST /workspaces/:workspaceId/capsules/:capsuleId/runs (v4 §10.2)"
+check_grep_in_file '/runs/:runId/cancel' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 declares POST /workspaces/:workspaceId/runs/:runId/cancel (v4 §10.2)"
+check_grep_in_file 'requireRunCreate' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 POST create gates on run:create capability (v4 §13)"
+check_grep_in_file 'requireRunCancel' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 POST cancel gates on run:cancel capability (v4 §13)"
+check_grep_in_file 'getCapsuleForRunCreate' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 create route validates capsule via queryService (defense in depth)"
+check_grep_in_file 'expectedFromState' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 cancel route passes current state as expectedFromState"
+check_grep_in_file 'cancel_requested' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 cancel route transitions to cancel_requested (v4 §14)"
+check_grep_in_file 'VersionConflictError' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 cancel route surfaces 409 VERSION_CONFLICT for terminal/in-flight states"
+# Hard rule: run routes never read actor identity from req.body (v4 §19.1)
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 run routes never read req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.actor_user_id' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 run routes never read req.body.actor_user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.requested_by' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 run routes never read req.body.requested_by (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.created_by' \
+  packages/secure_core/src/routes/runs.ts \
+  "L4.3 run routes never read req.body.created_by (v4 §19.1)"
 # L4.4 — tool routes
 check_file_exists packages/secure_core/src/routes/tools.ts
 check_file_exists packages/secure_core/src/tools/service.ts
@@ -2044,6 +2094,56 @@ check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|reques
   packages/secure_core/src/tools/service.ts \
   "L4.4 ToolService never reads actor identity from req.body"
 check_file_exists packages/secure_core/test/routes/tools.test.ts
+# L4.5 — artifact + export routes
+check_file_exists packages/secure_core/src/routes/artifacts.ts
+check_file_exists packages/secure_core/src/artifacts/service.ts
+check_file_exists packages/secure_core/test/routes/artifacts.test.ts
+check_grep_in_file 'export const artifactRoutes' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 exports artifactRoutes Fastify plugin"
+check_grep_in_file 'export class ArtifactService' \
+  packages/secure_core/src/artifacts/service.ts \
+  "L4.5 exports ArtifactService"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 artifact routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file '/workspaces/:workspaceId/artifacts' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 declares /workspaces/:workspaceId/artifacts endpoint (v4 §10.2)"
+check_grep_in_file '/workspaces/:workspaceId/artifacts/:artifactId/export' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 declares /workspaces/:workspaceId/artifacts/:artifactId/export endpoint (v4 §10.2)"
+check_grep_in_file 'requireApprovalIfHighRiskFactory' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 /export route binds L2.9 requireApprovalIfHighRisk via factory (v4 §17)"
+check_grep_in_file 'artifact_export' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 /export route binds the artifact_export high-risk action"
+check_grep_in_file 'validateUrl' \
+  packages/secure_core/src/artifacts/service.ts \
+  "L4.5 ArtifactService.requestExport calls SsrfGuard.validateUrl (v4 §26.1)"
+check_grep_in_file 'reserveBytes' \
+  packages/secure_core/src/artifacts/service.ts \
+  "L4.5 ArtifactService.requestExport reserves stored.bytes via StorageReservationService (v4 §21)"
+check_grep_in_file 'artifact.exported' \
+  packages/secure_core/src/artifacts/service.ts \
+  "L4.5 service emits artifact.exported on requestExport"
+# Hard rule: artifact routes NEVER read actor identity from req.body (v4 §19.1)
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 artifact routes never read req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.actor_user_id' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 artifact routes never read req.body.actor_user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.created_by' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 artifact routes never read req.body.created_by (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.requested_by' \
+  packages/secure_core/src/routes/artifacts.ts \
+  "L4.5 artifact routes never read req.body.requested_by (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/artifacts/service.ts \
+  "L4.5 ArtifactService never reads actor identity from req.body (v4 §19.1)"
 # L4.6 — approval-request routes
 check_file_exists packages/secure_core/src/routes/approvals.ts
 check_grep_in_file 'export const approvalRoutes' \
@@ -2084,6 +2184,48 @@ check_grep_absent_in_file 'req\.body\.requested_by' \
   packages/secure_core/src/routes/approvals.ts \
   "L4.6 approval routes never read req.body.requested_by (v4 §19.1)"
 check_file_exists packages/secure_core/test/routes/approvals.test.ts
+# L4.9 — bootstrap endpoint (v4 §22.1)
+check_file_exists packages/secure_core/src/routes/bootstrap.ts
+check_file_exists packages/secure_core/src/bootstrap/service.ts
+check_file_exists packages/secure_core/src/bootstrap/wormMarker.ts
+check_file_exists packages/secure_core/test/routes/bootstrap.test.ts
+check_grep_in_file 'export const bootstrapRoutes' \
+  packages/secure_core/src/routes/bootstrap.ts \
+  "L4.9 exports bootstrapRoutes Fastify plugin"
+check_grep_in_file 'export class BootstrapService' \
+  packages/secure_core/src/bootstrap/service.ts \
+  "L4.9 exports BootstrapService"
+check_grep_in_file 'export interface BootstrapWormMarkerProvider' \
+  packages/secure_core/src/bootstrap/wormMarker.ts \
+  "L4.9 exports BootstrapWormMarkerProvider abstraction (ADR-0010)"
+check_grep_in_file 'export class S3WormMarkerProvider' \
+  packages/secure_core/src/bootstrap/wormMarker.ts \
+  "L4.9 ships S3 Object-Lock-backed WORM marker provider"
+check_grep_in_file 'export class FakeWormMarkerProvider' \
+  packages/secure_core/src/bootstrap/wormMarker.ts \
+  "L4.9 ships FakeWormMarkerProvider for tests"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/bootstrap.ts \
+  "L4.9 routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'compareTokenConstantTime' \
+  packages/secure_core/src/bootstrap/service.ts \
+  "L4.9 OOB credential compared via constant-time path"
+check_grep_in_file 'bootstrap.completed' \
+  packages/secure_core/src/bootstrap/service.ts \
+  "L4.9 service emits bootstrap.completed audit row on every attempt (§22.1)"
+check_grep_in_file 'BOOTSTRAP_ALLOWED' \
+  packages/secure_core/src/secrets/env.ts \
+  "L4.9 BOOTSTRAP_ALLOWED env var registered in secrets/env.ts (§22.1 gate #2)"
+check_grep_in_file 'BOOTSTRAP_CREDENTIAL_HASH' \
+  packages/secure_core/src/secrets/env.ts \
+  "L4.9 BOOTSTRAP_CREDENTIAL_HASH env var registered in secrets/env.ts (§22.1 gate #3)"
+# Hard rule: bootstrap routes/service NEVER read actor identity from req.body
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/routes/bootstrap.ts \
+  "L4.9 bootstrap routes never read actor identity from req.body (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.\(actor\|actor_user_id\|created_by\|requested_by\)' \
+  packages/secure_core/src/bootstrap/service.ts \
+  "L4.9 BootstrapService never reads actor identity from req.body"
 # L4.7 — audit-events + provenance-events read routes
 check_file_exists packages/secure_core/src/audit/readService.ts
 check_file_exists packages/secure_core/src/routes/auditEvents.ts
@@ -2145,6 +2287,184 @@ check_grep_absent_in_file 'SELECT.*row_hash' \
 check_grep_absent_in_file 'SELECT.*prev_hash' \
   packages/secure_core/src/audit/readService.ts \
   "L4.7 read service SELECT lists do not project prev_hash"
+# L4.8 — recovery flows (password reset, email verify, MFA recovery stub)
+check_file_exists packages/secure_core/src/auth/emailSender.ts
+check_file_exists packages/secure_core/src/auth/recoveryService.ts
+check_file_exists packages/secure_core/src/routes/auth.ts
+check_file_exists packages/secure_core/test/routes/auth.test.ts
+check_grep_in_file 'export const authRoutes' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 exports authRoutes Fastify plugin"
+check_grep_in_file 'export class RecoveryService' \
+  packages/secure_core/src/auth/recoveryService.ts \
+  "L4.8 exports RecoveryService"
+check_grep_in_file 'export interface EmailSender' \
+  packages/secure_core/src/auth/emailSender.ts \
+  "L4.8 ships EmailSender interface (production wires SES/SendGrid in Layer 5)"
+check_grep_in_file 'export class StubEmailSender' \
+  packages/secure_core/src/auth/emailSender.ts \
+  "L4.8 ships StubEmailSender for unit tests"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 recovery routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file '/auth/password-reset/request' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 declares POST /auth/password-reset/request (v4 §5)"
+check_grep_in_file '/auth/password-reset/consume' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 declares POST /auth/password-reset/consume (v4 §5 + §16.4 atomic)"
+check_grep_in_file '/auth/email-verify/request' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 declares POST /auth/email-verify/request (v4 §5)"
+check_grep_in_file '/auth/email-verify/consume' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 declares POST /auth/email-verify/consume (v4 §5 + §16.4 atomic)"
+check_grep_in_file '/auth/mfa-recovery' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 declares POST /auth/mfa-recovery (Phase 0.5 stub; operator review)"
+check_grep_in_file 'enforceRateLimit' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 recovery routes wire enforceRateLimit (per-IP; v4 §8)"
+check_grep_in_file 'enforceCsrfForStateChange' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 recovery routes wire enforceCsrfForStateChange (Origin allowlist; v4 §7.2)"
+check_grep_in_file 'mintToken' \
+  packages/secure_core/src/auth/recoveryService.ts \
+  "L4.8 RecoveryService mints tokens via L1.3 mintToken"
+check_grep_in_file 'hashToken' \
+  packages/secure_core/src/auth/recoveryService.ts \
+  "L4.8 RecoveryService stores hashToken digests, never raw tokens"
+check_grep_in_file 'mfa_recovery_pending_review' \
+  packages/secure_core/src/auth/recoveryService.ts \
+  "L4.8 MFA recovery audits with denied_reason mfa_recovery_pending_review"
+check_grep_in_file 'invalid_or_expired' \
+  packages/secure_core/src/auth/recoveryService.ts \
+  "L4.8 invalid/expired consume audits with denied_reason invalid_or_expired"
+check_grep_in_file 'unauthenticated' \
+  packages/secure_core/src/auth/recoveryService.ts \
+  "L4.8 RecoveryService emits audit rows with actorType unauthenticated"
+# Hard rule: recovery routes NEVER read actor identity from req.body (v4 §19.1)
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 recovery routes never read req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.actor_user_id' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 recovery routes never read req.body.actor_user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.user_id' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 recovery routes never read req.body.user_id (v4 §19.1)"
+# Defense in depth: no requireAuth in the recovery routes (they are pre-auth)
+check_grep_absent_in_file 'requireAuth' \
+  packages/secure_core/src/routes/auth.ts \
+  "L4.8 recovery routes do not use requireAuth (pre-auth endpoints)"
+# L4.10 — operator routes (top-level, NOT workspace-scoped; v4 §22.2)
+check_file_exists packages/secure_core/src/operator/service.ts
+check_file_exists packages/secure_core/src/routes/operator.ts
+check_file_exists packages/secure_core/test/routes/operator.test.ts
+check_grep_in_file 'export const operatorRoutes' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 exports operatorRoutes Fastify plugin"
+check_grep_in_file 'export class OperatorService' \
+  packages/secure_core/src/operator/service.ts \
+  "L4.10 exports OperatorService"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 operator routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file '/operator/audit-events' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 declares GET /operator/audit-events (cross-workspace; v4 §22.2)"
+check_grep_in_file '/operator/incident/:workspaceId/investigate' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 declares POST /operator/incident/:workspaceId/investigate (v4 §22.2)"
+check_grep_in_file '/operator/incident/:workspaceId/remediate' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 declares POST /operator/incident/:workspaceId/remediate (v4 §22.2)"
+check_grep_in_file 'platform:audit_read' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 names the platform:audit_read capability (v4 §13.2 / §22.2)"
+check_grep_in_file 'platform:incident_investigate' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 names the platform:incident_investigate capability (v4 §13.2 / §22.2)"
+check_grep_in_file 'platform:incident_remediate' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 names the platform:incident_remediate capability (v4 §13.2 / §22.2)"
+check_grep_in_file 'requireApprovalIfHighRiskFactory' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 /remediate binds L2.9 requireApprovalIfHighRisk via factory (v4 §16)"
+check_grep_in_file 'platform.capability_used' \
+  packages/secure_core/src/operator/service.ts \
+  "L4.10 OperatorService emits platform.capability_used (v4 §22.2)"
+check_grep_in_file 'platform.long_session_granted' \
+  packages/secure_core/src/operator/service.ts \
+  "L4.10 OperatorService emits platform.long_session_granted (v4 §22.2)"
+check_grep_in_file 'actorType: "operator"' \
+  packages/secure_core/src/operator/service.ts \
+  "L4.10 OperatorService writes audit rows with actor_type=operator (v4 §19.1)"
+# Hard rule: operator routes NEVER read actor identity from req.body (v4 §19.1).
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 operator routes never read req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.actor_user_id' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 operator routes never read req.body.actor_user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.user_id' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 operator routes never read req.body.user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.role' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 operator routes never read req.body.role (v4 §19.1)"
+# Operator routes are CROSS-WORKSPACE: they MUST NOT include
+# loadWorkspace / requireWorkspaceMembership in their middleware
+# chains (v4 §22.2 — platform capabilities are not workspace-bound).
+check_grep_absent_in_file 'mw\.loadWorkspace' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 operator routes never call loadWorkspace (v4 §22.2 cross-workspace)"
+check_grep_absent_in_file 'mw\.requireWorkspaceMembership' \
+  packages/secure_core/src/routes/operator.ts \
+  "L4.10 operator routes never call requireWorkspaceMembership (v4 §22.2)"
+# L4.11 — worker token issuance route (orchestrator-only, v4 §18.1)
+check_file_exists packages/secure_core/src/workers/tokenRoute.ts
+check_file_exists packages/secure_core/test/workers/tokenRoute.test.ts
+check_grep_in_file 'export const workerTokenRoute' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 exports workerTokenRoute Fastify plugin"
+check_grep_in_file '/internal/workers/runs/:runId/token' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 declares POST /internal/workers/runs/:runId/token (v4 §18.1)"
+check_grep_in_file 'composeMiddleware' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 routes go through composeMiddleware (§6.2 order enforced)"
+check_grep_in_file 'worker:issue_token' \
+  packages/secure_core/src/config/capabilities.ts \
+  "L4.11 worker:issue_token capability is in the closed CAPABILITIES enum"
+check_grep_in_file 'worker.token_issued' \
+  packages/secure_core/src/config/audit_events.ts \
+  "L4.11 worker.token_issued audit event is in the closed AUDIT_EVENTS enum"
+check_grep_in_file 'worker.token_issued' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 emits worker.token_issued on success"
+check_grep_in_file 'RUN_TERMINAL_STATES' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 refuses terminal-state runs (completed/failed/cancelled/expired)"
+check_grep_in_file 'additionalProperties: false' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 body schema sets additionalProperties:false (refuses workspace_id/actor/etc.)"
+# Hard rule: token route NEVER reads server-derived fields from req.body (v4 §19.1)
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 token route never reads req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.workspace_id' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 token route never reads req.body.workspace_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.capsule_id' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 token route never reads req.body.capsule_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.capsule_version_id' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 token route never reads req.body.capsule_version_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.requested_by' \
+  packages/secure_core/src/workers/tokenRoute.ts \
+  "L4.11 token route never reads req.body.requested_by (v4 §19.1)"
 check_file_executable scripts/dev/postgres_up.sh "scripts/dev/postgres_up.sh stub"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped

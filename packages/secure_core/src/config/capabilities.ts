@@ -47,6 +47,11 @@ export const CAPABILITIES = [
   // endpoint has a concrete capability to gate on).
   "approval:request",
 
+  // Worker token issuance (L4.11). Belongs to the orchestrator
+  // service that mints per-run worker credentials on behalf of the
+  // run requester (v4 §18.1). Workers themselves NEVER hold this.
+  "worker:issue_token",
+
   // Audit / provenance reads
   "audit:read",
   "provenance:read",

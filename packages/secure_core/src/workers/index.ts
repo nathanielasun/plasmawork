@@ -18,6 +18,14 @@ export {
 } from "./uploadRoute.js";
 
 export {
+  workerTokenRoute,
+  type WorkerTokenRouteOptions,
+  type WorkerTokenRouteMiddleware,
+  type WorkerTokenRunRecord,
+  type RunRecordSource,
+} from "./tokenRoute.js";
+
+export {
   issueWorkerToken,
   verifyWorkerToken,
   assertWorkerTokenValid,
