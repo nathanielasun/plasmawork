@@ -281,6 +281,9 @@ check_file_executable scripts/dev/run_backend.py "cross-shell backend launcher e
 check_file_executable scripts/dev/run_backend.ps1 "PowerShell backend launcher executable"
 check_file_executable scripts/dev/run_backend.cmd "cmd.exe backend launcher executable"
 check_grep_absent_in_file 'EXTRA_ARGS' scripts/dev/run_backend.sh "run_backend.sh delegates argument parsing"
+check_grep_in_file 'uvicorn' scripts/dev/run_backend.py "run_backend.py starts uvicorn"
+check_grep_in_file 'simworkbench\.api\.server:app' scripts/dev/run_backend.py "run_backend.py targets the FastAPI app"
+check_grep_absent_in_file 'root / "examples"' scripts/dev/run_backend.py "run_backend.py does not dispatch simulation examples"
 check_file_exists tests/regression/test_run_backend_launcher.py
 check_file_exists examples/simple_rate_equations/run.py
 

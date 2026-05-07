@@ -13,7 +13,7 @@ export default function Usage() {
         <code>{`# UI
 ./scripts/dev/run_ui.sh
 
-# Backend / API
+# Backend / API server at http://127.0.0.1:8000
 ./scripts/dev/run_backend.sh
 
 # Windows PowerShell / cmd.exe
@@ -21,7 +21,21 @@ export default function Usage() {
 scripts\\dev\\run_backend.cmd
 
 # Shell-neutral
-python scripts/dev/run_backend.py`}</code>
+python scripts/dev/run_backend.py
+
+# Optional server flags
+./scripts/dev/run_backend.sh --host 0.0.0.0 --port 8000 --reload`}</code>
+      </pre>
+      <p>
+        The backend command starts the FastAPI server consumed by the UI. It
+        does not run a simulation by itself; simulations are started through
+        API endpoints, UI controls, capsule rerun commands, or standalone
+        example scripts.
+      </p>
+
+      <h2>Running a standalone example</h2>
+      <pre>
+        <code>{`python examples/simple_rate_equations/run.py --max-steps 25 --no-capsule`}</code>
       </pre>
 
       <h2>Creating an experiment manually</h2>

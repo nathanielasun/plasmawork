@@ -4,6 +4,7 @@ Index of regression tests and the bugs they protect against. Every entry in `bug
 
 | Bug entry | Test path | What it asserts |
 |---|---|---|
+| 2026-05-07 — Backend launcher ran a simulation instead of the API server | `tests/regression/test_run_backend_launcher.py`; `scripts/dev/check_repo_conventions.sh` | Backend launchers build a uvicorn command targeting `simworkbench.api.server:app`, do not dispatch to `examples/simple_rate_equations/run.py`, and still preserve cross-shell argument forwarding. |
 | 2026-05-07 — Backend launcher failed on empty Bash array expansion | `tests/regression/test_run_backend_launcher.py`; `scripts/dev/check_repo_conventions.sh` | Backend launcher wrappers delegate to the shared Python launcher, the Unix wrapper accepts no passthrough arguments without Bash array expansion, and passthrough argument boundaries are preserved. |
 | 2026-05-07 — Session introspection hid zero-capability workspace memberships | `packages/secure_core/test/auth/sessionService.test.ts`; `scripts/dev/check_repo_conventions.sh` | Current-session membership grouping preserves live workspace memberships even when the role has no `role_permissions` rows, returning an empty capability list instead of hiding the workspace. |
 | 2026-05-07 — Worker token route upgraded malformed actor context in audit | `packages/secure_core/test/workers/tokenRoute.test.ts`; `scripts/dev/check_repo_conventions.sh` | Worker-token issuance rejects malformed authenticated context with `actorType: "unauthenticated"` instead of emitting `worker.token_issued` as an operator. |

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Cross-shell backend launcher for Scientific Simulation Workbench.
+"""Cross-shell backend API launcher for Scientific Simulation Workbench.
 
 This script owns backend launcher argument parsing so platform-specific shell
-wrappers can stay small. It runs an example under `examples/<name>/run.py`
+wrappers can stay small. It starts the FastAPI workbench backend with uvicorn
 using the project Python interpreter selected in this order:
 
 1. SIMWORKBENCH_PYTHON
@@ -12,56 +12,44 @@ using the project Python interpreter selected in this order:
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_EXAMPLE = "simple_rate_equations"
+DEFAULT_APP = "simworkbench.api.server:app"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
 
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def usage() -> str:
-    return f"""scripts/dev/run_backend.py
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="scripts/dev/run_backend.py",
+        description="Run the workbench FastAPI backend with uvicorn.",
+        epilog=(
+            "Simulation examples are separate. "
+            "Use `python examples/<name>/run.py` for one-off runs."
+        ),
+    )
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--reload", action="store_true")
+    parser.add_argument("--log-level", default="info")
+    parser.add_argument(
+        "uvicorn_args",
+        nargs=argparse.REMAINDER,
+        help="extra arguments forwarded to uvicorn; prefix with --",
+    )
+    args = parser.parse_args(argv)
+    if args.uvicorn_args[:1] == ["--"]:
+        args.uvicorn_args = args.uvicorn_args[1:]
+    return args
 
-Run a workbench backend example end-to-end.
-
-Usage:
-  python scripts/dev/run_backend.py [--example NAME] [-- EXAMPLE_ARGS...]
-  python scripts/dev/run_backend.py --example {DEFAULT_EXAMPLE} --max-steps 25 --no-capsule
-
-Shell wrappers:
-  macOS/Linux/Git Bash: ./scripts/dev/run_backend.sh
-  PowerShell:           ./scripts/dev/run_backend.ps1
-  cmd.exe:              scripts\\dev\\run_backend.cmd
-"""
-
-
-def parse_args(argv: list[str]) -> tuple[str, list[str]]:
-    example = DEFAULT_EXAMPLE
-    passthrough: list[str] = []
-    idx = 0
-    while idx < len(argv):
-        arg = argv[idx]
-        if arg in {"-h", "--help"}:
-            print(usage(), end="")
-            raise SystemExit(0)
-        if arg == "--example":
-            if idx + 1 >= len(argv):
-                print("run_backend.py: --example requires a name", file=sys.stderr)
-                raise SystemExit(2)
-            example = argv[idx + 1]
-            idx += 2
-            continue
-        if arg == "--":
-            passthrough.extend(argv[idx + 1 :])
-            break
-        passthrough.append(arg)
-        idx += 1
-    return example, passthrough
 
 
 def resolve_backend_python(root: Path) -> str:
@@ -83,24 +71,26 @@ def resolve_backend_python(root: Path) -> str:
     return "python"
 
 
-def list_examples(root: Path) -> str:
-    examples_root = root / "examples"
-    if not examples_root.is_dir():
-        return "<examples directory missing>"
-    return ", ".join(sorted(path.name for path in examples_root.iterdir() if path.is_dir()))
-
-
 def main(argv: list[str] | None = None) -> int:
     root = repo_root()
-    example, passthrough = parse_args(list(sys.argv[1:] if argv is None else argv))
-    runner = root / "examples" / example / "run.py"
-    if not runner.is_file():
-        print(f"No runnable example at {runner}", file=sys.stderr)
-        print(f"Available: {list_examples(root)}", file=sys.stderr)
-        return 1
+    args = parse_args(list(sys.argv[1:] if argv is None else argv))
 
     backend_python = resolve_backend_python(root)
-    command = [backend_python, str(runner), *passthrough]
+    command = [
+        backend_python,
+        "-m",
+        "uvicorn",
+        DEFAULT_APP,
+        "--host",
+        args.host,
+        "--port",
+        str(args.port),
+        "--log-level",
+        args.log_level,
+    ]
+    if args.reload:
+        command.append("--reload")
+    command.extend(args.uvicorn_args)
     try:
         return subprocess.call(command, cwd=root)
     except FileNotFoundError:

@@ -2,9 +2,8 @@
 #
 # scripts/dev/run_backend.sh
 #
-# Phase 1C — drive a 0D rate-equation experiment end-to-end against the
-# built-in python_cpu backend. Default: runs the simple-rate-equations
-# example. Pass --example <name> to run another example under examples/.
+# Start the Python FastAPI backend/API server used by the workbench UI.
+# Simulation examples are launched separately via examples/<name>/run.py.
 #
 # This is a real implementation, not a Phase-0 stub. It delegates argument
 # parsing to scripts/dev/run_backend.py so Unix and Windows wrappers share one

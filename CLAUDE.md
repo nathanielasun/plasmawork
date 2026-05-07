@@ -73,6 +73,9 @@ scripts/dev/run_backend.sh
 scripts/dev/run_backend.ps1
 scripts/dev/run_backend.cmd
 
+# Run a standalone simulation example instead of the API server
+python examples/simple_rate_equations/run.py --max-steps 25 --no-capsule
+
 # Run the docs site
 scripts/docs/dev.sh
 ```

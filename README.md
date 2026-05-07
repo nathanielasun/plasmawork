@@ -99,7 +99,7 @@ This creates a Python virtualenv under `.venv/`, installs the Phase 1 core packa
 # Run the workbench UI (Phase 1F)
 ./scripts/dev/run_ui.sh
 
-# Run the Python backend / API server (Phase 1A-C)
+# Run the Python backend / API server on http://127.0.0.1:8000
 ./scripts/dev/run_backend.sh
 
 # Windows PowerShell / cmd.exe equivalents
@@ -108,6 +108,12 @@ scripts\dev\run_backend.cmd
 
 # Shell-neutral launcher, useful in CI or custom shells
 python scripts/dev/run_backend.py
+
+# Optional server flags
+./scripts/dev/run_backend.sh --host 0.0.0.0 --port 8000 --reload
+
+# Run a standalone simulation example instead of the API server
+python examples/simple_rate_equations/run.py --max-steps 25 --no-capsule
 
 # (Optional) Run the docs site as a standalone Vite app on port 3000.
 # As of 2026-05-05 the workbench UI's "Documentation" tab bundles

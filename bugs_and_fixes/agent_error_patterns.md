@@ -617,7 +617,28 @@ argument-boundary preservation.
   shell-owned passthrough arrays such as `EXTRA_ARGS` or `[@]` expansion.
 - Behavioral: run the wrapper with no user passthrough args while
   `SIMWORKBENCH_PYTHON` points at a fake capture interpreter; assert the
-  example runner path is passed without an unbound-variable error.
+  API server module is passed without an unbound-variable error.
+
+---
+
+## Error Pattern: Documented server launcher runs a simulation example
+
+### Why it is bad
+Command names are user contracts. A command documented as "backend / API
+server" must bind the API server and stay running. Running a simulation example
+instead silently creates artifacts, exits, and leaves the UI with no backend to
+talk to.
+
+### Required behavior
+`scripts/dev/run_backend.*` starts `uvicorn simworkbench.api.server:app`.
+Standalone simulations are explicit example or capsule commands, never hidden
+behind the backend server launcher.
+
+### Detection
+- Regression test captures the backend launcher command and asserts it contains
+  `simworkbench.api.server:app`, not `examples/<name>/run.py`.
+- Convention checker greps `scripts/dev/run_backend.py` for `uvicorn` and the
+  FastAPI app target, and rejects example-runner dispatch in that launcher.
 
 ---
 

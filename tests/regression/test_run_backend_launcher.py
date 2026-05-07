@@ -62,7 +62,15 @@ def test_unix_backend_wrapper_accepts_no_passthrough_args(tmp_path: Path) -> Non
 
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     assert json.loads(capture_path.read_text(encoding="utf-8")) == [
-        str(REPO_ROOT / "examples" / "simple_rate_equations" / "run.py")
+        "-m",
+        "uvicorn",
+        "simworkbench.api.server:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--log-level",
+        "info",
     ]
 
 
@@ -80,11 +88,15 @@ def test_python_launcher_preserves_passthrough_argument_boundaries(
         [
             sys.executable,
             str(PY_LAUNCHER),
-            "--example",
-            "simple_rate_equations",
-            "--label",
-            "two words",
-            "--no-capsule",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8123",
+            "--reload",
+            "--",
+            "--proxy-headers",
+            "--root-path",
+            "/plasma work",
         ],
         cwd=REPO_ROOT,
         env=env,
@@ -95,11 +107,43 @@ def test_python_launcher_preserves_passthrough_argument_boundaries(
 
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     assert json.loads(capture_path.read_text(encoding="utf-8")) == [
-        str(REPO_ROOT / "examples" / "simple_rate_equations" / "run.py"),
-        "--label",
-        "two words",
-        "--no-capsule",
+        "-m",
+        "uvicorn",
+        "simworkbench.api.server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8123",
+        "--log-level",
+        "info",
+        "--reload",
+        "--proxy-headers",
+        "--root-path",
+        "/plasma work",
     ]
+
+
+def test_backend_launcher_starts_api_server_not_example_runner(tmp_path: Path) -> None:
+    fake_python, capture_path = make_capture_interpreter(tmp_path)
+    env = {
+        **os.environ,
+        "SIMWORKBENCH_PYTHON": str(fake_python),
+        "SIMWORKBENCH_ARGV_CAPTURE": str(capture_path),
+    }
+
+    proc = subprocess.run(
+        [sys.executable, str(PY_LAUNCHER)],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    command = json.loads(capture_path.read_text(encoding="utf-8"))
+    assert "simworkbench.api.server:app" in command
+    assert not any("examples/simple_rate_equations/run.py" in arg for arg in command)
 
 
 def test_backend_shell_wrappers_delegate_to_python_launcher() -> None:

@@ -32,6 +32,43 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-07: Backend launcher ran a simulation instead of the API server
+
+### Affected subsystem
+- `scripts/dev/run_backend.*`
+- `tests/regression/test_run_backend_launcher.py`
+
+### Symptoms
+Running `./scripts/dev/run_backend.sh` printed a completed
+`simple_rate_equations` run and wrote `temp_runs/` / `simulation_capsules/`
+artifacts. The documented command said "Run the Python backend / API server",
+but it executed `examples/simple_rate_equations/run.py` instead of binding the
+FastAPI server.
+
+### Root cause
+The cross-shell launcher fix preserved the old Phase-1C example-runner
+behavior while the public command contract had evolved to mean
+backend/API server. Tests asserted argument forwarding to the example runner,
+so the regression suite locked in the wrong behavior.
+
+### Fix
+`scripts/dev/run_backend.py` now starts
+`uvicorn simworkbench.api.server:app` with configurable host, port, reload, and
+extra uvicorn arguments. Unix, PowerShell, and cmd.exe wrappers still delegate
+to the shared Python launcher. Standalone simulations remain explicit example
+commands such as `python examples/simple_rate_equations/run.py`.
+
+### Regression protection
+- `tests/regression/test_run_backend_launcher.py`
+- `scripts/dev/check_repo_conventions.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not satisfy a documented server command with an example simulation run. A
+script named `run_backend` must start the backend/API process; example runs
+belong under `examples/<name>/run.py` or capsule/example-specific commands.
+
 ## 2026-05-07: Backend launcher failed on empty Bash array expansion
 
 ### Affected subsystem

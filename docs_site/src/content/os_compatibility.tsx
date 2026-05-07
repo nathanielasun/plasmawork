@@ -53,7 +53,9 @@ python scripts/dev/run_backend.py`}</code>
       <p>
         The backend launchers all call the same Python implementation, so
         command parsing and argument forwarding remain consistent across
-        shells. Other repository scripts are POSIX shell scripts unless a
+        shells. They start the FastAPI API server; standalone simulation
+        examples are launched separately via <code>python examples/&lt;name&gt;/run.py</code>.
+        Other repository scripts are POSIX shell scripts unless a
         platform-specific wrapper is present; on Windows, use Git Bash or WSL
         for those scripts until a native wrapper is added.
       </p>
