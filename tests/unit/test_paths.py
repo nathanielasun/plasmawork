@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
 from simworkbench.paths import (
     is_under_workbench,
     local_cache_root,
@@ -58,6 +59,25 @@ def test_is_under_workbench_accepts_subpaths():
     sub = temp_runs_root() / "some-run-id" / "checkpoints" / "step_000001.pkl"
     # We don't have to create the file; the predicate operates on path strings.
     assert is_under_workbench(sub)
+
+
+def test_is_under_workbench_accepts_samefile_case_aliases():
+    root = temp_runs_root()
+    parts = list(root.parts)
+    for index, part in enumerate(parts):
+        toggled = part.swapcase()
+        if toggled == part:
+            continue
+        alias_parts = [*parts]
+        alias_parts[index] = toggled
+        alias = Path(*alias_parts)
+        try:
+            if alias.samefile(root):
+                assert is_under_workbench(alias / "case-alias-run" / "artifact.json")
+                return
+        except OSError:
+            continue
+    pytest.skip("case-sensitive filesystem has no samefile case alias")
 
 
 def test_is_under_workbench_rejects_tmp_and_home():

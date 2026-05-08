@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiClient, type ToolIndexRow, type ToolStatus as Status } from "../../api/client";
 import { Card, Kpi, Pill, type PillKind } from "../ui";
+import ToolAuthoringPanel from "./ToolAuthoringPanel";
 import ToolDetail from "./ToolDetail";
 import ToolWorkbench from "./ToolWorkbench";
 
@@ -381,6 +382,11 @@ export default function ToolList() {
     });
   }, []);
 
+  const handleToolRegistered = useCallback((name: string) => {
+    setSelected(name);
+    refresh();
+  }, [refresh]);
+
   const importExternal = async () => {
     if (!importPath.trim() || !importName.trim()) {
       setImportStatus("Both source path and target name are required.");
@@ -483,6 +489,8 @@ export default function ToolList() {
 
       <div className="tools-layout">
         <div className="tools-primary-stack">
+          <ToolAuthoringPanel onRegistered={handleToolRegistered} />
+
           {selectedTool ? (
             <ToolWorkbench toolName={selectedTool.name} />
           ) : (

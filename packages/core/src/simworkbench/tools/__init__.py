@@ -23,6 +23,11 @@ from .approval import (
     consume_approval,
     grant_approval,
 )
+from .authoring import (
+    ToolAuthoringError,
+    ToolAuthoringNotFound,
+    ToolAuthoringService,
+)
 from .base_tool import BaseTool
 from .binding import ToolBindingError, apply_tools
 from .io import ToolInput, ToolIOError, ToolOutput
@@ -68,6 +73,9 @@ __all__ = [
     "LifecycleError",
     "ORDER",
     "RegisteredTool",
+    "ToolAuthoringError",
+    "ToolAuthoringNotFound",
+    "ToolAuthoringService",
     "ToolBindingError",
     "ToolArtifactDeclaration",
     "ToolArtifacts",

@@ -77,8 +77,9 @@ export default function InternalTools() {
         The diagnostic template ships with a <code>tool.yaml</code>,
         <code> src/tool.py</code>, and <code>README.md</code>. Open them
         and replace the <code>TEMPLATE</code> placeholder with your tool's
-        real name. Or use the UI's <strong>Internal Tools → New Tool from
-        Template</strong> button.
+        real name. Or use the Tools page's <strong>Build tool from
+        template</strong> panel, which creates the draft from server-known
+        templates without granting arbitrary filesystem writes.
       </p>
 
       <h3>2. Declare inputs and outputs in tool.yaml</h3>
@@ -146,8 +147,9 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
         <code> tool.yaml</code>, and rewrites the canonical{" "}
         <code>index.yaml</code>. Then open the workbench UI's{" "}
         <strong>Tools</strong> tab — your tool appears in the list,
-        grouped by type, with a clickable detail panel showing inputs,
-        outputs, validation tests, and the lifecycle bar.
+        grouped by feature and frequency, with search for exact lookup and
+        a clickable detail panel showing inputs, outputs, validation tests,
+        and the lifecycle bar.
       </p>
 
       <h3>6. Promote</h3>
@@ -167,6 +169,27 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
         The registry walks both that directory and{" "}
         <code>packages/internal_tools/registry/</code> on every refresh,
         so imported tools appear in the UI alongside built-in ones.
+      </p>
+
+      <h2>UI-native draft authoring</h2>
+      <p>
+        The Tools page can construct legitimate draft tools from templates.
+        The browser talks to <code>/api/tool-authoring/*</code> endpoints; the
+        backend creates drafts under{" "}
+        <code>local_cache/workspaces/local/tool_drafts/</code>, keeps a local
+        authoring audit log, and only exposes an allow-listed text-file editor.
+      </p>
+      <ol>
+        <li>Select a server-known template and enter a valid lowercase tool name.</li>
+        <li>Edit the visible package files such as <code>tool.yaml</code>, <code>src/tool.py</code>, tests, docs, and examples.</li>
+        <li>Run the backend package checker. Registration is blocked unless the latest passing check matches the current content hash.</li>
+        <li>Register the checked draft into <code>local_cache/imported_tools/</code> or export a draft archive for review.</li>
+      </ol>
+      <p>
+        Draft authoring is intentionally not a general file manager. Hidden
+        files, absolute paths, path traversal, oversized edits, NUL bytes, and
+        symlinked draft paths are refused before package hashing, export, or
+        registration.
       </p>
 
       <h2>Validation requirements</h2>

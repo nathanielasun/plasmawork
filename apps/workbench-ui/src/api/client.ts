@@ -165,6 +165,81 @@ export interface ToolDocs {
   tool_yaml: string;
 }
 
+export interface ToolAuthoringTemplate {
+  template_id: string;
+  title: string;
+  description: string;
+  type: string;
+  editable_files: string[];
+  required_files: string[];
+}
+
+export interface ToolAuthoringDraftFile {
+  path: string;
+  size_bytes: number;
+  editable: boolean;
+}
+
+export interface ToolAuthoringCheckIssue {
+  severity: "error" | "warning";
+  location: string;
+  message: string;
+}
+
+export interface ToolAuthoringCheckResult {
+  passed: boolean;
+  returncode: number;
+  stdout: string;
+  stderr: string;
+  issues: ToolAuthoringCheckIssue[];
+  checked_at: string;
+  content_hash: string;
+}
+
+export interface ToolAuthoringDraft {
+  draft_id: string;
+  workspace_id: string;
+  tool_name: string;
+  template_id: string;
+  status: "draft" | "checked" | "registered";
+  draft_root: string;
+  content_hash: string;
+  manifest_ok: boolean;
+  manifest_errors: string[];
+  files: ToolAuthoringDraftFile[];
+  last_check: ToolAuthoringCheckResult | null;
+  registered_tool: { name: string; directory: string; registered_at: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ToolAuthoringFile {
+  draft_id: string;
+  path: string;
+  content: string;
+  editable: boolean;
+  size_bytes: number;
+}
+
+export interface ToolAuthoringManifestResult {
+  draft_id: string;
+  ok: boolean;
+  errors: string[];
+  metadata?: ToolMetadata;
+}
+
+export interface ToolAuthoringRegistration {
+  draft_id: string;
+  name: string;
+  directory: string;
+}
+
+export interface ToolAuthoringExport {
+  draft_id: string;
+  archive: string;
+  size_bytes: number;
+}
+
 export type ToolInputKind =
   | "scalar"
   | "array"
@@ -643,6 +718,16 @@ export interface ApiClient {
   listTools(): Promise<ToolIndexRow[]>;
   getTool(name: string): Promise<ToolDetail>;
   getToolDocs(name: string): Promise<ToolDocs>;
+  listToolAuthoringTemplates(): Promise<ToolAuthoringTemplate[]>;
+  createToolDraft(templateId: string, name: string): Promise<ToolAuthoringDraft>;
+  listToolDrafts(): Promise<ToolAuthoringDraft[]>;
+  getToolDraft(draftId: string): Promise<ToolAuthoringDraft>;
+  readToolDraftFile(draftId: string, path: string): Promise<ToolAuthoringFile>;
+  writeToolDraftFile(draftId: string, path: string, content: string): Promise<ToolAuthoringDraft>;
+  validateToolDraftManifest(draftId: string): Promise<ToolAuthoringManifestResult>;
+  checkToolDraft(draftId: string): Promise<ToolAuthoringCheckResult>;
+  registerToolDraft(draftId: string): Promise<ToolAuthoringRegistration>;
+  exportToolDraft(draftId: string): Promise<ToolAuthoringExport>;
   getToolSchema(name: string): Promise<ToolSchemaResponse>;
   previewTool(name: string, body: ToolPreviewRequest): Promise<ToolPreviewResponse>;
   runTool(name: string, body: ToolRunRequest): Promise<ToolRunResponse>;
@@ -1006,6 +1091,10 @@ export interface PaperEditPayload {
   reviewer: string;
 }
 
+function encodePathSegments(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
 export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
   const getToolSchema = async (name: string): Promise<ToolSchemaResponse> => {
     try {
@@ -1082,6 +1171,65 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
     getTool: (name) => fetchJson(`/tools/${encodeURIComponent(name)}`, undefined, baseUrl),
     getToolDocs: (name) =>
       fetchJson(`/tools/${encodeURIComponent(name)}/docs`, undefined, baseUrl),
+    listToolAuthoringTemplates: () =>
+      fetchJson("/tool-authoring/templates", undefined, baseUrl),
+    createToolDraft: (templateId, name) =>
+      fetchJson(
+        "/tool-authoring/drafts",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ template_id: templateId, name }),
+        },
+        baseUrl,
+      ),
+    listToolDrafts: () => fetchJson("/tool-authoring/drafts", undefined, baseUrl),
+    getToolDraft: (draftId) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}`,
+        undefined,
+        baseUrl,
+      ),
+    readToolDraftFile: (draftId, path) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/files/${encodePathSegments(path)}`,
+        undefined,
+        baseUrl,
+      ),
+    writeToolDraftFile: (draftId, path, content) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/files/${encodePathSegments(path)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+        baseUrl,
+      ),
+    validateToolDraftManifest: (draftId) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/manifest`,
+        { method: "POST" },
+        baseUrl,
+      ),
+    checkToolDraft: (draftId) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/check`,
+        { method: "POST" },
+        baseUrl,
+      ),
+    registerToolDraft: (draftId) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/register`,
+        { method: "POST" },
+        baseUrl,
+      ),
+    exportToolDraft: (draftId) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/export`,
+        { method: "POST" },
+        baseUrl,
+      ),
     getToolSchema,
     previewTool: async (name, body) => {
       try {

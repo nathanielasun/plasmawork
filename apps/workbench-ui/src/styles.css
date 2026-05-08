@@ -1002,6 +1002,67 @@ ol.lifecycle li.lifecycle-active {
   border-radius: var(--radius-md);
   background: var(--surface-nested);
 }
+.tool-authoring-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 340px);
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+.tool-authoring-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tool-authoring-column h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.tool-authoring-template-note {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-nested);
+}
+.tool-authoring-file-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+.tool-authoring-file-list {
+  display: flex;
+  max-height: 24rem;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow: auto;
+  padding-right: 0.1rem;
+}
+.tool-authoring-textarea-wrap {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tool-authoring-textarea-wrap textarea {
+  min-height: 24rem;
+  resize: vertical;
+  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.tool-authoring-check {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--surface-nested);
+}
+.tool-authoring-check p {
+  margin: 0;
+}
 .list-row-main {
   display: flex;
   min-width: 0;
@@ -1366,6 +1427,10 @@ ol.lifecycle li.lifecycle-active {
   .dashboard-grid-3,
   .tools-layout,
   .tool-workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tool-authoring-grid,
+  .tool-authoring-file-grid {
     grid-template-columns: minmax(0, 1fr);
   }
   .tools-side-rail {

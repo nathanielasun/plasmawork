@@ -32,6 +32,85 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-08: Workbench locality guard rejected case-aliased roots
+
+### Affected subsystem
+- `packages/core/src/simworkbench/paths/__init__.py`
+- `packages/core/src/simworkbench/hpc/slurm.py`
+
+### Symptoms
+The aggregate test gate failed in the Phase 8 Slurm round trip even though the
+bundle target was under `temp_runs/`. The failure message said the target was
+outside workbench-managed roots when one process saw the path as
+`/Desktop/...` and another saw the same checkout as `/desktop/...`.
+
+### Root cause
+`is_under_workbench()` used only lexical `Path.relative_to()` after
+`resolve()`. On case-insensitive filesystems, shell wrappers and subprocesses
+can preserve different casing for the same existing directory; lexical
+comparison rejects the alias even though the filesystem resolves both prefixes
+to the same directory.
+
+### Fix
+Kept the lexical containment check as the primary rule and added a fallback
+that compares the would-be allowed-root prefix with `Path.samefile()`. This
+accepts only filesystem-confirmed aliases and avoids lowering paths blindly on
+case-sensitive volumes.
+
+### Regression protection
+- `tests/unit/test_paths.py`
+- `tests/integration/test_phase_8_gate_walk.py`
+- `scripts/test/all.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not implement cross-platform path containment by string-lowercasing paths.
+Use lexical containment first, then a filesystem-confirmed `samefile` fallback
+for case-preserving aliases.
+
+## 2026-05-08: Tool authoring needed a controlled draft substrate
+
+### Affected subsystem
+- `packages/core/src/simworkbench/tools/authoring.py`
+- `packages/core/src/simworkbench/api/server.py`
+- `apps/workbench-ui/src/components/tools/ToolAuthoringPanel.tsx`
+
+### Symptoms
+The Tools page had tool execution/binding surfaces, but legitimate tool
+construction from the UI still required either direct registry edits or future
+ad-hoc file-writing endpoints. That would make it easy to bypass package
+validation, write outside the workbench roots, register stale drafts, or
+package symlinked/tampered files.
+
+### Root cause
+Tool construction methodology and tool execution bindings existed, but there
+was no backend-owned draft lifecycle between "template" and "registered
+internal tool". The UI had no safe package editor, and the backend had no
+content-hash guard tying registration to the latest package check.
+
+### Fix
+Added a server-owned authoring service and `/api/tool-authoring/*` endpoints
+that create drafts from known templates under
+`local_cache/workspaces/local/tool_drafts/`, expose only allow-listed editable
+files, reject traversal/hidden/internal/symlinked paths, require a passing
+current package check before registration, copy checked packages into
+`local_cache/imported_tools/`, and export review archives without internal
+state. Added the `ToolAuthoringPanel` UI for draft creation, editing, checking,
+registration, and export.
+
+### Regression protection
+- `tests/integration/test_tool_authoring_api.py`
+- `apps/workbench-ui/src/__tests__/ToolAuthoringPanel.test.tsx`
+- `scripts/dev/check_repo_conventions.sh`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Do not implement UI tool construction as an arbitrary file manager or direct
+registry writer. Drafts must be server-created, path-scoped, package-checked,
+hash-bound, and registered only through the backend-owned lifecycle.
+
 ## 2026-05-07: Tool detail UI trusted malformed registry payloads
 
 ### Affected subsystem

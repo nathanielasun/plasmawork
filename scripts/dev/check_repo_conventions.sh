@@ -568,6 +568,8 @@ check_file_exists packages/core/src/simworkbench/tools/artifacts.py \
   "tool artifact materializer"
 check_file_exists packages/core/src/simworkbench/tools/run_manager.py \
   "tool run manager"
+check_file_exists packages/core/src/simworkbench/tools/authoring.py \
+  "tool draft authoring service"
 check_grep_in_file '/api/tools/\{name\}/schema' packages/core/src/simworkbench/api/server.py \
   "API exposes /api/tools/{name}/schema"
 check_grep_in_file '/api/tools/\{name\}/preview' packages/core/src/simworkbench/api/server.py \
@@ -576,18 +578,28 @@ check_grep_in_file '/api/tools/\{name\}/runs' packages/core/src/simworkbench/api
   "API exposes /api/tools/{name}/runs"
 check_grep_in_file '/api/tool-artifacts/\{artifact_id\}' packages/core/src/simworkbench/api/server.py \
   "API exposes /api/tool-artifacts/{artifact_id}"
+check_grep_in_file '/api/tool-authoring/drafts' packages/core/src/simworkbench/api/server.py \
+  "API exposes controlled tool-authoring drafts"
 check_file_exists apps/workbench-ui/src/components/tools/ToolWorkbench.tsx \
   "ToolWorkbench UI binding component"
+check_file_exists apps/workbench-ui/src/components/tools/ToolAuthoringPanel.tsx \
+  "ToolAuthoringPanel UI draft builder"
 for component in ToolInputForm ToolDataMapper ToolRunConsole ToolOutputInspector ToolArtifactBrowser ToolDiagramViewer ToolValidationPanel; do
   check_file_exists "apps/workbench-ui/src/components/tools/$component.tsx" \
     "$component UI tool-binding component"
 done
 check_file_exists apps/workbench-ui/src/__tests__/ToolWorkbench.test.tsx \
   "ToolWorkbench Vitest coverage"
+check_file_exists apps/workbench-ui/src/__tests__/ToolAuthoringPanel.test.tsx \
+  "ToolAuthoringPanel Vitest coverage"
 check_file_exists tests/integration/test_tool_run_artifacts.py \
   "tool run artifact integration tests"
+check_file_exists tests/integration/test_tool_authoring_api.py \
+  "tool authoring API integration tests"
 check_file_exists tests/regression/test_tool_artifact_path_isolation.py \
   "tool artifact path isolation regression tests"
+check_grep_in_file 'local_cache/workspaces/local/tool_drafts' docs_site/src/content/internal_tools.tsx \
+  "internal tools docs describe controlled tool-draft storage"
 check_file_exists tests/regression/test_tool_construction_skill.py \
   "tool-construction skill regression tests"
 check_file_exists tests/unit/test_tool_metadata.py \

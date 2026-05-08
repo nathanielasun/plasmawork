@@ -21,6 +21,63 @@ How to spot the mistake — grep pattern, code review heuristic, or test.
 
 ---
 
+## Error Pattern: Cross-platform path containment by string casing
+
+### Why it is bad
+Case-preserving filesystems can report the same checkout with different casing
+through shells, environment variables, and subprocesses. Pure lexical
+containment rejects valid workbench paths; blind lowercasing creates a security
+hole on case-sensitive volumes.
+
+### Required behavior
+- Use `Path.resolve()` and lexical containment as the primary check.
+- If lexical containment fails, compare only the would-be allowed-root prefix
+  with `Path.samefile()` so the filesystem proves both paths are the same
+  directory.
+- Never accept a case alias by string-lowercasing alone.
+
+### Detection
+- Run the aggregate gate on macOS/Windows-compatible filesystems.
+- Unit tests should build a samefile case alias when the filesystem supports
+  one and assert `is_under_workbench()` accepts a child path.
+- Off-workbench `/tmp` and home-directory paths must still be refused.
+
+### Bug log
+- 2026-05-08 *Workbench locality guard rejected case-aliased roots*: Phase 8
+  Slurm bundle generation rejected a valid `temp_runs/` target because one
+  process saw `Desktop` and another saw `desktop`.
+
+## Error Pattern: UI tool construction as a direct filesystem or registry writer
+
+### Why it is bad
+Tool construction touches executable code, tests, docs, lifecycle metadata,
+and generated artifacts. A UI endpoint that writes arbitrary paths or registers
+packages directly can bypass validation, write outside approved roots, package
+symlinks, or promote content that changed after the last check.
+
+### Required behavior
+- Create drafts only from server-known templates under a workbench-managed
+  workspace path such as `local_cache/workspaces/local/tool_drafts/`.
+- Expose an allow-listed text-file editor, not a general filesystem browser.
+- Tie registration to a passing package check and the current package content
+  hash.
+- Copy into the imported-tools registry only through backend-owned lifecycle
+  code that rejects traversal, hidden/internal files, symlinks, stale checks,
+  and pre-existing targets.
+
+### Detection
+- Grep for `/api/tool-authoring` and verify it uses
+  `ToolAuthoringService`, not direct UI-provided paths.
+- Tests should create a draft, mutate it after check, assert registration is
+  refused, and assert symlinked draft paths fail closed.
+- Convention checks should pin the authoring service, API endpoints, UI panel,
+  and integration/Vitest coverage.
+
+### Bug log
+- 2026-05-08 *Tool authoring needed a controlled draft substrate*: UI-native
+  construction gained controlled draft storage, hash-bound package checks,
+  symlink rejection, and backend-owned registration/export.
+
 ## Error Pattern: Security route export without production composition
 
 ### Why it is bad

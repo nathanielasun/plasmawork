@@ -230,6 +230,10 @@ Dense operational pages use a stronger layout scaffold:
   column and a compact sticky side rail. The rail is a navigator, not a
   registry dump: show active/frequent tools and capped feature groups, then
   use search for exact lookup.
+- `.tool-authoring-*` classes define the controlled tool-draft builder:
+  template/start column, editable file column, and checker/register column.
+  Keep the file list and editor bounded with internal scroll regions; this
+  panel is a package authoring workflow, not a general filesystem browser.
 - `.list-row` is the full-width selectable row pattern for registry
   objects; it keeps status pills visible while truncating long names.
 - `.detail-grid` is the label/value contract view for server-derived

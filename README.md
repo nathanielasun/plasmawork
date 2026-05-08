@@ -64,6 +64,7 @@ Current compatibility contract:
 - Python core/runtime/tests: intended for macOS, Linux, and Windows with Python >= 3.11.
 - UI and docs: intended for macOS, Linux, and Windows with Node.js >= 20.
 - Backend launcher: provides Unix, PowerShell, cmd.exe, and shell-neutral Python entrypoints.
+- Path locality checks tolerate filesystem-confirmed case aliases on case-insensitive platforms such as default macOS and Windows filesystems.
 - POSIX-only scripts: use macOS/Linux/Git Bash/WSL unless a native `.ps1` or `.cmd` wrapper exists.
 - Deployment-sensitive capabilities: gVisor/runsc probes, Postgres role probes, WORM/S3 anchors, GPU/compiled kernels, Slurm, and external simulators require their documented target runtimes.
 
@@ -264,6 +265,14 @@ See [`CLAUDE.md → How to Add a Simulation Module`](./CLAUDE.md#how-to-add-a-si
 ## How to Add an Internal Tool
 
 See [`CLAUDE.md → How to Add an Internal Tool`](./CLAUDE.md#how-to-add-an-internal-tool) and [`docs_site/src/content/internal_tools.tsx`](./docs_site/src/content/internal_tools.tsx).
+
+The Tools page also supports UI-native draft authoring from server-known
+templates. Drafts are stored under
+`local_cache/workspaces/local/tool_drafts/`, editable files are allow-listed,
+the backend package checker must pass against the current content hash, and
+registration copies the checked package into `local_cache/imported_tools/`.
+This is the preferred path for interactive tool construction; direct registry
+edits remain available for code review and built-in tools.
 
 ---
 

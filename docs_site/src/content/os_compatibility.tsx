@@ -79,6 +79,12 @@ python scripts/dev/run_backend.py`}</code>
           Exports may target user-selected locations, but ordinary runtime
           artifacts must remain inside the workbench-controlled roots.
         </li>
+        <li>
+          Locality checks treat filesystem-confirmed case aliases as the same
+          path on case-insensitive platforms. This prevents valid macOS/Windows
+          targets from being rejected when a shell or subprocess reports
+          <code>Desktop</code> and <code>desktop</code> with different casing.
+        </li>
       </ul>
 
       <h2>Known platform-sensitive areas</h2>

@@ -37,6 +37,16 @@ Endpoints:
 - ``POST /api/tools/{name}/export``            — zip the tool tree (Phase 3D).
 - ``POST /api/tools/import``                   — copy a tool tree into
   ``local_cache/imported_tools/`` (Phase 3D).
+- ``GET  /api/tool-authoring/templates``       — list server-known tool templates.
+- ``POST /api/tool-authoring/drafts``          — create a controlled tool draft.
+- ``GET  /api/tool-authoring/drafts``          — list controlled tool drafts.
+- ``GET  /api/tool-authoring/drafts/{draft_id}`` — read draft status/files.
+- ``GET  /api/tool-authoring/drafts/{draft_id}/files/{path}`` — read draft file.
+- ``PUT  /api/tool-authoring/drafts/{draft_id}/files/{path}`` — edit draft file.
+- ``POST /api/tool-authoring/drafts/{draft_id}/manifest`` — parse draft tool.yaml.
+- ``POST /api/tool-authoring/drafts/{draft_id}/check`` — run package checker.
+- ``POST /api/tool-authoring/drafts/{draft_id}/register`` — register checked draft.
+- ``POST /api/tool-authoring/drafts/{draft_id}/export`` — export draft package.
 - ``POST /api/papers/import``                       — ingest a paper into a capsule (Phase 4).
 - ``GET  /api/papers/{capsule}/extracted``          — read the structured extraction (Phase 4).
 - ``POST /api/papers/{capsule}/edit``               — edit an extracted artifact +
@@ -79,7 +89,11 @@ from simworkbench.tools import (
     AGENT_ALLOWED,
     ApprovalError,
     LifecycleError,
+    ToolAuthoringError,
+    ToolAuthoringNotFound,
+    ToolAuthoringService,
     ToolRegistry,
+    ToolRegistryError,
     ToolRunManager,
     ToolSchemaError,
     ToolStatus,
@@ -167,6 +181,19 @@ class ToolImportBody(BaseModel):
 
     source_path: str
     target_name: str
+
+
+class ToolDraftCreateBody(BaseModel):
+    """POST /api/tool-authoring/drafts body."""
+
+    template_id: str
+    name: str
+
+
+class ToolDraftFileBody(BaseModel):
+    """PUT /api/tool-authoring/drafts/{draft_id}/files/{path} body."""
+
+    content: str
 
 
 class PaperImportBody(BaseModel):
@@ -1218,6 +1245,92 @@ def create_app() -> FastAPI:
             }
         )
         return payload
+
+    # -----------------------------------------------------------------------
+    # Tool authoring endpoints. These create/edit/check draft packages under a
+    # controlled local workspace root and only register them after a current
+    # backend package check passes.
+    # -----------------------------------------------------------------------
+
+    def _authoring() -> ToolAuthoringService:
+        return ToolAuthoringService()
+
+    def _raise_authoring(exc: ToolAuthoringError) -> None:
+        status = 404 if isinstance(exc, ToolAuthoringNotFound) else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+    @app.get("/api/tool-authoring/templates")
+    def list_tool_authoring_templates() -> list[dict[str, Any]]:
+        return _authoring().list_templates()
+
+    @app.post("/api/tool-authoring/drafts")
+    def create_tool_authoring_draft(body: ToolDraftCreateBody) -> dict[str, Any]:
+        try:
+            return _authoring().create_draft(
+                template_id=body.template_id,
+                tool_name=body.name,
+            )
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.get("/api/tool-authoring/drafts")
+    def list_tool_authoring_drafts() -> list[dict[str, Any]]:
+        return _authoring().list_drafts()
+
+    @app.get("/api/tool-authoring/drafts/{draft_id}")
+    def get_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+        try:
+            return _authoring().get_draft(draft_id)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.get("/api/tool-authoring/drafts/{draft_id}/files/{path:path}")
+    def read_tool_authoring_file(draft_id: str, path: str) -> dict[str, Any]:
+        try:
+            return _authoring().read_file(draft_id, path)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.put("/api/tool-authoring/drafts/{draft_id}/files/{path:path}")
+    def write_tool_authoring_file(
+        draft_id: str,
+        path: str,
+        body: ToolDraftFileBody,
+    ) -> dict[str, Any]:
+        try:
+            return _authoring().write_file(draft_id, path, body.content)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.post("/api/tool-authoring/drafts/{draft_id}/manifest")
+    def validate_tool_authoring_manifest(draft_id: str) -> dict[str, Any]:
+        try:
+            return _authoring().validate_manifest(draft_id)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.post("/api/tool-authoring/drafts/{draft_id}/check")
+    def check_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+        try:
+            return _authoring().run_check(draft_id)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.post("/api/tool-authoring/drafts/{draft_id}/register")
+    def register_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+        try:
+            return _authoring().register_draft(draft_id)
+        except (ToolAuthoringError, ToolRegistryError, ValueError) as exc:
+            if isinstance(exc, ToolAuthoringError):
+                _raise_authoring(exc)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/tool-authoring/drafts/{draft_id}/export")
+    def export_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+        try:
+            return _authoring().export_draft(draft_id)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
 
     @app.get("/api/tools")
     def list_tools() -> list[dict[str, Any]]:

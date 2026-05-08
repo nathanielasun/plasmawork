@@ -4,6 +4,23 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-08 (UI-native tool draft authoring)
+
+### Completed
+- Added a backend-owned tool-authoring service for creating drafts from server-known templates under `local_cache/workspaces/local/tool_drafts/`.
+- Added `/api/tool-authoring/*` endpoints for template listing, draft creation/list/read, allow-listed file edits, manifest validation, package checking, registration, and draft export.
+- Added the Tools page `ToolAuthoringPanel` so users can construct legitimate draft tools from templates, edit package files, run the deterministic package checker, register checked drafts, and export review archives.
+- Hardened draft hashing, export, file editing, and registration against traversal, hidden/internal paths, stale checker results, symlinked draft paths, and unsafe partial-registration cleanup.
+- Added integration and Vitest coverage plus convention-checker assertions for the UI-native authoring workflow.
+
+### Changed
+- Internal-tool documentation now distinguishes direct registry development from interactive draft authoring and documents the storage/check/registration contract.
+
+### Next steps
+- Move the same semantics behind secure-core workspace-scoped authoring routes when the multi-user frontend switches from the local compatibility API.
+
+---
+
 ## 2026-05-07 (Tool construction methodology implementation)
 
 ### Completed

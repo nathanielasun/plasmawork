@@ -97,8 +97,28 @@ def _is_relative_to(child: Path, parent: Path) -> bool:
     try:
         child.relative_to(parent)
     except ValueError:
-        return False
+        return _is_samefile_relative_to(child, parent)
     return True
+
+
+def _is_samefile_relative_to(child: Path, parent: Path) -> bool:
+    """Handle case-preserving/case-insensitive path aliases.
+
+    macOS and Windows can surface the same existing directory with different
+    casing through shell wrappers, environment variables, or subprocess cwd.
+    Lexical ``relative_to`` rejects those aliases. Compare the would-be parent
+    prefix with ``samefile`` so only aliases that the filesystem confirms as
+    the same directory are accepted.
+    """
+    child_parts = child.parts
+    parent_parts = parent.parts
+    if len(child_parts) < len(parent_parts):
+        return False
+    try:
+        child_prefix = Path(*child_parts[: len(parent_parts)])
+        return child_prefix.samefile(parent)
+    except OSError:
+        return False
 
 
 __all__ = [
