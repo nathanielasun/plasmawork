@@ -35,8 +35,32 @@ interface ToolLibraryRowProps {
   onSelect: (name: string) => void;
 }
 
+type ToolWorkspaceTab = "run" | "build" | "contract";
+
 const TOOL_USAGE_STORAGE_KEY = "workbench:tool-library-usage-counts";
 const SEARCH_RESULT_LIMIT = 8;
+
+const TOOL_WORKSPACE_TABS: ReadonlyArray<{
+  id: ToolWorkspaceTab;
+  label: string;
+  summary: string;
+}> = [
+  {
+    id: "run",
+    label: "Run",
+    summary: "Schema-bound controls, data mapping, execution, and artifact review.",
+  },
+  {
+    id: "build",
+    label: "Build",
+    summary: "Template drafts, package editing, checker runs, registration, and export.",
+  },
+  {
+    id: "contract",
+    label: "Contract",
+    summary: "Metadata, lifecycle, docs, validation evidence, and promotion state.",
+  },
+];
 
 const TOOL_FEATURE_GROUPS: readonly ToolFeatureGroup[] = [
   {
@@ -355,6 +379,7 @@ export default function ToolList() {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [usageCounts, setUsageCounts] = useState<Record<string, number>>(() => readToolUsageCounts());
+  const [workspaceTab, setWorkspaceTab] = useState<ToolWorkspaceTab>("run");
 
   const refresh = useCallback(() => {
     setError(null);
@@ -384,6 +409,7 @@ export default function ToolList() {
 
   const handleToolRegistered = useCallback((name: string) => {
     setSelected(name);
+    setWorkspaceTab("run");
     refresh();
   }, [refresh]);
 
@@ -471,14 +497,6 @@ export default function ToolList() {
         </div>
       </header>
 
-      <div className="kpi-strip kpi-strip-wide">
-        <Kpi label="Registered tools" value={statusCounts.total} />
-        <Kpi label="Trusted" value={statusCounts.trusted} />
-        <Kpi label="Validated" value={statusCounts.validated} />
-        <Kpi label="Candidates" value={statusCounts.candidate} />
-        <Kpi label="Drafts" value={statusCounts.draft} />
-      </div>
-
       {tools.length === 0 && (
         <p className="placeholder">
           No tools registered yet. Copy a template from{" "}
@@ -487,24 +505,70 @@ export default function ToolList() {
         </p>
       )}
 
+      <details className="tools-overview-collapse">
+        <summary>
+          <span>Registry overview</span>
+          <span>
+            {statusCounts.total} tools · {statusCounts.trusted} trusted · {statusCounts.validated} validated
+          </span>
+        </summary>
+        <div className="kpi-strip kpi-strip-wide">
+          <Kpi label="Registered tools" value={statusCounts.total} />
+          <Kpi label="Trusted" value={statusCounts.trusted} />
+          <Kpi label="Validated" value={statusCounts.validated} />
+          <Kpi label="Candidates" value={statusCounts.candidate} />
+          <Kpi label="Drafts" value={statusCounts.draft} />
+        </div>
+      </details>
+
       <div className="tools-layout">
         <div className="tools-primary-stack">
-          <ToolAuthoringPanel onRegistered={handleToolRegistered} />
+          <Card
+            title="Workspace mode"
+            subtitle="Use one focused lane at a time; navigation and imports stay available in the side rail."
+            action={selectedTool && <Pill kind={statusKind(selectedTool.status)}>{selectedTool.status}</Pill>}
+            className="tool-workspace-mode"
+          >
+            <div className="segment tool-workspace-tabs" role="tablist" aria-label="Tool workspace mode">
+              {TOOL_WORKSPACE_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={workspaceTab === tab.id}
+                  className={workspaceTab === tab.id ? "segment-active" : ""}
+                  onClick={() => setWorkspaceTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <p className="tool-workspace-context">
+              {TOOL_WORKSPACE_TABS.find((tab) => tab.id === workspaceTab)?.summary}
+              {selectedTool ? ` Active tool: ${selectedTool.name}.` : " Select a tool or build one from a template."}
+            </p>
+          </Card>
 
-          {selectedTool ? (
-            <ToolWorkbench toolName={selectedTool.name} />
-          ) : (
-            <Card title="Tool workbench" subtitle="Select a tool to load schema-bound controls.">
-              <p className="placeholder">No tool selected.</p>
-            </Card>
+          {workspaceTab === "build" && <ToolAuthoringPanel onRegistered={handleToolRegistered} />}
+
+          {workspaceTab === "run" && (
+            selectedTool ? (
+              <ToolWorkbench toolName={selectedTool.name} />
+            ) : (
+              <Card title="Tool workbench" subtitle="Select a tool to load schema-bound controls.">
+                <p className="placeholder">No tool selected.</p>
+              </Card>
+            )
           )}
 
-          {selectedTool ? (
-            <ToolDetail toolName={selectedTool.name} onStatusChanged={refresh} />
-          ) : (
-            <Card title="Tool contract">
-              <p className="placeholder">Select a tool to inspect metadata.</p>
-            </Card>
+          {workspaceTab === "contract" && (
+            selectedTool ? (
+              <ToolDetail toolName={selectedTool.name} onStatusChanged={refresh} />
+            ) : (
+              <Card title="Tool contract">
+                <p className="placeholder">Select a tool to inspect metadata.</p>
+              </Card>
+            )
           )}
         </div>
 
@@ -518,42 +582,45 @@ export default function ToolList() {
             onSelect={selectTool}
           />
 
-          <Card
-            title="Import external tool"
-            subtitle="Copies a tool tree into local_cache/imported_tools/ after backend path validation."
-          >
-            <div className="form-grid">
-              <label>
-                <span className="eyebrow">Source path</span>
-                <input
-                  type="text"
-                  placeholder="/path/to/external/tool"
-                  value={importPath}
-                  onChange={(e) => setImportPath(e.target.value)}
-                  aria-label="Source path"
-                />
-              </label>
-              <label>
-                <span className="eyebrow">Target name</span>
-                <input
-                  type="text"
-                  placeholder="my_imported_tool"
-                  value={importName}
-                  onChange={(e) => setImportName(e.target.value)}
-                  aria-label="Target name"
-                />
-              </label>
+          <details className="tool-collapse-card">
+            <summary>
+              <span className="tool-collapse-title">Import external tool</span>
+              <span className="tool-collapse-subtitle">Validated copy into local_cache/imported_tools/</span>
+            </summary>
+            <div className="tool-collapse-body">
+              <div className="form-grid">
+                <label>
+                  <span className="eyebrow">Source path</span>
+                  <input
+                    type="text"
+                    placeholder="/path/to/external/tool"
+                    value={importPath}
+                    onChange={(e) => setImportPath(e.target.value)}
+                    aria-label="Source path"
+                  />
+                </label>
+                <label>
+                  <span className="eyebrow">Target name</span>
+                  <input
+                    type="text"
+                    placeholder="my_imported_tool"
+                    value={importName}
+                    onChange={(e) => setImportName(e.target.value)}
+                    aria-label="Target name"
+                  />
+                </label>
+              </div>
+              <div className="action-row action-row-start">
+                <button type="button" className="primary" onClick={importExternal}>
+                  Import
+                </button>
+                <span className="muted">
+                  Requires <code>tool.yaml</code>; path escapes are refused.
+                </span>
+              </div>
+              {importStatus && <p className="muted">{importStatus}</p>}
             </div>
-            <div className="action-row action-row-start">
-              <button type="button" className="primary" onClick={importExternal}>
-                Import
-              </button>
-              <span className="muted">
-                Requires <code>tool.yaml</code>; path escapes are refused.
-              </span>
-            </div>
-            {importStatus && <p className="muted">{importStatus}</p>}
-          </Card>
+          </details>
         </aside>
       </div>
     </article>

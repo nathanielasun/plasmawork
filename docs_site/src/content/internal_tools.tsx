@@ -225,6 +225,14 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
         table, timeseries, image, diagram, file, report, or JSON inspection.
       </p>
       <p>
+        The Tools page uses focused workspace modes instead of showing every
+        workflow at once. <strong>Run</strong> exposes schema-bound execution,
+        <strong> Build</strong> exposes controlled draft authoring, and{" "}
+        <strong>Contract</strong> exposes metadata, docs, validation evidence,
+        and lifecycle state. Registry metrics and external import controls are
+        collapsible so the active workflow remains readable in one viewport.
+      </p>
+      <p>
         The in-app tool library is a compact navigator rather than a full
         registry dump. It highlights the active tool, locally frequent tools,
         and capped feature groups such as data I/O, diagnostics, validation,

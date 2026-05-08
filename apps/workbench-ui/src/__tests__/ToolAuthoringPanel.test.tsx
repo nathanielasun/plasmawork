@@ -123,6 +123,7 @@ describe("ToolAuthoringPanel", () => {
     await screen.findByText(/Draft created for new_diag_tool/i);
     expect(screen.getByDisplayValue(/name: new_diag_tool/i)).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("tab", { name: "Check" }));
     fireEvent.click(screen.getByRole("button", { name: "Run package check" }));
     await screen.findByText("Package check passed.");
 

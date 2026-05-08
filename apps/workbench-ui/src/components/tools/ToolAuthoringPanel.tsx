@@ -11,6 +11,18 @@ interface ToolAuthoringPanelProps {
   onRegistered: (name: string) => void;
 }
 
+type AuthoringTab = "start" | "edit" | "check";
+
+const AUTHORING_TABS: ReadonlyArray<{
+  id: AuthoringTab;
+  label: string;
+  disabledWithoutDraft: boolean;
+}> = [
+  { id: "start", label: "Start", disabledWithoutDraft: false },
+  { id: "edit", label: "Edit", disabledWithoutDraft: true },
+  { id: "check", label: "Check", disabledWithoutDraft: true },
+];
+
 function firstEditableFile(draft: ToolAuthoringDraft | null): string {
   return draft?.files.find((file) => file.editable)?.path ?? "tool.yaml";
 }
@@ -35,6 +47,7 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authoringTab, setAuthoringTab] = useState<AuthoringTab>("start");
 
   const loadAuthoring = useCallback(() => {
     setError(null);
@@ -124,6 +137,7 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
       setDrafts((current) => [nextDraft, ...current]);
       setSelectedDraftId(nextDraft.draft_id);
       setSelectedPath(firstEditableFile(nextDraft));
+      setAuthoringTab("edit");
       setToolName("");
       setMessage(`Draft created for ${nextDraft.tool_name}.`);
     } catch (nextError) {
@@ -160,6 +174,7 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
       const result = await apiClient.checkToolDraft(draft.draft_id);
       setCheckResult(result);
       await refreshDraft(draft.draft_id);
+      setAuthoringTab("check");
       setMessage(result.passed ? "Package check passed." : "Package check failed.");
     } catch (nextError) {
       setError(String(nextError));
@@ -177,6 +192,7 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
       const registered = await apiClient.registerToolDraft(draft.draft_id);
       await refreshDraft(draft.draft_id);
       onRegistered(registered.name);
+      setAuthoringTab("check");
       setMessage(`Registered ${registered.name} into local imported tools.`);
     } catch (nextError) {
       setError(String(nextError));
@@ -211,9 +227,36 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
       action={draft && <Pill kind={statusPillKind(draft.status)}>{draft.status}</Pill>}
       className="tool-authoring"
     >
-      <div className="tool-authoring-grid">
-        <section className="tool-authoring-column">
-          <h3>Start</h3>
+      <div className="tool-authoring-toolbar">
+        <div className="segment tool-authoring-tabs" role="tablist" aria-label="Tool authoring step">
+          {AUTHORING_TABS.map((tab) => {
+            const disabled = tab.disabledWithoutDraft && !draft;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={authoringTab === tab.id}
+                className={authoringTab === tab.id ? "segment-active" : ""}
+                disabled={disabled}
+                onClick={() => setAuthoringTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        {draft && (
+          <div className="tool-authoring-state-line">
+            <span>{draft.tool_name}</span>
+            <span>{draft.files.filter((file) => file.editable).length} editable files</span>
+            <span>{checkerCurrent ? "checker current" : "check required"}</span>
+          </div>
+        )}
+      </div>
+
+      {authoringTab === "start" && (
+        <section className="tool-authoring-pane tool-authoring-start-pane">
           <label>
             <span className="eyebrow">Template</span>
             <select
@@ -257,7 +300,10 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
               <span className="eyebrow">Open draft</span>
               <select
                 value={selectedDraftId}
-                onChange={(event) => setSelectedDraftId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedDraftId(event.target.value);
+                  setAuthoringTab("edit");
+                }}
                 aria-label="Open tool draft"
               >
                 {drafts.map((row) => (
@@ -269,8 +315,10 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
             </label>
           )}
         </section>
+      )}
 
-        <section className="tool-authoring-column tool-authoring-editor">
+      {authoringTab === "edit" && (
+        <section className="tool-authoring-pane tool-authoring-editor">
           <div className="row-between">
             <h3>Edit draft</h3>
             {draft && <Pill kind={draft.manifest_ok ? "validated" : "warning"}>{draft.manifest_ok ? "manifest ok" : "manifest error"}</Pill>}
@@ -327,8 +375,10 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
             <p className="placeholder">Create or open a draft to edit files.</p>
           )}
         </section>
+      )}
 
-        <section className="tool-authoring-column">
+      {authoringTab === "check" && (
+        <section className="tool-authoring-pane">
           <h3>Check & register</h3>
           {draft ? (
             <>
@@ -376,7 +426,7 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
             <p className="placeholder">Checker and registration appear after a draft is open.</p>
           )}
         </section>
-      </div>
+      )}
 
       {message && <p className="route-card-note">{message}</p>}
       {error && <p className="error" role="alert">{error}</p>}

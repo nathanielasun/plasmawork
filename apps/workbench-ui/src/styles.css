@@ -841,6 +841,76 @@ ol.lifecycle li.lifecycle-active {
 .tools-library {
   overflow: hidden;
 }
+.tools-overview-collapse,
+.tool-collapse-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.tools-overview-collapse summary,
+.tool-collapse-card summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+  padding: 0.85rem 1rem;
+}
+.tools-overview-collapse summary::-webkit-details-marker,
+.tool-collapse-card summary::-webkit-details-marker {
+  display: none;
+}
+.tools-overview-collapse summary::before,
+.tool-collapse-card summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.75rem;
+  transition: transform 0.15s ease;
+}
+.tools-overview-collapse[open] summary::before,
+.tool-collapse-card[open] summary::before {
+  transform: rotate(90deg);
+}
+.tools-overview-collapse summary span:first-child,
+.tool-collapse-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--fg);
+}
+.tools-overview-collapse summary span:last-child,
+.tool-collapse-subtitle {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tools-overview-collapse .kpi-strip {
+  padding: 0 1rem 1rem;
+}
+.tool-collapse-body {
+  border-top: 1px solid var(--border);
+  padding: var(--space-4);
+}
+.tool-workspace-mode {
+  display: grid;
+  gap: var(--space-3);
+}
+.tool-workspace-tabs {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tool-workspace-context {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
 .form-grid {
   display: grid;
   gap: var(--space-3);
@@ -1002,20 +1072,44 @@ ol.lifecycle li.lifecycle-active {
   border-radius: var(--radius-md);
   background: var(--surface-nested);
 }
-.tool-authoring-grid {
-  display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 340px);
-  gap: var(--space-4);
-  align-items: start;
-  min-width: 0;
+.tool-authoring-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
-.tool-authoring-column {
+.tool-authoring-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tool-authoring-state-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.tool-authoring-state-line span {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.4rem;
+  background: var(--surface-nested);
+}
+.tool-authoring-pane {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--space-3);
 }
-.tool-authoring-column h3 {
+.tool-authoring-start-pane {
+  max-width: 34rem;
+}
+.tool-authoring-pane h3 {
   margin: 0;
   font-size: 0.95rem;
 }
@@ -1429,7 +1523,6 @@ ol.lifecycle li.lifecycle-active {
   .tool-workbench-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .tool-authoring-grid,
   .tool-authoring-file-grid {
     grid-template-columns: minmax(0, 1fr);
   }

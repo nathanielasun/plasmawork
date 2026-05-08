@@ -60,6 +60,9 @@ describe("ToolList", () => {
       expect(screen.getAllByText("diagnostic · 0.1.0").length).toBeGreaterThan(0);
       expect(screen.getAllByText("candidate").length).toBeGreaterThan(0);
     });
+    expect(screen.queryByText("Build tool from template")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Build" }));
+    expect(await screen.findByText("Build tool from template")).toBeInTheDocument();
   });
 
   it("keeps the library curated and reveals hidden tools through search", async () => {
@@ -170,6 +173,7 @@ describe("ToolList", () => {
       name: /absorption_spectrum_diagnostic/i,
     });
     fireEvent.click(toolButton);
+    fireEvent.click(screen.getByRole("tab", { name: "Contract" }));
     await waitFor(() => {
       expect(screen.getAllByText("Find absorption peaks.").length).toBeGreaterThan(0);
       // Ports rendered.

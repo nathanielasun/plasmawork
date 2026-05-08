@@ -4,6 +4,19 @@ Chronological log of major implementation work. Most recent entry first.
 
 ---
 
+## 2026-05-08 (Tools page density refactor)
+
+### Completed
+- Reworked the Tools page primary column into focused `Run`, `Build`, and `Contract` modes so execution, authoring, and metadata inspection no longer stack in one viewport.
+- Converted tool draft authoring into `Start`, `Edit`, and `Check` step tabs while preserving the same template, editor, checker, register, and export capabilities.
+- Moved registry metrics and external import controls behind collapsible disclosure panels to keep secondary context available without overwhelming the active workflow.
+- Updated UI styling guidance and internal-tools documentation to preserve the tab/collapse pattern for future tool workbench changes.
+
+### Next steps
+- Consider persisted per-user workspace mode preferences after secure workspace identity is active.
+
+---
+
 ## 2026-05-08 (UI-native tool draft authoring)
 
 ### Completed
