@@ -179,6 +179,23 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   const { service, mw } = opts;
   const cookiePath = opts.cookiePath ?? "/";
   const cookieSecure = opts.cookieSecure ?? true;
+  // Recovery → session bridge wiring check. If the host registers
+  // authRoutes WITHOUT a LoginService, password-reset/consume + email-
+  // verify/consume return the legacy `{ status: "ok" }` envelope and
+  // the user lands with no session — a UX dead-end the F1+F2 audit fix
+  // explicitly closed for `/auth/login`. Production hosts MUST pass a
+  // loginService unless they have a deliberate reason (e.g. a separate
+  // "land on login screen" flow). Log a warning so a missed wiring is
+  // visible at startup rather than discovered by a confused user.
+  if (opts.loginService === undefined) {
+    app.log.warn(
+      "authRoutes registered without a LoginService. Recovery flows " +
+        "(password-reset/consume, email-verify/consume) will return the " +
+        "legacy {status:'ok'} envelope and NOT mint a session. Pass " +
+        "`loginService` to bridge into a fresh session per Phase 0.5 " +
+        "audit fix (2026-05-09).",
+    );
+  }
   const passwordResetRequestRateLimit =
     mw.enforcePasswordResetRequestRateLimit ?? mw.enforceRateLimit;
   const passwordResetConsumeRateLimit =

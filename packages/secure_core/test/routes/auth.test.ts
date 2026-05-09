@@ -729,4 +729,78 @@ describe("L4.8 — recovery → session bridge", () => {
     expect(h.mintCalls).toHaveLength(0);
     expect(r.headers["set-cookie"]).toBeUndefined();
   });
+
+  it("registering authRoutes WITHOUT loginService logs a startup warning", async () => {
+    const audit = makeAuditHarness();
+    const repoHarness = makeRepo();
+    const emailSender = new StubEmailSender();
+    const rateStore = new InMemoryRateLimitStore();
+    const service = new RecoveryService({
+      repo: repoHarness.repo,
+      emailSender,
+      auditLogger: audit.logger,
+      rateLimitStore: rateStore,
+      frontendOrigin: ALLOWED_ORIGIN,
+    });
+    const mw: AuthRoutesMiddleware = {
+      enforceRateLimit: enforceRateLimit({
+        limit: 100,
+        windowMs: 60_000,
+        store: rateStore,
+        auditLogger: audit.logger,
+        endpoint: "auth.recovery",
+      }),
+      enforceCsrfForStateChange: enforceCsrfForStateChange({
+        auditLogger: audit.logger,
+        allowedOrigins: [ALLOWED_ORIGIN],
+      }),
+      validateInputSchemaPasswordResetRequest: validateInputSchema(
+        REQUEST_EMAIL_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaPasswordResetConsume: validateInputSchema(
+        PASSWORD_RESET_CONSUME_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaEmailVerifyRequest: validateInputSchema(
+        REQUEST_EMAIL_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaEmailVerifyConsume: validateInputSchema(
+        EMAIL_VERIFY_CONSUME_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaMfaRecovery: validateInputSchema(MFA_RECOVERY_SCHEMA, {
+        auditLogger: audit.logger,
+      }),
+    };
+    const warnings: string[] = [];
+    const app = Fastify({
+      logger: {
+        level: "warn",
+        // Capture log lines so the test can assert on them.
+        stream: {
+          write(line: string) {
+            try {
+              const parsed = JSON.parse(line) as {
+                level: number;
+                msg?: string;
+              };
+              if (parsed.level >= 40 && typeof parsed.msg === "string") {
+                warnings.push(parsed.msg);
+              }
+            } catch {
+              warnings.push(line);
+            }
+          },
+        },
+      },
+    });
+    app.addHook("onRequest", requireRequestId);
+    await app.register(authRoutes, { service, mw });
+    await app.ready();
+    expect(
+      warnings.some((m) => m.includes("authRoutes registered without")),
+    ).toBe(true);
+  });
 });

@@ -2944,6 +2944,9 @@ check_grep_in_file 'email_verify' \
 check_grep_in_file 'mintSessionForUser' \
   packages/secure_core/test/routes/auth.test.ts \
   "Recovery bridge: tests cover the mintSessionForUser bridge path"
+check_grep_in_file 'authRoutes registered without' \
+  packages/secure_core/src/routes/auth.ts \
+  "Recovery bridge: authRoutes warns at startup when loginService is unwired (visible misconfig)"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
