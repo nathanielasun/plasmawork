@@ -74,15 +74,17 @@ export interface AuthRoutesOptions {
   readonly service: RecoveryService;
   readonly mw: AuthRoutesMiddleware;
   /**
-   * Optional login service. When provided, the consume endpoints
-   * (`password-reset/consume`, `email-verify/consume`) bridge to a
-   * fresh session: after the recovery service resolves the user id,
-   * `LoginService.mintSessionForUser` is called and `secure_session` /
-   * `csrf_token` cookies are set so the user lands logged in. Without
-   * this dep, the consume endpoints return the legacy `{ status: "ok" }`
-   * envelope (Phase 0.5 backwards-compatible behavior).
+   * REQUIRED. The consume endpoints (`password-reset/consume`,
+   * `email-verify/consume`) bridge into a fresh session: after the
+   * recovery service resolves the user id, `LoginService.mintSessionForUser`
+   * is called and `secure_session` / `csrf_token` cookies are set so the
+   * user lands logged in. Phase 0.5 audit fix (2026-05-09) made this
+   * required after the original optional-by-design encoding turned
+   * a misconfiguration into a silent UX dead-end (the user clicked
+   * the email link, the password reset committed, and they were sent
+   * back to /login with no session).
    */
-  readonly loginService?: LoginService;
+  readonly loginService: LoginService;
   /**
    * Cookie shape overrides for the recovery → session bridge. Mirror
    * the `loginRoutes` knobs so deployments can keep them in sync.
@@ -170,32 +172,13 @@ const MFA_RECOVERY_PENDING_BODY = Object.freeze({
     "MFA recovery requires operator review. You will be contacted out of band.",
 });
 
-const CONSUME_OK_BODY = Object.freeze({ status: "ok" });
-
 export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   app: FastifyInstance,
   opts,
 ) => {
-  const { service, mw } = opts;
+  const { service, mw, loginService } = opts;
   const cookiePath = opts.cookiePath ?? "/";
   const cookieSecure = opts.cookieSecure ?? true;
-  // Recovery → session bridge wiring check. If the host registers
-  // authRoutes WITHOUT a LoginService, password-reset/consume + email-
-  // verify/consume return the legacy `{ status: "ok" }` envelope and
-  // the user lands with no session — a UX dead-end the F1+F2 audit fix
-  // explicitly closed for `/auth/login`. Production hosts MUST pass a
-  // loginService unless they have a deliberate reason (e.g. a separate
-  // "land on login screen" flow). Log a warning so a missed wiring is
-  // visible at startup rather than discovered by a confused user.
-  if (opts.loginService === undefined) {
-    app.log.warn(
-      "authRoutes registered without a LoginService. Recovery flows " +
-        "(password-reset/consume, email-verify/consume) will return the " +
-        "legacy {status:'ok'} envelope and NOT mint a session. Pass " +
-        "`loginService` to bridge into a fresh session per Phase 0.5 " +
-        "audit fix (2026-05-09).",
-    );
-  }
   const passwordResetRequestRateLimit =
     mw.enforcePasswordResetRequestRateLimit ?? mw.enforceRateLimit;
   const passwordResetConsumeRateLimit =
@@ -246,41 +229,37 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
         newPassword: req.body.new_password,
         requestId: req.requestId,
       });
-      // Recovery → session bridge: when a LoginService is wired, the
-      // user lands logged in instead of being kicked back to /login.
-      if (opts.loginService !== undefined) {
-        const outcome = await opts.loginService.mintSessionForUser({
-          userId: consumed.userId,
-          authMethod: "password_reset",
-          assuranceLevel: "aal2",
-          requestId: req.requestId,
-        });
-        reply.setCookie(SESSION_COOKIE_NAME, outcome.rawSessionToken, {
-          httpOnly: true,
-          secure: cookieSecure,
-          sameSite: "lax",
-          path: cookiePath,
-          domain: opts.cookieDomain,
-          expires: outcome.expiresAt,
-        });
-        reply.setCookie(CSRF_COOKIE_NAME, outcome.rawCsrfToken, {
-          httpOnly: false,
-          secure: cookieSecure,
-          sameSite: "lax",
-          path: cookiePath,
-          domain: opts.cookieDomain,
-          expires: outcome.expiresAt,
-        });
-        const body: LoginResponseBody = {
-          user_id: outcome.userId,
-          session_id: outcome.sessionId,
-          assurance_level: outcome.assuranceLevel,
-          csrf_token: outcome.rawCsrfToken,
-          expires_at: outcome.expiresAt.toISOString(),
-        };
-        return reply.code(200).send(body);
-      }
-      return reply.code(200).send(CONSUME_OK_BODY);
+      // Recovery → session bridge: the user lands logged in at aal2.
+      const outcome = await loginService.mintSessionForUser({
+        userId: consumed.userId,
+        authMethod: "password_reset",
+        assuranceLevel: "aal2",
+        requestId: req.requestId,
+      });
+      reply.setCookie(SESSION_COOKIE_NAME, outcome.rawSessionToken, {
+        httpOnly: true,
+        secure: cookieSecure,
+        sameSite: "lax",
+        path: cookiePath,
+        domain: opts.cookieDomain,
+        expires: outcome.expiresAt,
+      });
+      reply.setCookie(CSRF_COOKIE_NAME, outcome.rawCsrfToken, {
+        httpOnly: false,
+        secure: cookieSecure,
+        sameSite: "lax",
+        path: cookiePath,
+        domain: opts.cookieDomain,
+        expires: outcome.expiresAt,
+      });
+      const body: LoginResponseBody = {
+        user_id: outcome.userId,
+        session_id: outcome.sessionId,
+        assurance_level: outcome.assuranceLevel,
+        csrf_token: outcome.rawCsrfToken,
+        expires_at: outcome.expiresAt.toISOString(),
+      };
+      return reply.code(200).send(body);
     },
   );
 
@@ -326,39 +305,36 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
       // Email-verify mints at aal1 (single-factor — only email control
       // proven). Deployments that want stricter AAL handling should
       // wrap this route or pass a stricter `loginService`.
-      if (opts.loginService !== undefined) {
-        const outcome = await opts.loginService.mintSessionForUser({
-          userId: consumed.userId,
-          authMethod: "email_verify",
-          assuranceLevel: "aal1",
-          requestId: req.requestId,
-        });
-        reply.setCookie(SESSION_COOKIE_NAME, outcome.rawSessionToken, {
-          httpOnly: true,
-          secure: cookieSecure,
-          sameSite: "lax",
-          path: cookiePath,
-          domain: opts.cookieDomain,
-          expires: outcome.expiresAt,
-        });
-        reply.setCookie(CSRF_COOKIE_NAME, outcome.rawCsrfToken, {
-          httpOnly: false,
-          secure: cookieSecure,
-          sameSite: "lax",
-          path: cookiePath,
-          domain: opts.cookieDomain,
-          expires: outcome.expiresAt,
-        });
-        const body: LoginResponseBody = {
-          user_id: outcome.userId,
-          session_id: outcome.sessionId,
-          assurance_level: outcome.assuranceLevel,
-          csrf_token: outcome.rawCsrfToken,
-          expires_at: outcome.expiresAt.toISOString(),
-        };
-        return reply.code(200).send(body);
-      }
-      return reply.code(200).send(CONSUME_OK_BODY);
+      const outcome = await loginService.mintSessionForUser({
+        userId: consumed.userId,
+        authMethod: "email_verify",
+        assuranceLevel: "aal1",
+        requestId: req.requestId,
+      });
+      reply.setCookie(SESSION_COOKIE_NAME, outcome.rawSessionToken, {
+        httpOnly: true,
+        secure: cookieSecure,
+        sameSite: "lax",
+        path: cookiePath,
+        domain: opts.cookieDomain,
+        expires: outcome.expiresAt,
+      });
+      reply.setCookie(CSRF_COOKIE_NAME, outcome.rawCsrfToken, {
+        httpOnly: false,
+        secure: cookieSecure,
+        sameSite: "lax",
+        path: cookiePath,
+        domain: opts.cookieDomain,
+        expires: outcome.expiresAt,
+      });
+      const body: LoginResponseBody = {
+        user_id: outcome.userId,
+        session_id: outcome.sessionId,
+        assurance_level: outcome.assuranceLevel,
+        csrf_token: outcome.rawCsrfToken,
+        expires_at: outcome.expiresAt.toISOString(),
+      };
+      return reply.code(200).send(body);
     },
   );
 

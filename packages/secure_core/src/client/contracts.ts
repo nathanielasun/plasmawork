@@ -77,7 +77,47 @@ export interface CurrentSessionResponse {
 
 export type SecurityDashboardResponse = SecurityDashboardSnapshot;
 
+/**
+ * Contract for the login response body. The frontend reads `csrf_token`
+ * from this body and caches it in memory; the SPA echoes it as
+ * `X-CSRF-Token` on every state-changing request. The raw session
+ * token is NEVER returned in the body — it lives only in the HttpOnly
+ * `secure_session` cookie. The same shape is returned by the recovery
+ * → session bridge (password-reset/consume + email-verify/consume).
+ */
+export interface LoginResponseBody {
+  readonly user_id: string;
+  readonly session_id: string;
+  readonly assurance_level: "aal1" | "aal2" | "aal3";
+  readonly csrf_token: string;
+  readonly expires_at: string;
+}
+
 export const SECURE_CORE_FRONTEND_ROUTES = [
+  {
+    id: "auth.login",
+    method: "POST",
+    path: "/auth/login",
+    auth: "none",
+    csrf: "origin",
+    approval: "none",
+    readiness: "ready",
+    uiSurface: "auth",
+    notes:
+      "Mints secure_session (HttpOnly) and csrf_token (non-HttpOnly) cookies; returns LoginResponseBody. Constant-time anti-enumeration on failure.",
+  },
+  {
+    id: "auth.logout",
+    method: "POST",
+    path: "/auth/logout",
+    auth: "session",
+    csrf: "session",
+    approval: "none",
+    readiness: "ready",
+    uiSurface: "auth",
+    notes:
+      "Revokes the session and clears both cookies idempotently (returns 204 even if the revocation fails on an unknown error).",
+  },
   {
     id: "auth.password_reset.request",
     method: "POST",
@@ -98,7 +138,8 @@ export const SECURE_CORE_FRONTEND_ROUTES = [
     approval: "none",
     readiness: "ready",
     uiSurface: "auth",
-    notes: "Consumes a single-use reset token.",
+    notes:
+      "Consumes a single-use reset token AND mints a fresh aal2 session (LoginResponseBody + cookies). Recovery → session bridge.",
   },
   {
     id: "auth.email_verify.request",
@@ -120,7 +161,8 @@ export const SECURE_CORE_FRONTEND_ROUTES = [
     approval: "none",
     readiness: "ready",
     uiSurface: "auth",
-    notes: "Consumes a single-use verification token.",
+    notes:
+      "Consumes a single-use verification token AND mints a fresh aal1 session (LoginResponseBody + cookies). Recovery → session bridge.",
   },
   {
     id: "auth.mfa_recovery",

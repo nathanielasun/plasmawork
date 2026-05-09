@@ -137,6 +137,17 @@ interface AppHarness {
   emailSender: StubEmailSender;
   rateStore: InMemoryRateLimitStore;
   service: RecoveryService;
+  /**
+   * Captured mintSessionForUser calls from the stub login service.
+   * The legacy tests that drove the consume happy-path assertion
+   * inspect this so they can prove the bridge fired (or didn't, on
+   * sad paths).
+   */
+  mintCalls: Array<{
+    userId: string;
+    authMethod: string;
+    assuranceLevel: string;
+  }>;
 }
 
 function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
@@ -144,6 +155,7 @@ function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
   const repoHarness = makeRepo(opts);
   const emailSender = new StubEmailSender();
   const rateStore = new InMemoryRateLimitStore();
+  const mintCalls: AppHarness["mintCalls"] = [];
 
   const service = new RecoveryService({
     repo: repoHarness.repo,
@@ -152,6 +164,29 @@ function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
     rateLimitStore: rateStore,
     frontendOrigin: ALLOWED_ORIGIN,
   });
+
+  const loginService = {
+    async mintSessionForUser(input: {
+      userId: string;
+      authMethod: string;
+      assuranceLevel: string;
+      requestId: string;
+    }) {
+      mintCalls.push({
+        userId: input.userId,
+        authMethod: input.authMethod,
+        assuranceLevel: input.assuranceLevel,
+      });
+      return {
+        userId: input.userId,
+        sessionId: `sess-${input.authMethod}`,
+        assuranceLevel: input.assuranceLevel as "aal1" | "aal2" | "aal3",
+        rawSessionToken: `raw_session_${input.authMethod}`,
+        rawCsrfToken: `raw_csrf_${input.authMethod}`,
+        expiresAt: new Date("2026-05-10T00:00:00Z"),
+      };
+    },
+  } as unknown as import("../../src/auth/loginService.js").LoginService;
 
   const mw: AuthRoutesMiddleware = {
     enforceRateLimit: enforceRateLimit({
@@ -198,6 +233,7 @@ function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
       },
     },
   });
+  void app.register(import("@fastify/cookie"));
   app.addHook("onRequest", requireRequestId);
   app.setErrorHandler((err, req, reply) => {
     const fErr = err as Error & {
@@ -224,9 +260,17 @@ function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(authRoutes, { service, mw });
+  app.register(authRoutes, { service, mw, loginService, cookieSecure: false });
 
-  return { app, audit, repoHarness, emailSender, rateStore, service };
+  return {
+    app,
+    audit,
+    repoHarness,
+    emailSender,
+    rateStore,
+    service,
+    mintCalls,
+  };
 }
 
 const goodHeaders = {
@@ -730,77 +774,11 @@ describe("L4.8 — recovery → session bridge", () => {
     expect(r.headers["set-cookie"]).toBeUndefined();
   });
 
-  it("registering authRoutes WITHOUT loginService logs a startup warning", async () => {
-    const audit = makeAuditHarness();
-    const repoHarness = makeRepo();
-    const emailSender = new StubEmailSender();
-    const rateStore = new InMemoryRateLimitStore();
-    const service = new RecoveryService({
-      repo: repoHarness.repo,
-      emailSender,
-      auditLogger: audit.logger,
-      rateLimitStore: rateStore,
-      frontendOrigin: ALLOWED_ORIGIN,
-    });
-    const mw: AuthRoutesMiddleware = {
-      enforceRateLimit: enforceRateLimit({
-        limit: 100,
-        windowMs: 60_000,
-        store: rateStore,
-        auditLogger: audit.logger,
-        endpoint: "auth.recovery",
-      }),
-      enforceCsrfForStateChange: enforceCsrfForStateChange({
-        auditLogger: audit.logger,
-        allowedOrigins: [ALLOWED_ORIGIN],
-      }),
-      validateInputSchemaPasswordResetRequest: validateInputSchema(
-        REQUEST_EMAIL_SCHEMA,
-        { auditLogger: audit.logger },
-      ),
-      validateInputSchemaPasswordResetConsume: validateInputSchema(
-        PASSWORD_RESET_CONSUME_SCHEMA,
-        { auditLogger: audit.logger },
-      ),
-      validateInputSchemaEmailVerifyRequest: validateInputSchema(
-        REQUEST_EMAIL_SCHEMA,
-        { auditLogger: audit.logger },
-      ),
-      validateInputSchemaEmailVerifyConsume: validateInputSchema(
-        EMAIL_VERIFY_CONSUME_SCHEMA,
-        { auditLogger: audit.logger },
-      ),
-      validateInputSchemaMfaRecovery: validateInputSchema(MFA_RECOVERY_SCHEMA, {
-        auditLogger: audit.logger,
-      }),
-    };
-    const warnings: string[] = [];
-    const app = Fastify({
-      logger: {
-        level: "warn",
-        // Capture log lines so the test can assert on them.
-        stream: {
-          write(line: string) {
-            try {
-              const parsed = JSON.parse(line) as {
-                level: number;
-                msg?: string;
-              };
-              if (parsed.level >= 40 && typeof parsed.msg === "string") {
-                warnings.push(parsed.msg);
-              }
-            } catch {
-              warnings.push(line);
-            }
-          },
-        },
-      },
-    });
-    app.addHook("onRequest", requireRequestId);
-    await app.register(authRoutes, { service, mw });
-    await app.ready();
-    expect(
-      warnings.some((m) => m.includes("authRoutes registered without")),
-    ).toBe(true);
-  });
+  // The "loginService is required" guard now lives at the TypeScript
+  // type level: `AuthRoutesOptions.loginService: LoginService` (no
+  // optional marker). A host that omits it fails to compile, which is
+  // a strictly stronger guarantee than the prior runtime warning.
+  // There is no behavioral test here because there is no runtime
+  // branch left to test — the previous "warn-on-missing" test was
+  // superseded by the type contract on 2026-05-09.
 });

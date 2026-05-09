@@ -2944,9 +2944,22 @@ check_grep_in_file 'email_verify' \
 check_grep_in_file 'mintSessionForUser' \
   packages/secure_core/test/routes/auth.test.ts \
   "Recovery bridge: tests cover the mintSessionForUser bridge path"
-check_grep_in_file 'authRoutes registered without' \
+check_grep_in_file 'loginService: LoginService' \
   packages/secure_core/src/routes/auth.ts \
-  "Recovery bridge: authRoutes warns at startup when loginService is unwired (visible misconfig)"
+  "Recovery bridge: loginService is required (no '?' optional marker — TypeScript fails the build if a host omits it)"
+# Frontend contract surface lists POST /auth/login + POST /auth/logout
+# (audit follow-up 2026-05-09: the audit flagged that the contracts
+# file omitted the new login/logout routes despite them being the
+# primary frontend-facing auth surface).
+check_grep_in_file '"auth.login"' \
+  packages/secure_core/src/client/contracts.ts \
+  "Frontend contract: SECURE_CORE_FRONTEND_ROUTES lists POST /auth/login"
+check_grep_in_file '"auth.logout"' \
+  packages/secure_core/src/client/contracts.ts \
+  "Frontend contract: SECURE_CORE_FRONTEND_ROUTES lists POST /auth/logout"
+check_grep_in_file 'LoginResponseBody' \
+  packages/secure_core/src/client/contracts.ts \
+  "Frontend contract: LoginResponseBody type is exported for SPA use"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
