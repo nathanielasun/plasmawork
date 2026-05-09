@@ -3007,6 +3007,66 @@ check_grep_absent_in_file 'REQUEST_EMAIL_SCHEMA\b' \
   packages/secure_core/src/routes/auth.ts \
   "Phase A removed legacy REQUEST_EMAIL_SCHEMA name"
 
+# Phase 0.5 auth gateway / Phase B+C+D scaffold (2026-05-09):
+# the workbench-gateway package + bootstrap/argon2 adapters + the
+# .env.auth canonical config land together.
+section "Phase 0.5 auth gateway / Phase B+C+D scaffold"
+check_dir_exists apps/workbench-gateway "apps/workbench-gateway/ package directory exists"
+check_file_exists apps/workbench-gateway/package.json
+check_file_exists apps/workbench-gateway/tsconfig.json
+check_file_exists apps/workbench-gateway/vitest.config.ts
+check_file_exists apps/workbench-gateway/src/main.ts
+check_file_exists apps/workbench-gateway/src/env.ts
+check_file_exists apps/workbench-gateway/src/auth/argon2Adapter.ts
+check_file_exists apps/workbench-gateway/src/bootstrap/dbAdapter.ts
+check_file_exists apps/workbench-gateway/.env.auth.example
+check_file_exists .env.auth.example
+check_grep_in_file '@simworkbench/workbench-gateway' \
+  apps/workbench-gateway/package.json \
+  "gateway package.json declares the @simworkbench/workbench-gateway name"
+check_grep_in_file '@node-rs/argon2' \
+  apps/workbench-gateway/package.json \
+  "gateway depends on @node-rs/argon2 (prebuilt napi binding, no native compile)"
+check_grep_in_file 'memoryCost: 65_536' \
+  apps/workbench-gateway/src/auth/argon2Adapter.ts \
+  "gateway argon2 params match OWASP 2023 (m=65536 KiB)"
+check_grep_in_file 'export function createArgon2Adapter' \
+  apps/workbench-gateway/src/auth/argon2Adapter.ts \
+  "gateway exports createArgon2Adapter (LoginService seam)"
+check_grep_in_file 'export function createBootstrapDbAdapter' \
+  apps/workbench-gateway/src/bootstrap/dbAdapter.ts \
+  "gateway exports createBootstrapDbAdapter (BootstrapService seam)"
+check_grep_in_file '_platform' \
+  apps/workbench-gateway/src/bootstrap/dbAdapter.ts \
+  "bootstrap adapter seeds the _platform synthetic workspace"
+check_grep_in_file 'shared-internal-tools' \
+  apps/workbench-gateway/src/bootstrap/dbAdapter.ts \
+  "bootstrap adapter seeds the shared-internal-tools workspace"
+check_grep_in_file 'shared-public-experiments' \
+  apps/workbench-gateway/src/bootstrap/dbAdapter.ts \
+  "bootstrap adapter seeds the shared-public-experiments workspace"
+check_grep_in_file 'sql\.begin' \
+  apps/workbench-gateway/src/bootstrap/dbAdapter.ts \
+  "bootstrap adapter wraps every INSERT in a single sql.begin tx"
+check_grep_in_file 'export function loadGatewayEnv' \
+  apps/workbench-gateway/src/env.ts \
+  "gateway exports loadGatewayEnv (.env.auth loader with required-variable enforcement)"
+check_grep_in_file 'must be at least .* bytes' \
+  apps/workbench-gateway/src/env.ts \
+  "loadGatewayEnv enforces a 32-byte minimum on cookie/handoff secrets"
+check_grep_in_file 'BOOTSTRAP_CREDENTIAL_HASH' \
+  .env.auth.example \
+  ".env.auth.example documents BOOTSTRAP_CREDENTIAL_HASH"
+check_grep_in_file 'ROOT_ADMIN_USER_ID' \
+  .env.auth.example \
+  ".env.auth.example documents ROOT_ADMIN_USER_ID"
+check_grep_in_file 'WORKBENCH_GATEWAY_HANDOFF_SECRET' \
+  .env.auth.example \
+  ".env.auth.example documents WORKBENCH_GATEWAY_HANDOFF_SECRET"
+check_grep_in_file '!\.env\.auth\.example' \
+  .gitignore \
+  ".gitignore commits .env.auth.example while ignoring .env.auth"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard

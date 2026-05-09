@@ -1,0 +1,30 @@
+{
+  "name": "@simworkbench/workbench-gateway",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Fastify auth gateway that fronts the FastAPI workbench. Composes the secure_core route plugins (login, recovery, workspaces, capsules, runs, tools, operator) and proxies /api/{workspace_slug}/... to the loopback-bound Python backend with HMAC-signed forwarded headers. Phase 0.5 (2026-05-09).",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "node --import tsx/esm src/main.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/http-proxy": "^11.0.0",
+    "@node-rs/argon2": "^2.0.2",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.2.0",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.5"
+  }
+}

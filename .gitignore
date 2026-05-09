@@ -42,6 +42,7 @@ docs_site/src/**/*.d.ts
 # Hand-authored ambient-type files are NOT emit leaks; re-include them.
 !apps/*/src/vite-env.d.ts
 !docs_site/src/vite-env.d.ts
+!apps/workbench-gateway/src/typings.d.ts
 .pnp
 .pnp.js
 
@@ -88,6 +89,12 @@ simulation_capsules/*
 # Local config / secrets
 .env
 .env.*
+# Phase 0.5 auth gateway (2026-05-09): /.env.auth is the canonical
+# authentication config. The .env.auth file itself is ignored above by
+# `.env.*`; the .env.auth.example template MUST be committed so
+# operators have a reference of every variable the gateway expects.
+!.env.auth.example
+!apps/*/.env.*.example
 *.local.yaml
 *.local.json
 .vercel
