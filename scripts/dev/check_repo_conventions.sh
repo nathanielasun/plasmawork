@@ -3114,6 +3114,60 @@ check_grep_in_file 'DEFAULT_HOST = "127\.0\.0\.1"' \
   scripts/dev/run_backend.py \
   "run_backend.py binds to loopback by default (Phase 0.5 auth gateway invariant)"
 
+# Phase 0.5 auth gateway / Phase D-rest (route-vertical wiring). Until
+# this section landed, `apps/workbench-gateway/src/main.ts` was a thin
+# shell that built the Fastify app via secure_core's factory but
+# registered zero route plugins. The advisor's review of the Phase E
+# close flagged that gap; this section pins the minimum vertical
+# (loginRoutes + sessionRoutes + bootstrapRoutes) plus the integration
+# smoke test that exercises the wiring.
+section "Phase 0.5 auth gateway / Phase D-rest (route-vertical wiring)"
+check_file_exists apps/workbench-gateway/src/services/composeServices.ts
+check_grep_in_file 'export function buildGatewayServices' \
+  apps/workbench-gateway/src/services/composeServices.ts \
+  "composeServices exports buildGatewayServices factory"
+check_grep_in_file 'new LoginService' \
+  apps/workbench-gateway/src/services/composeServices.ts \
+  "composeServices instantiates LoginService"
+check_grep_in_file 'new BootstrapService' \
+  apps/workbench-gateway/src/services/composeServices.ts \
+  "composeServices instantiates BootstrapService"
+check_grep_in_file 'new SqlCurrentSessionReader' \
+  apps/workbench-gateway/src/services/composeServices.ts \
+  "composeServices instantiates SqlCurrentSessionReader"
+check_file_exists apps/workbench-gateway/src/middleware/bundles.ts
+check_grep_in_file 'export function buildGatewayMiddleware' \
+  apps/workbench-gateway/src/middleware/bundles.ts \
+  "bundles.ts exports buildGatewayMiddleware factory"
+check_grep_in_file 'enforceCsrfForStateChange' \
+  apps/workbench-gateway/src/middleware/bundles.ts \
+  "bundles.ts wires enforceCsrfForStateChange"
+check_grep_in_file 'requireAuth' \
+  apps/workbench-gateway/src/middleware/bundles.ts \
+  "bundles.ts wires requireAuth (real cookie-session middleware)"
+check_grep_in_file 'app\.register\(loginRoutes' \
+  apps/workbench-gateway/src/main.ts \
+  "main.ts registers loginRoutes (POST /auth/login + /auth/logout)"
+check_grep_in_file 'app\.register\(sessionRoutes' \
+  apps/workbench-gateway/src/main.ts \
+  "main.ts registers sessionRoutes (GET /auth/session)"
+check_grep_in_file 'app\.register\(bootstrapRoutes' \
+  apps/workbench-gateway/src/main.ts \
+  "main.ts registers bootstrapRoutes (POST /bootstrap)"
+check_file_exists apps/workbench-gateway/test/integration/loginVertical.test.ts
+check_grep_in_file 'POST /bootstrap with matching OOB credential' \
+  apps/workbench-gateway/test/integration/loginVertical.test.ts \
+  "loginVertical test pins POST /bootstrap happy path"
+check_grep_in_file 'POST /auth/login mints both cookies' \
+  apps/workbench-gateway/test/integration/loginVertical.test.ts \
+  "loginVertical test pins POST /auth/login cookie shape"
+check_grep_in_file 'GET /auth/session without a cookie' \
+  apps/workbench-gateway/test/integration/loginVertical.test.ts \
+  "loginVertical test pins GET /auth/session unauth → 401"
+check_grep_in_file 'wrong Origin' \
+  apps/workbench-gateway/test/integration/loginVertical.test.ts \
+  "loginVertical test pins Origin allowlist enforcement"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard

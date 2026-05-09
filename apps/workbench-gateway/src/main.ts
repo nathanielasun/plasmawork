@@ -1,72 +1,146 @@
 /**
  * Workbench gateway entrypoint — Phase 0.5 (2026-05-09).
  *
- * Phase D scaffolding lands here: env loading + the secure_core
- * `buildApp` factory. The actual route registrations + the Phase E
- * `workbenchProxyPlugin` are in `src/proxy/workbenchProxy.ts` (added
- * in the next commit) and `src/services/composeServices.ts` (the
- * route plugin wiring).
+ * The gateway is the public entry point of the workbench. Browsers
+ * hit it directly; the FastAPI backend binds 127.0.0.1 only and is
+ * reachable exclusively via the Phase E `/api/*` proxy plugin.
  *
- * Today this file is intentionally a thin shell: it loads + validates
- * `.env.auth`, builds the Fastify app via secure_core's factory, and
- * fails to start if any required variable is missing. Routes are
- * still being wired as Phase D/E ship.
+ * Boot sequence:
  *
- * To run during development:
- *   1. Copy /.env.auth.example → /.env.auth and fill the required
- *      values (see the comments at the top of the example).
- *   2. From the repo root: npm --prefix apps/workbench-gateway run dev
+ *   1. Load + validate `.env.auth` (env.ts).
+ *   2. Open two postgres-js clients (app + audit pools).
+ *   3. Build secure_core services + middleware bundles.
+ *   4. Build the Fastify app via `secure_core.buildApp()`.
+ *   5. Register the auth-vertical route plugins:
+ *        loginRoutes  → POST /auth/login + /auth/logout
+ *        sessionRoutes → GET  /auth/session
+ *        bootstrapRoutes → POST /bootstrap (only when gates are open)
+ *   6. (Phase E2 — next commit) register `workbenchProxyPlugin` LAST
+ *        so its `/api/*` catch-all does NOT shadow secure_core routes.
+ *
+ * Failure modes are intentionally fail-closed: missing env, mis-sized
+ * secrets, malformed `BOOTSTRAP_CREDENTIAL_HASH`, an absent `.env.auth`
+ * file — all surface at boot, not at first request.
  */
 
 import postgres from "postgres";
 
 import { buildApp } from "../../../packages/secure_core/src/server.js";
-import { loadGatewayEnv } from "./env.js";
+import { loginRoutes } from "../../../packages/secure_core/src/routes/login.js";
+import { sessionRoutes } from "../../../packages/secure_core/src/routes/session.js";
+import { bootstrapRoutes } from "../../../packages/secure_core/src/routes/bootstrap.js";
+import type { FastifyInstance } from "fastify";
+
+import { loadGatewayEnv, type GatewayEnv } from "./env.js";
+import {
+  buildGatewayServices,
+  type GatewayServices,
+} from "./services/composeServices.js";
+import {
+  buildGatewayMiddleware,
+  ipKeyExtractor,
+  type GatewayMiddlewareBundles,
+} from "./middleware/bundles.js";
 
 export interface BuiltGateway {
-  readonly env: ReturnType<typeof loadGatewayEnv>;
-  readonly app: ReturnType<typeof buildApp>;
+  readonly env: GatewayEnv;
+  readonly app: FastifyInstance;
+  readonly services: GatewayServices;
+  readonly mw: GatewayMiddlewareBundles;
   readonly close: () => Promise<void>;
+}
+
+export interface BuildGatewayOptions {
+  /** Override for tests — pre-loaded env values. */
+  readonly env?: GatewayEnv;
+  /**
+   * Override for tests — pre-built services. When omitted the gateway
+   * opens its own postgres-js clients per `env.dbUrl`/`env.dbAuditUrl`.
+   */
+  readonly services?: GatewayServices;
+  /**
+   * Override for tests — when true the cookie writer accepts plain
+   * HTTP (so the test client doesn't have to terminate TLS). Defaults
+   * to `false`; production never sets this.
+   */
+  readonly cookieSecure?: boolean;
 }
 
 /**
  * Build the gateway. Exposed as a function so tests can stand up the
  * app without listening on a real port.
  */
-export function buildGateway(opts?: {
-  /** Override for tests — pre-loaded env values. */
-  readonly env?: ReturnType<typeof loadGatewayEnv>;
-}): BuiltGateway {
-  const env = opts?.env ?? loadGatewayEnv();
+export async function buildGateway(
+  opts: BuildGatewayOptions = {},
+): Promise<BuiltGateway> {
+  const env = opts.env ?? loadGatewayEnv();
 
-  // Two pools per ADR-0010: the app pool runs `secure_core_app`-shaped
-  // work, the audit pool is the separate hash-chained writer.
-  const appSql = postgres(env.dbUrl);
-  const auditSql = postgres(env.dbAuditUrl);
+  let services: GatewayServices;
+  let ownsPools = false;
+  if (opts.services !== undefined) {
+    services = opts.services;
+  } else {
+    // ADR-0010: two pools — the app pool runs `secure_core_app`-shaped
+    // work, the audit pool is the separate hash-chained writer.
+    const appSql = postgres(env.dbUrl);
+    const auditSql = postgres(env.dbAuditUrl);
+    services = buildGatewayServices({ env, appSql, auditSql });
+    ownsPools = true;
+  }
 
   const app = buildApp({
-    appSql,
+    appSql: services.appPool.sql,
     cookieSecret: env.cookieSecret,
     errorMapping: { dev: false },
   });
 
-  // TODO Phase D: register secure_core route plugins (login, auth,
-  // workspaces, capsules, runs, tools, operator, security-dashboard,
-  // bootstrap, sessions). Phase E adds the workbench proxy.
-  //
-  // Each route registration takes a service constructed in
-  // `services/composeServices.ts` (next commit) plus a middleware
-  // bundle from `middleware/bundles.ts`. The proxy plugin lives at
-  // `proxy/workbenchProxy.ts` and is registered LAST so its catch-all
-  // /api/* doesn't shadow the secure_core routes.
+  const mw = buildGatewayMiddleware({
+    auditLogger: services.auditLogger,
+    appPool: services.appPool,
+    allowedOrigins: [env.frontendOrigin],
+  });
+
+  // Auth-vertical route registrations. The plugin order does not
+  // affect correctness because each plugin owns a distinct path
+  // prefix, but we register login → session → bootstrap to match the
+  // user journey (sign in → check session → first-boot bootstrap).
+  await app.register(loginRoutes, {
+    service: services.loginService,
+    mw: mw.login,
+    cookieSecure: opts.cookieSecure ?? true,
+  });
+  await app.register(sessionRoutes, {
+    service: services.sessionReader,
+    mw: mw.session,
+  });
+  await app.register(bootstrapRoutes, {
+    service: services.bootstrapService,
+    mw: mw.bootstrap,
+    auditLogger: services.auditLogger,
+    bootstrapAllowed: env.bootstrapAllowed,
+    wormMarker: services.wormMarker,
+    rateLimitStore: mw.rateLimitStore,
+    rateLimitKeyExtractor: ipKeyExtractor,
+  });
+
+  // TODO Phase E2: register `workbenchProxyPlugin` LAST. The proxy
+  // mounts a catch-all at `/api/*`; registering it before the routes
+  // above would shadow them. Phase E5 + F also depend on this.
 
   return {
     env,
     app,
+    services,
+    mw,
     async close() {
       await app.close();
-      await appSql.end({ timeout: 5 });
-      await auditSql.end({ timeout: 5 });
+      if (ownsPools) {
+        // Only end the postgres-js clients we opened. Tests that
+        // injected pre-built services own their own clients and clean
+        // up themselves.
+        await services.appPool.sql.end({ timeout: 5 });
+        await services.auditPool.sql.end({ timeout: 5 });
+      }
     },
   };
 }
@@ -77,7 +151,7 @@ export function buildGateway(opts?: {
  * because the gateway is intentionally fail-closed at boot.
  */
 export async function start(): Promise<void> {
-  const gateway = buildGateway();
+  const gateway = await buildGateway();
   await gateway.app.listen({
     host: "0.0.0.0",
     port: gateway.env.gatewayPort,
