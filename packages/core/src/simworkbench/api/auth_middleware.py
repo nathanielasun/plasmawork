@@ -13,15 +13,27 @@ than 30 seconds, and stashes the resolved actor on
 ``request.state.workspace_slug`` etc. when computing workspace-scoped
 paths through ``simworkbench.paths.simulation_capsules_root_for(...)``.
 
-Why all three defenses (HMAC + loopback + slug cross-check):
-- HMAC alone — anyone on localhost could spoof headers if they knew
-  the secret. The secret comes from ``.env.auth`` and never leaves
-  the gateway/backend pair.
-- Loopback bind alone — another process on the same host could still
-  hit FastAPI directly with no auth.
-- Slug cross-check — prevents path tampering: even if a valid HMAC
-  slips through, the URL path's workspace prefix must match the
-  asserted slug.
+Defense composition (what the threat model actually relies on):
+
+- **HMAC verification — always on.** Every non-bypass request must
+  carry a valid signature against ``WORKBENCH_GATEWAY_HANDOFF_SECRET``.
+  Anyone on localhost could spoof the headers without this secret;
+  the secret comes from ``.env.auth`` and never leaves the
+  gateway/backend pair.
+- **Loopback bind — enforced by deployment.** ``scripts/dev/run_backend.py``
+  pins ``DEFAULT_HOST = "127.0.0.1"``; the convention checker pins
+  the literal so a deployment can't drop it accidentally. Another
+  process on the same host could still hit FastAPI directly with no
+  auth, but a different host on the network cannot.
+- **URL slug cross-check — opt-in via ``slug_prefixed_paths``.** When
+  configured (production gateway sets ``slug_prefixed_paths=("/api",)``
+  once Phase E5 lands workspace-prefixed FastAPI URLs), the URL's
+  workspace prefix must match the asserted slug — defends against
+  path tampering even with a valid HMAC. Default is empty: the
+  current FastAPI routes are flat ``/api/...`` URLs and the gateway
+  strips any slug before proxying, so there's nothing to cross-check
+  against. The flag turns the third defense on once the URL
+  contract changes.
 
 Companion files:
 - ``apps/workbench-gateway/src/proxy/handoffSigner.ts`` — gateway side.
