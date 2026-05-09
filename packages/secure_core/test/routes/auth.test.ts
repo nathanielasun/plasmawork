@@ -516,11 +516,10 @@ describe("L4.8 — recovery routes", () => {
 // ---------------------------------------------------------------------
 // Recovery → session bridge (Phase 0.5 audit fix, 2026-05-09)
 //
-// When `authRoutes` is wired with an optional `loginService`, the
-// consume endpoints mint a fresh session and set `secure_session` /
-// `csrf_token` cookies so the user lands logged in. Without this dep
-// the old "200 + { status: 'ok' }" envelope is preserved (covered by
-// the legacy tests above).
+// `AuthRoutesOptions.loginService` is required. The consume endpoints mint
+// a fresh session and set `secure_session` / `csrf_token` cookies so the
+// user lands logged in. The old "200 + { status: 'ok' }" no-cookie path
+// is intentionally gone because it preserved a silent host-wiring bug.
 // ---------------------------------------------------------------------
 
 describe("L4.8 — recovery → session bridge", () => {

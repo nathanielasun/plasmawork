@@ -30,6 +30,14 @@ export default function SecurityAuthentication() {
         capabilities; it accepts no request body.
       </p>
       <p>
+        User-facing authentication routes include sign-in, sign-out, password
+        reset, and email verification. A successful sign-in or recovery-token
+        consume creates a fresh browser session and returns the frontend login
+        response shape. Password-reset consume lands at assurance level 2;
+        email-verification consume lands at assurance level 1 until a stronger
+        factor is completed.
+      </p>
+      <p>
         Session refresh, revocation, idle timeout, and disabled-user handling
         are part of the authentication boundary. Disabling a user prevents new
         privileged work and preserves historical audit and provenance rows.
@@ -45,10 +53,10 @@ export default function SecurityAuthentication() {
 
       <h2>Non-goals</h2>
       <p>
-        This page does not document concrete login endpoints, provider
-        configuration, cookie names, token formats, or secret identifiers.
-        Operators should use deployment runbooks for environment-specific
-        setup.
+        This page does not document provider configuration, raw cookie values,
+        token formats, secret identifiers, or deployment-specific identity
+        provider setup. Operators should use deployment runbooks for
+        environment-specific setup.
       </p>
     </article>
   );

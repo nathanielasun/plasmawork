@@ -117,14 +117,13 @@ in the Phase 0.5 secure-core stack:
   and `consumeEmailVerification` now return `{ userId }` on success.
   `LoginService.mintSessionForUser` is the shared helper that issues a
   session for an already-authenticated user; `authenticatePassword`
-  delegates to it and the recovery routes call it directly. When
-  `authRoutes` is wired with a `LoginService`, password-reset/consume
-  mints at aal2 (user proved email + new password) and email-verify/
-  consume mints at aal1 (user proved email control only); both set
-  `secure_session` and `csrf_token` cookies and return the
-  `LoginResponseBody` envelope. Without a `LoginService` the legacy
-  `{ status: "ok" }` shape is preserved (pre-bridge consumers stay
-  green).
+  delegates to it and the recovery routes call it directly.
+  `AuthRoutesOptions.loginService` is type-required, so a host that omits
+  it fails to compile instead of silently preserving the old
+  `{ status: "ok" }` response shape. Password-reset/consume mints at aal2
+  (user proved email + new password) and email-verify/consume mints at aal1
+  (user proved email control only); both set `secure_session` and
+  `csrf_token` cookies and return the `LoginResponseBody` envelope.
 
 ### Regression protection
 - `packages/secure_core/test/auth/loginService.test.ts` — 7 tests pinning
