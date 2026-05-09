@@ -91,14 +91,14 @@ interface LoginStubOpts {
 
 function makeStubService(opts: LoginStubOpts = {}): {
   service: LoginService;
-  authCalls: Array<{ email: string; password: string; requestId: string }>;
+  authCalls: Array<{ username: string; password: string; requestId: string }>;
   terminateCalls: Array<{ sessionId: string; actorUserId: string }>;
 } {
-  const authCalls: Array<{ email: string; password: string; requestId: string }> = [];
+  const authCalls: Array<{ username: string; password: string; requestId: string }> = [];
   const terminateCalls: Array<{ sessionId: string; actorUserId: string }> = [];
   const service = {
     async authenticatePassword(input: {
-      email: string;
+      username: string;
       password: string;
       requestId: string;
     }) {
@@ -107,7 +107,7 @@ function makeStubService(opts: LoginStubOpts = {}): {
         throw opts.authError;
       }
       if (opts.outcome === undefined) {
-        throw new UnauthenticatedError("Invalid email or password.");
+        throw new UnauthenticatedError("Invalid username or password.");
       }
       return opts.outcome;
     },
@@ -257,7 +257,7 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
       method: "POST",
       url: "/auth/login",
       headers: goodHeaders,
-      payload: { email: "alice@example.com", password: "supersecret" },
+      payload: { username: "alice_42", password: "supersecret" },
     });
 
     expect(r.statusCode).toBe(200);
@@ -292,12 +292,12 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
     expect(csrfCookie!.toLowerCase()).toContain("samesite=lax");
 
     expect(stub.authCalls).toHaveLength(1);
-    expect(stub.authCalls[0].email).toBe("alice@example.com");
+    expect(stub.authCalls[0].username).toBe("alice_42");
   });
 
   it("auth failure: returns generic 401 with no Set-Cookie headers", async () => {
     const stub = makeStubService({
-      authError: new UnauthenticatedError("Invalid email or password."),
+      authError: new UnauthenticatedError("Invalid username or password."),
     });
     const app = await buildApp({ audit: audit.logger, service: stub.service });
 
@@ -305,13 +305,13 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
       method: "POST",
       url: "/auth/login",
       headers: goodHeaders,
-      payload: { email: "alice@example.com", password: "wrong" },
+      payload: { username: "alice_42", password: "wrong" },
     });
 
     expect(r.statusCode).toBe(401);
     const body = r.json() as { error: { code: string; message: string } };
     expect(body.error.code).toBe("UNAUTHENTICATED");
-    expect(body.error.message).toBe("Invalid email or password.");
+    expect(body.error.message).toBe("Invalid username or password.");
     // No cookies set on failure.
     expect(r.headers["set-cookie"]).toBeUndefined();
   });
@@ -324,7 +324,7 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
       method: "POST",
       url: "/auth/login",
       headers: { "content-type": "application/json" },
-      payload: { email: "alice@example.com", password: "supersecret" },
+      payload: { username: "alice_42", password: "supersecret" },
     });
 
     expect(r.statusCode).toBe(403);
@@ -342,7 +342,7 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
         "content-type": "application/json",
         origin: "https://evil.example.com",
       },
-      payload: { email: "alice@example.com", password: "supersecret" },
+      payload: { username: "alice_42", password: "supersecret" },
     });
 
     expect(r.statusCode).toBe(403);
@@ -358,7 +358,7 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
       url: "/auth/login",
       headers: goodHeaders,
       payload: {
-        email: "alice@example.com",
+        username: "alice_42",
         password: "supersecret",
         wat: "extra",
       },
@@ -377,7 +377,7 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
       url: "/auth/login",
       headers: goodHeaders,
       payload: {
-        email: "alice@example.com",
+        username: "alice_42",
         password: "supersecret",
         actor_user_id: USER_ID,
       },
@@ -395,7 +395,7 @@ describe("loginRoutes — POST /auth/login (F1+F2)", () => {
       method: "POST",
       url: "/auth/login",
       headers: goodHeaders,
-      payload: { email: "alice@example.com" },
+      payload: { username: "alice_42" },
     });
 
     expect(r.statusCode).toBe(400);

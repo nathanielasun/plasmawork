@@ -78,6 +78,17 @@ export interface CurrentSessionResponse {
 export type SecurityDashboardResponse = SecurityDashboardSnapshot;
 
 /**
+ * Contract for the login REQUEST body. Phase 0.5 auth gateway
+ * (2026-05-09) made username the canonical login identifier; email is
+ * supplementary metadata stored on the user row but never accepted as
+ * a login factor.
+ */
+export interface LoginRequestBody {
+  readonly username: string;
+  readonly password: string;
+}
+
+/**
  * Contract for the login response body. The frontend reads `csrf_token`
  * from this body and caches it in memory; the SPA echoes it as
  * `X-CSRF-Token` on every state-changing request. The raw session

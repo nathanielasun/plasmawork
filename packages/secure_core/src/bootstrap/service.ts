@@ -75,7 +75,7 @@ export interface BootstrapDbAdapter {
    * generated user id.
    */
   insertPlatformAdmin(opts: {
-    readonly email: string;
+    readonly username: string;
     readonly password: string;
     readonly requestId: string;
   }): Promise<{ readonly adminUserId: string }>;
@@ -94,7 +94,15 @@ export interface BootstrapServiceOptions {
 }
 
 export interface AttemptBootstrapOptions {
-  readonly adminEmail: string;
+  /**
+   * The seeded root admin's username (as declared in `.env.auth`'s
+   * `ROOT_ADMIN_USER_ID`). Phase 0.5 auth gateway (2026-05-09)
+   * replaced the email-keyed identity model with username-primary
+   * identity for the platform admin specifically — the admin has no
+   * email of record because email-based recovery is intentionally
+   * unavailable for the seeded admin.
+   */
+  readonly adminUsername: string;
   readonly adminPassword: string;
   readonly oobCredential: string;
   readonly requestId: string;
@@ -246,7 +254,7 @@ export class BootstrapService {
     let adminUserId: string;
     try {
       const inserted = await this.#db.insertPlatformAdmin({
-        email: opts.adminEmail,
+        username: opts.adminUsername,
         password: opts.adminPassword,
         requestId: opts.requestId,
       });

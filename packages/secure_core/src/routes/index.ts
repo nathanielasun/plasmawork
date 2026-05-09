@@ -53,7 +53,7 @@ export {
   authRoutes,
   type AuthRoutesOptions,
   type AuthRoutesMiddleware,
-  REQUEST_EMAIL_SCHEMA,
+  REQUEST_USERNAME_SCHEMA,
   PASSWORD_RESET_CONSUME_SCHEMA,
   EMAIL_VERIFY_CONSUME_SCHEMA,
   MFA_RECOVERY_SCHEMA,

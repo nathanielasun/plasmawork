@@ -1,10 +1,10 @@
 /**
  * LoginService — Phase 0.5 audit fix F1+F2 regression tests
- * (2026-05-09).
+ * (2026-05-09), updated for username-primary identity the same day.
  *
  * Pins:
- *   - Anti-enumeration: same generic 401 message for unknown email,
- *     wrong password, disabled user, and unverified email.
+ *   - Anti-enumeration: same generic 401 message for unknown
+ *     username, wrong password, and disabled user.
  *   - Audit row carries the discriminated denied_reason on every
  *     failure path.
  *   - Constant-time path: verifyPasswordHash is called even when
@@ -61,18 +61,17 @@ function makeStubAuditLogger(): {
 
 interface UserRow {
   readonly id: string;
-  readonly email_verified_at: Date | null;
   readonly disabled_at: Date | null;
 }
 
 function makeStubPool(opts: {
-  userByEmail?: UserRow | null;
+  userByUsername?: UserRow | null;
   insertedSessionId?: string;
 }): { pool: SecureCorePool; sessionInserts: Array<Record<string, unknown>> } {
   const sessionInserts: Array<Record<string, unknown>> = [];
   const sql = async () => {
-    if (opts.userByEmail === null || opts.userByEmail === undefined) return [];
-    return [opts.userByEmail];
+    if (opts.userByUsername === null || opts.userByUsername === undefined) return [];
+    return [opts.userByUsername];
   };
   const db = {
     insert(_table: unknown) {
@@ -114,7 +113,6 @@ function makeStubPool(opts: {
 const ACTOR = "11111111-1111-4111-8111-111111111111";
 const VALID_USER: UserRow = {
   id: ACTOR,
-  email_verified_at: new Date("2025-01-01T00:00:00Z"),
   disabled_at: null,
 };
 
@@ -143,7 +141,7 @@ function makeService(
 }
 
 const DEFAULT_INPUT: AuthenticatePasswordInput = {
-  email: "alice@example.com",
+  username: "alice_42",
   password: "correct horse battery staple",
   requestId: "req-1",
 };
@@ -155,15 +153,15 @@ describe("LoginService.authenticatePassword — F1+F2", () => {
     audit = makeStubAuditLogger();
   });
 
-  it("anti-enumeration: unknown email returns same generic error", async () => {
+  it("anti-enumeration: unknown username returns same generic error", async () => {
     const verifyCalls: Array<{ presented: string; stored: string }> = [];
-    const stub = makeStubPool({ userByEmail: null });
+    const stub = makeStubPool({ userByUsername: null });
     const svc = makeService(stub, audit.logger, { passwordOk: false, verifyCalls });
     await expect(
       svc.authenticatePassword({ ...DEFAULT_INPUT }),
     ).rejects.toMatchObject({
       code: "UNAUTHENTICATED",
-      message: "Invalid email or password.",
+      message: "Invalid username or password.",
     });
     expect(audit.calls[0]).toMatchObject({
       action: "login.failed",
@@ -177,10 +175,10 @@ describe("LoginService.authenticatePassword — F1+F2", () => {
   });
 
   it("anti-enumeration: wrong password returns same generic error", async () => {
-    const stub = makeStubPool({ userByEmail: VALID_USER });
+    const stub = makeStubPool({ userByUsername: VALID_USER });
     const svc = makeService(stub, audit.logger, { passwordOk: false });
     await expect(svc.authenticatePassword(DEFAULT_INPUT)).rejects.toMatchObject(
-      { code: "UNAUTHENTICATED", message: "Invalid email or password." },
+      { code: "UNAUTHENTICATED", message: "Invalid username or password." },
     );
     expect(audit.calls[0]).toMatchObject({
       action: "login.failed",
@@ -192,29 +190,32 @@ describe("LoginService.authenticatePassword — F1+F2", () => {
 
   it("disabled user returns same generic error + denied_reason 'user_disabled'", async () => {
     const stub = makeStubPool({
-      userByEmail: { ...VALID_USER, disabled_at: new Date() },
+      userByUsername: { ...VALID_USER, disabled_at: new Date() },
     });
     const svc = makeService(stub, audit.logger, { passwordOk: true });
     await expect(svc.authenticatePassword(DEFAULT_INPUT)).rejects.toMatchObject(
-      { code: "UNAUTHENTICATED", message: "Invalid email or password." },
+      { code: "UNAUTHENTICATED", message: "Invalid username or password." },
     );
     expect(audit.calls[0].metadata?.denied_reason).toBe("user_disabled");
   });
 
-  it("unverified email returns same generic error + denied_reason 'email_not_verified'", async () => {
+  it("user without email logs in successfully (root admin shape)", async () => {
+    // Phase 0.5 auth gateway (2026-05-09): email is supplementary
+    // metadata; users without an email (e.g. the seeded root admin)
+    // can still authenticate by username + password.
     const stub = makeStubPool({
-      userByEmail: { ...VALID_USER, email_verified_at: null },
+      userByUsername: VALID_USER,
+      insertedSessionId: "sess-noemail",
     });
     const svc = makeService(stub, audit.logger, { passwordOk: true });
-    await expect(svc.authenticatePassword(DEFAULT_INPUT)).rejects.toMatchObject(
-      { code: "UNAUTHENTICATED", message: "Invalid email or password." },
-    );
-    expect(audit.calls[0].metadata?.denied_reason).toBe("email_not_verified");
+    const out = await svc.authenticatePassword(DEFAULT_INPUT);
+    expect(out.userId).toBe(ACTOR);
+    expect(out.sessionId).toBe("sess-noemail");
   });
 
   it("happy path mints a session row + returns raw tokens (never logged)", async () => {
     const stub = makeStubPool({
-      userByEmail: VALID_USER,
+      userByUsername: VALID_USER,
       insertedSessionId: "sess-9",
     });
     const svc = makeService(stub, audit.logger, { passwordOk: true });
@@ -247,19 +248,19 @@ describe("LoginService.authenticatePassword — F1+F2", () => {
 
   it("constant-time: verifyPasswordHash runs even when user is null", async () => {
     const verifyCalls: Array<{ presented: string; stored: string }> = [];
-    const stub = makeStubPool({ userByEmail: null });
+    const stub = makeStubPool({ userByUsername: null });
     const svc = makeService(stub, audit.logger, { passwordOk: false, verifyCalls });
     await expect(svc.authenticatePassword(DEFAULT_INPUT)).rejects.toBeDefined();
     expect(verifyCalls).toHaveLength(1);
     expect(verifyCalls[0].presented).toBe(DEFAULT_INPUT.password);
   });
 
-  it("normalizes email to lowercase + trims whitespace", async () => {
-    const stub = makeStubPool({ userByEmail: VALID_USER });
+  it("normalizes username to lowercase + trims whitespace", async () => {
+    const stub = makeStubPool({ userByUsername: VALID_USER });
     const svc = makeService(stub, audit.logger, { passwordOk: true });
     const out = await svc.authenticatePassword({
       ...DEFAULT_INPUT,
-      email: "  Alice@Example.COM  ",
+      username: "  Alice_42  ",
     });
     expect(out.userId).toBe(ACTOR);
   });

@@ -77,7 +77,7 @@ const BOOTSTRAP_LOCKOUT_MS = 60 * 60 * 1000;
 const BOOTSTRAP_FAILURE_LOCKOUT_THRESHOLD = 5;
 
 interface BootstrapBody {
-  admin_email: string;
+  admin_username: string;
   admin_password: string;
   oob_credential: string;
 }
@@ -86,13 +86,23 @@ interface BootstrapBody {
  * Schema mirrors v4 §10.2 conventions: required fields enumerated,
  * `additionalProperties: false`, defensive maximum lengths, and the
  * password minimum length pinned at the layer the spec asks for (12).
+ *
+ * Phase 0.5 auth gateway (2026-05-09): the seeded root admin has no
+ * email of record (email-based recovery is intentionally unavailable
+ * for the platform-admin account). The body field is `admin_username`,
+ * matching the alphanumeric pattern used by `/auth/login`.
  */
 const BOOTSTRAP_BODY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["admin_email", "admin_password", "oob_credential"],
+  required: ["admin_username", "admin_password", "oob_credential"],
   properties: {
-    admin_email: { type: "string", minLength: 3, maxLength: 320, format: "email" },
+    admin_username: {
+      type: "string",
+      minLength: 3,
+      maxLength: 64,
+      pattern: "^[A-Za-z0-9_-]{3,64}$",
+    },
     admin_password: { type: "string", minLength: 12, maxLength: 1024 },
     oob_credential: { type: "string", minLength: 1, maxLength: 4096 },
   },
@@ -181,7 +191,7 @@ export const bootstrapRoutes: FastifyPluginAsync<BootstrapRoutesOptions> =
         const ip = opts.rateLimitKeyExtractor(req);
         try {
           const result = await opts.service.attemptBootstrap({
-            adminEmail: req.body.admin_email,
+            adminUsername: req.body.admin_username,
             adminPassword: req.body.admin_password,
             oobCredential: req.body.oob_credential,
             requestId: req.requestId,

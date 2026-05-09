@@ -46,16 +46,70 @@ import {
 // Identity & sessions
 // ---------------------------------------------------------------------------
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
-  displayName: text("display_name"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`now()`),
-  disabledAt: timestamp("disabled_at", { withTimezone: true }),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey(),
+    // Phase 0.5 auth gateway (2026-05-09): username is now the primary
+    // login identifier; email is optional/supplementary metadata used
+    // only for password-reset notifications. The root admin in
+    // particular has no email at all.
+    username: text("username"),
+    email: text("email"),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    displayName: text("display_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+  },
+  (t) => ({
+    // Partial unique indexes — uniqueness is only enforced when the
+    // column is set, so a row with email=NULL doesn't collide with
+    // another row's email=NULL. Same for username.
+    usernameLowerKey: uniqueIndex("users_username_key")
+      .on(sql`lower(${t.username})`)
+      .where(sql`${t.username} IS NOT NULL`),
+    emailLowerKey: uniqueIndex("users_email_key")
+      .on(sql`lower(${t.email})`)
+      .where(sql`${t.email} IS NOT NULL`),
+    identityPresentCheck: check(
+      "users_identity_present_check",
+      sql`${t.email} IS NOT NULL OR ${t.username} IS NOT NULL`,
+    ),
+  }),
+);
+
+/**
+ * Sidecar credential table — 1:1 with users by user_id. Keeps the
+ * `users` table credential-free (identity-only). Phase 0.5 auth
+ * gateway (2026-05-09).
+ */
+export const userCredentials = pgTable(
+  "user_credentials",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "restrict" }),
+    passwordHash: text("password_hash").notNull(),
+    algorithm: text("algorithm").notNull().default("argon2id"),
+    hashUpdatedAt: timestamp("hash_updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  },
+  (t) => ({
+    algorithmCheck: check(
+      "user_credentials_algorithm_check",
+      sql`${t.algorithm} IN ('argon2id', 'bcrypt')`,
+    ),
+    failedAttemptsNonneg: check(
+      "user_credentials_failed_attempts_nonneg_check",
+      sql`${t.failedAttempts} >= 0`,
+    ),
+  }),
+);
 
 export const sessions = pgTable(
   "sessions",
@@ -79,7 +133,14 @@ export const sessions = pgTable(
   (t) => ({
     authMethodCheck: check(
       "sessions_auth_method_check",
-      sql`${t.authMethod} IN ('oidc', 'password', 'webauthn', 'sso')`,
+      sql`${t.authMethod} IN (
+        'oidc',
+        'password',
+        'webauthn',
+        'sso',
+        'password_reset',
+        'email_verify'
+      )`,
     ),
     assuranceLevelCheck: check(
       "sessions_assurance_level_check",
@@ -743,6 +804,7 @@ export const storageReservations = pgTable(
 
 export const ALL_TABLES = {
   users,
+  userCredentials,
   sessions,
   passwordResetTokens,
   emailVerificationTokens,
@@ -772,6 +834,7 @@ export const ALL_TABLES = {
 
 export const ALL_TABLE_NAMES = [
   "users",
+  "user_credentials",
   "sessions",
   "password_reset_tokens",
   "email_verification_tokens",

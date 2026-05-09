@@ -24,17 +24,17 @@
  *     redundant defense).
  *
  * Anti-enumeration (§8): every login failure returns the same
- * generic 401 body ("Invalid email or password.") regardless of
- * whether the email exists, the password matched, the email was
- * verified, or the user was disabled. The audit chain captures the
- * discriminated reason; the HTTP response does not.
+ * generic 401 body ("Invalid username or password.") regardless of
+ * whether the username exists, the password matched, or the user was
+ * disabled. The audit chain captures the discriminated reason; the
+ * HTTP response does not.
  *
  * Hard rules upheld:
  *   - Routes never read `actor` / `actor_user_id` / `user_id` /
  *     `created_by` from `req.body`. Body fields are exactly
- *     `{ email, password }` for login and `{}` for logout.
+ *     `{ username, password }` for login and `{}` for logout.
  *   - Body schema is `additionalProperties: false`.
- *   - Per-IP + per-email rate limits compose at the route layer
+ *   - Per-IP + per-username rate limits compose at the route layer
  *     (mirrors `routes/auth.ts` recovery flows).
  *   - Logout ALWAYS clears both cookies regardless of whether the
  *     session-revocation succeeded (idempotent client cleanup).
@@ -56,24 +56,25 @@ export const SESSION_COOKIE_NAME = "secure_session";
 export const CSRF_COOKIE_NAME = "csrf_token";
 
 interface LoginBody {
-  email: string;
+  username: string;
   password: string;
 }
 
 /**
- * Email pattern: simple RFC-5321-ish probe (local-part@domain with at
- * least one dot in the domain). The validateInputSchema mw is bound
- * to this schema by the host; the schema lives here so reviewers can
- * see the contract alongside the route.
+ * Username pattern: alphanumeric + underscore + hyphen, 3-64 chars.
+ * Phase 0.5 auth gateway (2026-05-09) made username the primary login
+ * identifier. The pattern is intentionally narrow so administrators
+ * cannot accidentally pick a username that contains shell-meta or
+ * URL-meta characters.
  */
-const EMAIL_REGEX = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$";
+const USERNAME_REGEX = "^[A-Za-z0-9_-]{3,64}$";
 
 export const LOGIN_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["email", "password"],
+  required: ["username", "password"],
   properties: {
-    email: { type: "string", minLength: 3, maxLength: 320, pattern: EMAIL_REGEX },
+    username: { type: "string", minLength: 3, maxLength: 64, pattern: USERNAME_REGEX },
     password: { type: "string", minLength: 1, maxLength: 512 },
   },
 } as const;
@@ -171,7 +172,7 @@ export const loginRoutes: FastifyPluginAsync<LoginRoutesOptions> = async (
       // throws UnauthenticatedError on any failure (audit chain
       // captures the discriminated reason).
       const outcome = await service.authenticatePassword({
-        email: req.body.email,
+        username: req.body.username,
         password: req.body.password,
         requestId: req.requestId,
       });

@@ -2852,7 +2852,7 @@ check_grep_in_file 'terminateSession' \
 check_grep_in_file 'DUMMY_PASSWORD_HASH' \
   packages/secure_core/src/auth/loginService.ts \
   "F1 LoginService runs verifyPasswordHash even when user is null (constant-time anti-enumeration)"
-check_grep_in_file 'Invalid email or password\.' \
+check_grep_in_file 'Invalid username or password\.' \
   packages/secure_core/src/auth/loginService.ts \
   "F1 LoginService uses the generic anti-enumeration error message (v4 §8)"
 check_grep_in_file 'export const loginRoutes' \
@@ -2960,6 +2960,52 @@ check_grep_in_file '"auth.logout"' \
 check_grep_in_file 'LoginResponseBody' \
   packages/secure_core/src/client/contracts.ts \
   "Frontend contract: LoginResponseBody type is exported for SPA use"
+
+# Phase 0.5 auth gateway, Phase A (2026-05-09): username-primary identity.
+# secure_core now keys login + recovery flows on a username; email is
+# optional/supplementary metadata. The seeded root admin in particular
+# carries username only (email is intentionally NULL).
+section "Phase 0.5 auth gateway / Phase A (username-primary identity)"
+check_file_exists packages/secure_core/src/db/migrations/0004_username_and_user_credentials.sql
+check_grep_in_file 'CREATE TABLE "user_credentials"' \
+  packages/secure_core/src/db/migrations/0004_username_and_user_credentials.sql \
+  "Phase A migration creates user_credentials sidecar table"
+check_grep_in_file 'ADD COLUMN "username"' \
+  packages/secure_core/src/db/migrations/0004_username_and_user_credentials.sql \
+  "Phase A migration adds users.username column"
+check_grep_in_file 'export const userCredentials' \
+  packages/secure_core/src/db/schema.ts \
+  "Phase A schema.ts exports userCredentials drizzle table"
+check_grep_in_file 'username: text\("username"\)' \
+  packages/secure_core/src/db/schema.ts \
+  "Phase A schema.ts adds username column to users"
+check_grep_in_file 'users_identity_present_check' \
+  packages/secure_core/src/db/schema.ts \
+  "Phase A schema.ts enforces users have at least one of email/username"
+check_grep_in_file "'password_reset'" \
+  packages/secure_core/src/db/schema.ts \
+  "Phase A sessions.auth_method CHECK includes 'password_reset' (recovery → session bridge)"
+check_grep_in_file "'email_verify'" \
+  packages/secure_core/src/db/schema.ts \
+  "Phase A sessions.auth_method CHECK includes 'email_verify' (recovery → session bridge)"
+check_grep_in_file 'username: string' \
+  packages/secure_core/src/auth/loginService.ts \
+  "Phase A LoginService input keyed by username (not email)"
+check_grep_in_file 'lower\(username\)' \
+  packages/secure_core/src/auth/loginService.ts \
+  "Phase A LoginService looks up users by lower(username)"
+check_grep_in_file 'USERNAME_REGEX' \
+  packages/secure_core/src/routes/login.ts \
+  "Phase A LOGIN_SCHEMA uses alphanumeric USERNAME_REGEX"
+check_grep_in_file 'findUserByUsername' \
+  packages/secure_core/src/auth/recoveryService.ts \
+  "Phase A RecoveryRepo seam keys recovery on username (email is supplementary)"
+check_grep_in_file 'admin_username' \
+  packages/secure_core/src/routes/bootstrap.ts \
+  "Phase A bootstrap body field is admin_username (not admin_email)"
+check_grep_absent_in_file 'REQUEST_EMAIL_SCHEMA\b' \
+  packages/secure_core/src/routes/auth.ts \
+  "Phase A removed legacy REQUEST_EMAIL_SCHEMA name"
 
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.

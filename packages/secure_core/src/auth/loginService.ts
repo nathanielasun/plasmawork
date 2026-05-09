@@ -1,5 +1,6 @@
 /**
- * Login service — Phase 0.5 audit fix F1 + F2 (2026-05-09).
+ * Login service — Phase 0.5 audit fix F1 + F2 (2026-05-09), updated
+ * for the auth-gateway username-primary identity model the same day.
  *
  * Closes the deployment-blocker gap audited 2026-05-08: no code in
  * `secure_core/src/` previously created `sessions` rows or set the
@@ -9,10 +10,15 @@
  *
  * Two flows:
  *
- *   - `LoginService.authenticatePassword({ email, password })`:
- *       1. Look up the user by email (lowercased, trimmed).
- *       2. Refuse if `users.disabled_at` is set OR the email isn't
- *          verified yet.
+ *   - `LoginService.authenticatePassword({ username, password })`:
+ *       1. Look up the user by username (lowercased, trimmed).
+ *       2. Refuse if `users.disabled_at` is set. (We do NOT block on
+ *          email verification: a user without an email cannot
+ *          "verify" one, and the root admin in particular has
+ *          email = NULL. When email IS set but unverified, we still
+ *          permit login — the email is supplementary metadata, not
+ *          an auth factor. A deployment that wants email-verified
+ *          login MUST wrap this service.)
  *       3. Constant-time compare the presented password against the
  *          stored Argon2id hash via `verifyPasswordHash`.
  *       4. Mint a fresh session token (32-byte CSPRNG → base64url
@@ -101,7 +107,7 @@ export interface LoginServiceOptions {
 }
 
 export interface AuthenticatePasswordInput {
-  readonly email: string;
+  readonly username: string;
   readonly password: string;
   readonly authMethod?: "password" | "sso" | "oidc" | "webauthn";
   readonly assuranceLevel?: "aal1" | "aal2" | "aal3";
@@ -174,19 +180,18 @@ export class LoginService {
   public async authenticatePassword(
     input: AuthenticatePasswordInput,
   ): Promise<AuthenticateOutcome> {
-    const email = input.email.trim().toLowerCase();
+    const username = input.username.trim().toLowerCase();
     const sql = this.#pool.sql;
 
     const userRows = await sql<
       Array<{
         id: string;
-        email_verified_at: Date | null;
         disabled_at: Date | null;
       }>
     >`
-      SELECT id, email_verified_at, disabled_at
+      SELECT id, disabled_at
       FROM users
-      WHERE email = ${email}
+      WHERE lower(username) = ${username}
       LIMIT 1
     `;
     const user = userRows[0] ?? null;
@@ -206,13 +211,10 @@ export class LoginService {
     let deniedReason:
       | "user_not_found"
       | "user_disabled"
-      | "email_not_verified"
       | "password_invalid"
       | null = null;
     if (user === null) deniedReason = "user_not_found";
     else if (user.disabled_at !== null) deniedReason = "user_disabled";
-    else if (user.email_verified_at === null)
-      deniedReason = "email_not_verified";
     else if (!passwordOk) deniedReason = "password_invalid";
 
     if (deniedReason !== null || user === null) {
@@ -227,7 +229,7 @@ export class LoginService {
         userAgentHmac: input.userAgentHmac,
         metadata: { denied_reason: deniedReason ?? "user_not_found" },
       });
-      throw new UnauthenticatedError("Invalid email or password.");
+      throw new UnauthenticatedError("Invalid username or password.");
     }
 
     // Happy path — mint session + CSRF tokens, INSERT the row, audit

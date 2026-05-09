@@ -96,14 +96,14 @@ function makeStubAuditLogger(): {
 
 interface DbCalls {
   exists: number;
-  insertedEmails: string[];
+  insertedUsernames: string[];
 }
 
 function makeStubDb(opts: {
   initiallyExists?: boolean;
   newId?: string;
 }): { db: BootstrapDbAdapter; calls: DbCalls } {
-  const calls: DbCalls = { exists: 0, insertedEmails: [] };
+  const calls: DbCalls = { exists: 0, insertedUsernames: [] };
   let exists = opts.initiallyExists ?? false;
   const db: BootstrapDbAdapter = {
     async platformAdminExists() {
@@ -111,7 +111,7 @@ function makeStubDb(opts: {
       return exists;
     },
     async insertPlatformAdmin(args) {
-      calls.insertedEmails.push(args.email);
+      calls.insertedUsernames.push(args.username);
       exists = true;
       return {
         adminUserId: opts.newId ?? "00000000-0000-4000-8000-000000000001",
@@ -226,7 +226,7 @@ function buildApp(opts: BuildAppOpts): {
 }
 
 const VALID_BODY = {
-  admin_email: "admin@example.test",
+  admin_username: "rootadmin42x9k",
   admin_password: "correct-horse-battery-staple-12",
   oob_credential: OOB_CREDENTIAL,
 };
@@ -293,7 +293,7 @@ describe("L4.9 — bootstrap route", () => {
     expect(body.error.code).toBe("PERMISSION_DENIED");
     // Generic message — no hint about which gate fired.
     expect(body.error.message).toBe("Bootstrap denied.");
-    expect(db.calls.insertedEmails).toHaveLength(0);
+    expect(db.calls.insertedUsernames).toHaveLength(0);
     expect(await marker.isBootstrapped()).toBe(false);
     const completed = audit.calls.find(
       (c) => c.action === "bootstrap.completed",
@@ -317,7 +317,7 @@ describe("L4.9 — bootstrap route", () => {
     expect(r.statusCode).toBe(201);
     const body = r.json() as { admin_user_id: string };
     expect(body.admin_user_id).toBe("00000000-0000-4000-8000-000000000001");
-    expect(db.calls.insertedEmails).toEqual(["admin@example.test"]);
+    expect(db.calls.insertedUsernames).toEqual(["rootadmin42x9k"]);
     expect(await marker.isBootstrapped()).toBe(true);
     expect(marker.peek()?.admin_user_id).toBe(body.admin_user_id);
     const completed = audit.calls.find(
@@ -354,7 +354,7 @@ describe("L4.9 — bootstrap route", () => {
     });
     expect(r2.statusCode).toBe(404);
     // The DB MUST NOT have a second insert; gate fired before insert.
-    expect(db.calls.insertedEmails).toEqual(["admin@example.test"]);
+    expect(db.calls.insertedUsernames).toEqual(["rootadmin42x9k"]);
     // Audit: one succeeded + one denied row.
     const succeeded = audit.calls.filter(
       (c) => c.action === "bootstrap.completed" && c.result === "succeeded",
@@ -413,7 +413,7 @@ describe("L4.9 — bootstrap route", () => {
       url: "/bootstrap",
       headers: POST_HEADERS,
       payload: {
-        admin_email: "admin@example.test",
+        admin_username: "rootadmin42x9k",
         // admin_password missing
         oob_credential: OOB_CREDENTIAL,
       },

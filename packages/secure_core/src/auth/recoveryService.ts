@@ -100,7 +100,18 @@ export interface ConsumeOutcome {
  * AFTER the atomic UPDATE returned 1 row — never before.
  */
 export interface RecoveryRepo {
-  findUserIdByEmail(email: string): Promise<string | null>;
+  /**
+   * Look up a user by username. Returns the user id and their
+   * email-of-record (if any). Email is supplementary metadata used
+   * only for delivering recovery links; users without an email
+   * (e.g. the seeded root admin) cannot recover by email.
+   *
+   * Phase 0.5 auth gateway (2026-05-09): replaced the email-keyed
+   * `findUserIdByEmail` lookup with this username-keyed shape.
+   */
+  findUserByUsername(
+    username: string,
+  ): Promise<{ userId: string; email: string | null } | null>;
   insertPasswordResetToken(args: {
     id: string;
     userId: string;
@@ -127,13 +138,13 @@ export interface RecoveryRepo {
 export const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000; // 30 min
 export const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
 
-/** Per-email rate limits (§8 layered limit; per-IP runs in L2.12). */
-export const PASSWORD_RESET_EMAIL_LIMIT = 5;
-export const PASSWORD_RESET_EMAIL_WINDOW_MS = 60 * 60 * 1000; // 1 h
-export const EMAIL_VERIFY_EMAIL_LIMIT = 5;
-export const EMAIL_VERIFY_EMAIL_WINDOW_MS = 60 * 60 * 1000;
-export const MFA_RECOVERY_EMAIL_LIMIT = 3;
-export const MFA_RECOVERY_EMAIL_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Per-username rate limits (§8 layered limit; per-IP runs in L2.12). */
+export const PASSWORD_RESET_USERNAME_LIMIT = 5;
+export const PASSWORD_RESET_USERNAME_WINDOW_MS = 60 * 60 * 1000; // 1 h
+export const EMAIL_VERIFY_USERNAME_LIMIT = 5;
+export const EMAIL_VERIFY_USERNAME_WINDOW_MS = 60 * 60 * 1000;
+export const MFA_RECOVERY_USERNAME_LIMIT = 3;
+export const MFA_RECOVERY_USERNAME_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Minimum password length — matches v4 §5.2 default and the route schema. */
 export const MIN_PASSWORD_LENGTH = 12;
@@ -159,12 +170,12 @@ function defaultGenerateId(): string {
   return crypto.randomUUID();
 }
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase();
 }
 
 export interface RequestPasswordResetInput {
-  email: string;
+  username: string;
   requestId: string;
 }
 
@@ -175,7 +186,7 @@ export interface ConsumePasswordResetInput {
 }
 
 export interface RequestEmailVerificationInput {
-  email: string;
+  username: string;
   requestId: string;
 }
 
@@ -185,7 +196,7 @@ export interface ConsumeEmailVerificationInput {
 }
 
 export interface RequestMfaRecoveryInput {
-  email: string;
+  username: string;
   recoveryCode: string;
   requestId: string;
 }
@@ -212,15 +223,15 @@ export class RecoveryService {
     this.#generateId = opts.generateId ?? defaultGenerateId;
   }
 
-  /** Per-email limiter check + audit. Throws RateLimitedError on bust. */
-  async #enforcePerEmailLimit(args: {
+  /** Per-username limiter check + audit. Throws RateLimitedError on bust. */
+  async #enforcePerUsernameLimit(args: {
     family: "password_reset" | "email_verify" | "mfa_recovery";
-    email: string;
+    username: string;
     limit: number;
     windowMs: number;
     requestId: string;
   }): Promise<void> {
-    const key = `recovery:${args.family}:${args.email}`;
+    const key = `recovery:${args.family}:${args.username}`;
     const t = this.#now().getTime();
     const bucket = await this.#rateLimitStore.hit(key, t, args.windowMs);
     if (bucket.count > args.limit) {
@@ -233,7 +244,7 @@ export class RecoveryService {
         requestId: args.requestId,
         metadata: {
           endpoint: `auth.${args.family}`,
-          denied_reason: "per_email_window_exceeded",
+          denied_reason: "per_username_window_exceeded",
         },
       });
       throw new RateLimitedError("Too many requests.", undefined);
@@ -246,13 +257,13 @@ export class RecoveryService {
   public async requestPasswordReset(
     input: RequestPasswordResetInput,
   ): Promise<void> {
-    const email = normalizeEmail(input.email);
+    const username = normalizeUsername(input.username);
 
-    await this.#enforcePerEmailLimit({
+    await this.#enforcePerUsernameLimit({
       family: "password_reset",
-      email,
-      limit: PASSWORD_RESET_EMAIL_LIMIT,
-      windowMs: PASSWORD_RESET_EMAIL_WINDOW_MS,
+      username,
+      limit: PASSWORD_RESET_USERNAME_LIMIT,
+      windowMs: PASSWORD_RESET_USERNAME_WINDOW_MS,
       requestId: input.requestId,
     });
 
@@ -262,25 +273,28 @@ export class RecoveryService {
     const id = this.#generateId();
     const expiresAt = new Date(this.#now().getTime() + PASSWORD_RESET_TTL_MS);
 
-    const userId = await this.#repo.findUserIdByEmail(email);
-    if (userId !== null) {
+    const user = await this.#repo.findUserByUsername(username);
+    if (user !== null && user.email !== null) {
       await this.#repo.insertPasswordResetToken({
         id,
-        userId,
+        userId: user.userId,
         tokenHash,
         expiresAt,
       });
       const resetUrl = `${this.#frontendOrigin}/auth/password-reset/consume?token=${encodeURIComponent(rawToken)}`;
       await this.#emailSender.sendPasswordResetEmail({
-        toEmail: email,
+        toEmail: user.email,
         token: rawToken,
         resetUrl,
         expiresAt: expiresAt.toISOString(),
       });
     }
-    // Unknown-email branch: drop tokenHash + id silently. Same wall-clock
-    // shape as the matched branch from the caller's perspective; the
-    // route returns a fixed 202 body either way.
+    // Unknown-username (or user-with-no-email) branch: drop tokenHash +
+    // id silently. Same wall-clock shape as the matched branch from
+    // the caller's perspective; the route returns a fixed 202 body
+    // either way. Users without an email of record (notably the seeded
+    // root admin) cannot recover by email — see LIMITATIONS.md for
+    // the manual re-bootstrap runbook.
   }
 
   // -----------------------------------------------------------------
@@ -334,13 +348,13 @@ export class RecoveryService {
   public async requestEmailVerification(
     input: RequestEmailVerificationInput,
   ): Promise<void> {
-    const email = normalizeEmail(input.email);
+    const username = normalizeUsername(input.username);
 
-    await this.#enforcePerEmailLimit({
+    await this.#enforcePerUsernameLimit({
       family: "email_verify",
-      email,
-      limit: EMAIL_VERIFY_EMAIL_LIMIT,
-      windowMs: EMAIL_VERIFY_EMAIL_WINDOW_MS,
+      username,
+      limit: EMAIL_VERIFY_USERNAME_LIMIT,
+      windowMs: EMAIL_VERIFY_USERNAME_WINDOW_MS,
       requestId: input.requestId,
     });
 
@@ -349,18 +363,18 @@ export class RecoveryService {
     const id = this.#generateId();
     const expiresAt = new Date(this.#now().getTime() + EMAIL_VERIFY_TTL_MS);
 
-    const userId = await this.#repo.findUserIdByEmail(email);
-    if (userId !== null) {
+    const user = await this.#repo.findUserByUsername(username);
+    if (user !== null && user.email !== null) {
       await this.#repo.insertEmailVerificationToken({
         id,
-        userId,
-        email,
+        userId: user.userId,
+        email: user.email,
         tokenHash,
         expiresAt,
       });
       const verifyUrl = `${this.#frontendOrigin}/auth/email-verify/consume?token=${encodeURIComponent(rawToken)}`;
       await this.#emailSender.sendEmailVerification({
-        toEmail: email,
+        toEmail: user.email,
         token: rawToken,
         verifyUrl,
         expiresAt: expiresAt.toISOString(),
@@ -408,13 +422,13 @@ export class RecoveryService {
   public async requestMfaRecovery(
     input: RequestMfaRecoveryInput,
   ): Promise<void> {
-    const email = normalizeEmail(input.email);
+    const username = normalizeUsername(input.username);
 
-    await this.#enforcePerEmailLimit({
+    await this.#enforcePerUsernameLimit({
       family: "mfa_recovery",
-      email,
-      limit: MFA_RECOVERY_EMAIL_LIMIT,
-      windowMs: MFA_RECOVERY_EMAIL_WINDOW_MS,
+      username,
+      limit: MFA_RECOVERY_USERNAME_LIMIT,
+      windowMs: MFA_RECOVERY_USERNAME_WINDOW_MS,
       requestId: input.requestId,
     });
 

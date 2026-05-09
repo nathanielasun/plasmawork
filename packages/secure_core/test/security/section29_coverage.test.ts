@@ -55,7 +55,7 @@ const COVERAGE: readonly CoverageEntry[] = [
   { id: 17, name: "§29 #17 — unauthenticated CSRF blocked", files: ["packages/secure_core/test/middleware/enforceCsrfForStateChange.test.ts"], evidence: ["POST without Origin"] },
   { id: 18, name: "§29 #18 — authenticated CSRF blocked", files: ["packages/secure_core/test/middleware/enforceCsrfForStateChange.test.ts"], evidence: ["POST authed without X-CSRF-Token"] },
   { id: 19, name: "§29 #19 — origin/referer validation enforced", files: ["packages/secure_core/test/middleware/enforceCsrfForStateChange.test.ts"], evidence: ["disallowed Origin", "Referer is accepted"] },
-  { id: 20, name: "§29 #20 — login/reset enumeration responses uniform", files: ["packages/secure_core/test/routes/auth.test.ts"], evidence: ["unknown email (same shape)"] },
+  { id: 20, name: "§29 #20 — login/reset enumeration responses uniform", files: ["packages/secure_core/test/routes/auth.test.ts"], evidence: ["unknown username (same shape)"] },
   { id: 21, name: "§29 #21 — rate limits trigger at documented threshold", files: ["packages/secure_core/test/middleware/enforceRateLimit.test.ts"], evidence: ["rate_limit.triggered"] },
   { id: 22, name: "§29 #22 — permission denied audited", files: ["packages/secure_core/test/middleware/requireCapability.test.ts"], evidence: ["permission.denied"] },
   { id: 23, name: "§29 #23 — cross-workspace/nonexistent responses uniform 404", files: ["packages/secure_core/test/middleware/enforceObjectWorkspaceScope.test.ts"], evidence: ["uniform 404"] },

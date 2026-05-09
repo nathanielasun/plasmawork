@@ -97,17 +97,17 @@ export interface AuthRoutesOptions {
 // ---------------------------------------------------------------------
 // Body schemas — Ajv + additionalProperties: false (v4 §4.1).
 //
-// Email regex: simple RFC-5321-ish probe (local-part@domain with at
-// least one dot in the domain, conservative bounds). We do NOT use
-// `format: "email"` because L2.3's Ajv instance does not load
-// `ajv-formats`; the regex keeps the validator self-contained.
+// Phase 0.5 auth gateway (2026-05-09): all "request" recovery endpoints
+// take a `username` (the canonical login identifier) rather than an
+// email. The recovery service looks up the user's email-of-record (if
+// any) and sends the link there; users without an email cannot recover
+// by email and get the same anti-enumeration 202.
 // ---------------------------------------------------------------------
 
-const EMAIL_PATTERN =
-  "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+const USERNAME_PATTERN = "^[A-Za-z0-9_-]{3,64}$";
 
-interface RequestEmailBody {
-  email: string;
+interface RequestUsernameBody {
+  username: string;
 }
 interface PasswordResetConsumeBody {
   token: string;
@@ -117,16 +117,21 @@ interface EmailVerifyConsumeBody {
   token: string;
 }
 interface MfaRecoveryBody {
-  email: string;
+  username: string;
   recovery_code: string;
 }
 
-export const REQUEST_EMAIL_SCHEMA = {
+export const REQUEST_USERNAME_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["email"],
+  required: ["username"],
   properties: {
-    email: { type: "string", maxLength: 320, pattern: EMAIL_PATTERN },
+    username: {
+      type: "string",
+      minLength: 3,
+      maxLength: 64,
+      pattern: USERNAME_PATTERN,
+    },
   },
 } as const;
 
@@ -152,9 +157,14 @@ export const EMAIL_VERIFY_CONSUME_SCHEMA = {
 export const MFA_RECOVERY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["email", "recovery_code"],
+  required: ["username", "recovery_code"],
   properties: {
-    email: { type: "string", maxLength: 320, pattern: EMAIL_PATTERN },
+    username: {
+      type: "string",
+      minLength: 3,
+      maxLength: 64,
+      pattern: USERNAME_PATTERN,
+    },
     recovery_code: { type: "string", minLength: 1, maxLength: 200 },
   },
 } as const;
@@ -163,7 +173,7 @@ export const MFA_RECOVERY_SCHEMA = {
 const REQUEST_ACCEPTED_BODY = Object.freeze({
   status: "accepted",
   message:
-    "If the address is registered, a message has been sent. Check your inbox.",
+    "If the username is registered with an email, a message has been sent. Check your inbox.",
 });
 
 const MFA_RECOVERY_PENDING_BODY = Object.freeze({
@@ -193,7 +203,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   // -------------------------------------------------------------------
   // POST /auth/password-reset/request
   // -------------------------------------------------------------------
-  app.post<{ Body: RequestEmailBody }>(
+  app.post<{ Body: RequestUsernameBody }>(
     "/auth/password-reset/request",
     {
       preHandler: composeMiddleware([
@@ -204,7 +214,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     },
     async (req, reply) => {
       await service.requestPasswordReset({
-        email: req.body.email,
+        username: req.body.username,
         requestId: req.requestId,
       });
       return reply.code(202).send(REQUEST_ACCEPTED_BODY);
@@ -266,7 +276,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   // -------------------------------------------------------------------
   // POST /auth/email-verify/request
   // -------------------------------------------------------------------
-  app.post<{ Body: RequestEmailBody }>(
+  app.post<{ Body: RequestUsernameBody }>(
     "/auth/email-verify/request",
     {
       preHandler: composeMiddleware([
@@ -277,7 +287,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     },
     async (req, reply) => {
       await service.requestEmailVerification({
-        email: req.body.email,
+        username: req.body.username,
         requestId: req.requestId,
       });
       return reply.code(202).send(REQUEST_ACCEPTED_BODY);
@@ -352,7 +362,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     },
     async (req, reply) => {
       await service.requestMfaRecovery({
-        email: req.body.email,
+        username: req.body.username,
         recoveryCode: req.body.recovery_code,
         requestId: req.requestId,
       });

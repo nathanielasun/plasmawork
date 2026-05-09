@@ -17,7 +17,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 
 import {
   authRoutes,
-  REQUEST_EMAIL_SCHEMA,
+  REQUEST_USERNAME_SCHEMA,
   PASSWORD_RESET_CONSUME_SCHEMA,
   EMAIL_VERIFY_CONSUME_SCHEMA,
   MFA_RECOVERY_SCHEMA,
@@ -42,6 +42,7 @@ import { SecureCoreError } from "../../src/errors/shapes.js";
 import { hashToken, mintToken } from "../../src/crypto/tokens.js";
 
 const KNOWN_USER_ID = "11111111-1111-4111-8111-111111111111";
+const KNOWN_USERNAME = "alice_42";
 const KNOWN_EMAIL = "user@example.com";
 const ALLOWED_ORIGIN = "https://app.plasmawork.test";
 
@@ -77,16 +78,20 @@ interface RepoHarness {
   state: RepoState;
 }
 
-function makeRepo(opts?: { knownEmails?: Map<string, string> }): RepoHarness {
-  const known = opts?.knownEmails ?? new Map([[KNOWN_EMAIL, KNOWN_USER_ID]]);
+function makeRepo(opts?: {
+  knownUsernames?: Map<string, { userId: string; email: string | null }>;
+}): RepoHarness {
+  const known =
+    opts?.knownUsernames ??
+    new Map([[KNOWN_USERNAME, { userId: KNOWN_USER_ID, email: KNOWN_EMAIL }]]);
   const state: RepoState = {
     passwordResetTokens: new Map(),
     emailVerificationTokens: new Map(),
     passwordResetsApplied: [],
   };
   const repo: RecoveryRepo = {
-    async findUserIdByEmail(email) {
-      return known.get(email) ?? null;
+    async findUserByUsername(username) {
+      return known.get(username) ?? null;
     },
     async insertPasswordResetToken(args) {
       state.passwordResetTokens.set(args.tokenHash, {
@@ -150,7 +155,9 @@ interface AppHarness {
   }>;
 }
 
-function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
+function buildApp(opts?: {
+  knownUsernames?: Map<string, { userId: string; email: string | null }>;
+}): AppHarness {
   const audit = makeAuditHarness();
   const repoHarness = makeRepo(opts);
   const emailSender = new StubEmailSender();
@@ -201,7 +208,7 @@ function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
       allowedOrigins: [ALLOWED_ORIGIN],
     }),
     validateInputSchemaPasswordResetRequest: validateInputSchema(
-      REQUEST_EMAIL_SCHEMA,
+      REQUEST_USERNAME_SCHEMA,
       { auditLogger: audit.logger },
     ),
     validateInputSchemaPasswordResetConsume: validateInputSchema(
@@ -209,7 +216,7 @@ function buildApp(opts?: { knownEmails?: Map<string, string> }): AppHarness {
       { auditLogger: audit.logger },
     ),
     validateInputSchemaEmailVerifyRequest: validateInputSchema(
-      REQUEST_EMAIL_SCHEMA,
+      REQUEST_USERNAME_SCHEMA,
       { auditLogger: audit.logger },
     ),
     validateInputSchemaEmailVerifyConsume: validateInputSchema(
@@ -292,12 +299,12 @@ describe("L4.8 — recovery routes", () => {
   // request endpoints — anti-enumeration shape parity
   // -----------------------------------------------------------------
 
-  it("POST /auth/password-reset/request returns 202 for a known email", async () => {
+  it("POST /auth/password-reset/request returns 202 for a known username", async () => {
     const r = await h.app.inject({
       method: "POST",
       url: "/auth/password-reset/request",
       headers: goodHeaders,
-      payload: { email: KNOWN_EMAIL },
+      payload: { username: KNOWN_USERNAME },
     });
     expect(r.statusCode).toBe(202);
     const body = r.json() as { status: string };
@@ -308,12 +315,12 @@ describe("L4.8 — recovery routes", () => {
     expect(h.repoHarness.state.passwordResetTokens.size).toBe(1);
   });
 
-  it("POST /auth/password-reset/request returns 202 for an unknown email (same shape)", async () => {
+  it("POST /auth/password-reset/request returns 202 for an unknown username (same shape)", async () => {
     const r = await h.app.inject({
       method: "POST",
       url: "/auth/password-reset/request",
       headers: goodHeaders,
-      payload: { email: "nobody@example.com" },
+      payload: { username: "nobody_here" },
     });
     expect(r.statusCode).toBe(202);
     const body = r.json() as { status: string; message: string };
@@ -426,7 +433,7 @@ describe("L4.8 — recovery routes", () => {
       method: "POST",
       url: "/auth/email-verify/request",
       headers: goodHeaders,
-      payload: { email: KNOWN_EMAIL },
+      payload: { username: KNOWN_USERNAME },
     });
     expect(r.statusCode).toBe(202);
     expect(h.emailSender.emailVerificationCalls).toHaveLength(1);
@@ -464,7 +471,7 @@ describe("L4.8 — recovery routes", () => {
       method: "POST",
       url: "/auth/mfa-recovery",
       headers: goodHeaders,
-      payload: { email: KNOWN_EMAIL, recovery_code: "code-123" },
+      payload: { username: KNOWN_USERNAME, recovery_code: "code-123" },
     });
     expect(r.statusCode).toBe(202);
     const body = r.json() as { status: string; message: string };
@@ -491,7 +498,7 @@ describe("L4.8 — recovery routes", () => {
       method: "POST",
       url: "/auth/password-reset/request",
       headers: { "content-type": "application/json" },
-      payload: { email: KNOWN_EMAIL },
+      payload: { username: KNOWN_USERNAME },
     });
     // Origin missing → ORIGIN_MISMATCH from L2.2.
     expect(r.statusCode).toBe(403);
@@ -504,7 +511,7 @@ describe("L4.8 — recovery routes", () => {
       method: "POST",
       url: "/auth/password-reset/request",
       headers: goodHeaders,
-      payload: { email: KNOWN_EMAIL, user_id: KNOWN_USER_ID },
+      payload: { username: KNOWN_USERNAME, user_id: KNOWN_USER_ID },
     });
     // The route schema is additionalProperties:false so Fastify's own
     // schema fires first with a 400 INPUT_INVALID. Either way the route
@@ -586,7 +593,7 @@ describe("L4.8 — recovery → session bridge", () => {
         allowedOrigins: [ALLOWED_ORIGIN],
       }),
       validateInputSchemaPasswordResetRequest: validateInputSchema(
-        REQUEST_EMAIL_SCHEMA,
+        REQUEST_USERNAME_SCHEMA,
         { auditLogger: audit.logger },
       ),
       validateInputSchemaPasswordResetConsume: validateInputSchema(
@@ -594,7 +601,7 @@ describe("L4.8 — recovery → session bridge", () => {
         { auditLogger: audit.logger },
       ),
       validateInputSchemaEmailVerifyRequest: validateInputSchema(
-        REQUEST_EMAIL_SCHEMA,
+        REQUEST_USERNAME_SCHEMA,
         { auditLogger: audit.logger },
       ),
       validateInputSchemaEmailVerifyConsume: validateInputSchema(
