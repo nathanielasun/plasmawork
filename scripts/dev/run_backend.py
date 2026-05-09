@@ -19,6 +19,14 @@ import sys
 from pathlib import Path
 
 DEFAULT_APP = "simworkbench.api.server:app"
+# Phase 0.5 auth gateway (2026-05-09): the FastAPI workbench MUST
+# bind to loopback only when fronted by the workbench-gateway. The
+# gateway proxies authenticated traffic to 127.0.0.1:${WORKBENCH_BACKEND_PORT}
+# with HMAC-signed X-Workbench-* headers; binding to 0.0.0.0 here
+# would expose the bare /api/* surface (which has zero auth) to any
+# host on the network. The convention checker pins 127.0.0.1 as the
+# DEFAULT_HOST literal — overrides via --host are supported but are a
+# deployment-explicit choice.
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 

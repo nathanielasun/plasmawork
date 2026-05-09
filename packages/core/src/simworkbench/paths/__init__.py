@@ -70,6 +70,69 @@ def simulation_capsules_root() -> Path:
     return _ensure(repo_root() / "simulation_capsules")
 
 
+# ---------------------------------------------------------------------------
+# Workspace-scoped roots — Phase 0.5 auth gateway / Phase E (2026-05-09).
+#
+# When the workbench runs behind the gateway, every capsule / temp run /
+# temp import is scoped to a workspace slug. The gateway forwards the
+# slug via the HMAC-signed `X-Workbench-Workspace-Slug` header; the
+# FastAPI auth_middleware writes it to ``request.state.workspace_slug``;
+# route handlers thread it through to these helpers.
+#
+# The slug pattern mirrors the secure_core LOGIN_SCHEMA shape so the
+# user-id / workspace-id / slug alphabets agree everywhere:
+#   ^[A-Za-z0-9_-]{3,64}$
+#
+# Bare ``simulation_capsules_root()`` etc. are still legal in code that
+# is intentionally workspace-agnostic (CLI tooling, examples, tests),
+# but the convention checker bans them in the FastAPI route layer —
+# server.py MUST go through the ``_for(workspace_slug)`` helpers.
+# ---------------------------------------------------------------------------
+
+import re
+
+_WORKSPACE_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,64}$")
+
+
+def _validate_workspace_slug(workspace_slug: str) -> str:
+    """Validate the slug shape. Returns the slug; raises ValueError on
+    a malformed slug. Accepts the same alphabet as the secure_core
+    LOGIN_SCHEMA so usernames, workspace slugs, and role names share
+    one normalization rule."""
+    if not isinstance(workspace_slug, str):
+        raise ValueError(
+            f"workspace_slug must be a string, got {type(workspace_slug).__name__}"
+        )
+    if not _WORKSPACE_SLUG_PATTERN.match(workspace_slug):
+        raise ValueError(
+            f"workspace_slug must match ^[A-Za-z0-9_-]{{3,64}}$ (got {workspace_slug!r})"
+        )
+    return workspace_slug
+
+
+def simulation_capsules_root_for(workspace_slug: str) -> Path:
+    """Return ``<repo>/simulation_capsules/{workspace_slug}``.
+
+    Workspace-scoped capsule storage. Created on first access if absent.
+    The slug MUST come from ``request.state.workspace_slug`` (set by the
+    auth_middleware after HMAC verification) — never from the request
+    body or user input directly.
+    """
+    return _ensure(simulation_capsules_root() / _validate_workspace_slug(workspace_slug))
+
+
+def temp_runs_root_for(workspace_slug: str) -> Path:
+    """Return ``<repo>/temp_runs/{workspace_slug}``. Workspace-scoped
+    transient run artifacts; created on first access if absent."""
+    return _ensure(temp_runs_root() / _validate_workspace_slug(workspace_slug))
+
+
+def temp_imports_root_for(workspace_slug: str) -> Path:
+    """Return ``<repo>/temp_imports/{workspace_slug}``. Workspace-scoped
+    incoming-import staging area; created on first access if absent."""
+    return _ensure(temp_imports_root() / _validate_workspace_slug(workspace_slug))
+
+
 def is_under_workbench(path: Path | str) -> bool:
     """Return True iff ``path`` lies inside one of the four allowed roots.
 
@@ -126,6 +189,9 @@ __all__ = [
     "local_cache_root",
     "repo_root",
     "simulation_capsules_root",
+    "simulation_capsules_root_for",
     "temp_imports_root",
+    "temp_imports_root_for",
     "temp_runs_root",
+    "temp_runs_root_for",
 ]

@@ -3067,6 +3067,53 @@ check_grep_in_file '!\.env\.auth\.example' \
   .gitignore \
   ".gitignore commits .env.auth.example while ignoring .env.auth"
 
+# Phase 0.5 auth gateway / Phase E (HMAC handoff + FastAPI middleware
+# + workspace path helpers + loopback bind). Phase E1 (signer), E3
+# (Python middleware), E4 (paths helpers), E6 (loopback bind) ship
+# in this section. E2 (proxy plugin) and E5 (server.py refactor)
+# remain open and follow in subsequent commits.
+section "Phase 0.5 auth gateway / Phase E (handoff + middleware + paths)"
+check_file_exists apps/workbench-gateway/src/proxy/handoffSigner.ts
+check_grep_in_file 'export const HANDOFF_HEADERS' \
+  apps/workbench-gateway/src/proxy/handoffSigner.ts \
+  "handoffSigner exports the 7 HANDOFF_HEADERS constants"
+check_grep_in_file 'createHmac' \
+  apps/workbench-gateway/src/proxy/handoffSigner.ts \
+  "handoffSigner uses createHmac (HMAC-SHA256)"
+check_grep_in_file 'timingSafeEqual' \
+  apps/workbench-gateway/src/proxy/handoffSigner.ts \
+  "handoffSigner verifyHandoffSignature uses timingSafeEqual"
+check_grep_in_file 'HANDOFF_REPLAY_WINDOW_SEC = 30' \
+  apps/workbench-gateway/src/proxy/handoffSigner.ts \
+  "handoffSigner replay window is 30s (matches FastAPI default)"
+check_file_exists packages/core/src/simworkbench/api/auth_middleware.py
+check_grep_in_file 'class WorkbenchHandoffMiddleware' \
+  packages/core/src/simworkbench/api/auth_middleware.py \
+  "FastAPI middleware exports WorkbenchHandoffMiddleware"
+check_grep_in_file 'hmac\.compare_digest' \
+  packages/core/src/simworkbench/api/auth_middleware.py \
+  "FastAPI middleware uses hmac.compare_digest (constant-time signature compare)"
+check_grep_in_file 'load_handoff_secret_from_env' \
+  packages/core/src/simworkbench/api/auth_middleware.py \
+  "FastAPI middleware exports load_handoff_secret_from_env helper"
+check_file_exists tests/integration/test_api_auth_middleware.py
+check_file_exists tests/unit/test_paths_workspace_scoped.py
+check_grep_in_file 'def simulation_capsules_root_for' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "paths.simulation_capsules_root_for(slug) ships"
+check_grep_in_file 'def temp_runs_root_for' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "paths.temp_runs_root_for(slug) ships"
+check_grep_in_file 'def temp_imports_root_for' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "paths.temp_imports_root_for(slug) ships"
+check_grep_in_file '_validate_workspace_slug' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "paths slug validator pinned to ^[A-Za-z0-9_-]{3,64}$"
+check_grep_in_file 'DEFAULT_HOST = "127\.0\.0\.1"' \
+  scripts/dev/run_backend.py \
+  "run_backend.py binds to loopback by default (Phase 0.5 auth gateway invariant)"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard
