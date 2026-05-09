@@ -62,8 +62,18 @@ import type {
   RunQueryService,
   RunKeysetCursor,
 } from "../runs/queryService.js";
+import {
+  RUN_BACKENDS,
+  classifyRunBackend,
+} from "../runs/backendClassifier.js";
 import type { AuditLogger } from "../audit/logger.js";
 import { bodyValidation } from "./validation.js";
+import type { ApprovalService } from "../approvals/service.js";
+import { APPROVAL_TOKEN_HEADER } from "../middleware/requireApprovalIfHighRisk.js";
+import {
+  ApprovalRequiredError,
+  PermissionDeniedError,
+} from "../errors/shapes.js";
 
 export interface RunRoutesMiddleware {
   readonly enforceRunCreateRateLimit?: NamedMiddleware;
@@ -83,6 +93,13 @@ export interface RunRoutesOptions {
   readonly stateMachine: RunStateMachine;
   readonly queryService: RunQueryService;
   readonly auditLogger: AuditLogger;
+  /**
+   * Approval service used by the create-run handler when the
+   * submitted backend is classified as high-risk per v4 §17 (audit
+   * fix F3, 2026-05-09). Optional only because pure-logic tests
+   * stub it; production deployments MUST inject it.
+   */
+  readonly approvalService?: ApprovalService;
   readonly mw: RunRoutesMiddleware;
 }
 
@@ -106,6 +123,14 @@ function assertUuid(value: unknown, label: string): string {
 interface CreateRunBody {
   backend: string;
   capsule_version_id?: string;
+  /**
+   * REQUIRED when `backend` is classified high-risk per v4 §17
+   * (`expensive:*` or `hpc:*`). Carries the parent
+   * `approval_requests.id` whose pending decision is being consumed
+   * by the X-Approval-Token header. The handler refuses high-risk
+   * backends without this field.
+   */
+  approval_request_id?: string;
 }
 
 interface CancelRunBody {
@@ -124,8 +149,9 @@ const CREATE_RUN_SCHEMA = {
   additionalProperties: false,
   required: ["backend"],
   properties: {
-    backend: { type: "string", enum: ["local"] },
+    backend: { type: "string", enum: [...RUN_BACKENDS] },
     capsule_version_id: { type: "string", pattern: UUID_V4.source },
+    approval_request_id: { type: "string", pattern: UUID_V4.source },
   },
 } as const;
 
@@ -303,6 +329,82 @@ export const runRoutes: FastifyPluginAsync<RunRoutesOptions> = async (
       }
       assertUuid(req.params.workspaceId, "workspaceId");
       assertUuid(req.params.capsuleId, "capsuleId");
+
+      // Audit fix F3 (2026-05-09): v4 §17 high-risk gate.
+      //
+      // The Ajv schema enforces `backend ∈ RUN_BACKENDS`. Before we
+      // touch the state machine, classify the backend. Low-risk
+      // (e.g. `local`) → continue. High-risk (`hpc:*`,
+      // `expensive:*`) → REQUIRE an `X-Approval-Token` header AND a
+      // body `approval_request_id`, then atomically consume the
+      // approval via L3.3 ApprovalService — which writes
+      // `approval.granted` (or denied/mismatch/reused) to the audit
+      // chain BEFORE we call the state machine. Without this, a
+      // user with `run:create` could submit any backend without
+      // approval (audit Critical 4).
+      const action = classifyRunBackend(req.body.backend);
+      if (action !== null) {
+        if (opts.approvalService === undefined) {
+          throw new SecureCoreError(
+            "INTERNAL_ERROR",
+            "High-risk run backend received but ApprovalService is not wired.",
+            { backend: req.body.backend, action },
+          );
+        }
+        const tokenHeader = req.headers[APPROVAL_TOKEN_HEADER];
+        const presentedToken =
+          typeof tokenHeader === "string" && tokenHeader.length > 0
+            ? tokenHeader
+            : Array.isArray(tokenHeader) &&
+                typeof tokenHeader[0] === "string" &&
+                tokenHeader[0].length > 0
+              ? tokenHeader[0]
+              : null;
+        if (presentedToken === null) {
+          await opts.auditLogger.write({
+            workspaceId: req.params.workspaceId,
+            actorUserId: req.auth.userId,
+            actorType: req.auth.actorType,
+            action: "approval.required",
+            result: "denied",
+            requestId: req.requestId,
+            metadata: { denied_reason: "token_missing", capability: action },
+          });
+          throw new ApprovalRequiredError(
+            "Approval token required for this backend.",
+            { action, backend: req.body.backend },
+          );
+        }
+        if (
+          typeof req.body.approval_request_id !== "string" ||
+          req.body.approval_request_id.length === 0
+        ) {
+          throw new ApprovalRequiredError(
+            "approval_request_id is required for high-risk backends.",
+            { action, backend: req.body.backend },
+          );
+        }
+        if (req.auth.actorType !== "human") {
+          // L2.9 enforces this contract for the standard high-risk
+          // path. Mirror the rule here so the runs route can't sidestep
+          // it via a non-cookie credential.
+          throw new PermissionDeniedError(
+            "Approval token must be consumed by a human approver.",
+            { action },
+          );
+        }
+        const consumerRoleIds = req.membership?.roleId
+          ? [req.membership.roleId]
+          : [];
+        await opts.approvalService.consumeToken({
+          presentedToken,
+          expectedRequestId: req.body.approval_request_id,
+          expectedAction: action,
+          consumerUserId: req.auth.userId,
+          consumerRoleIds,
+          requestId: req.requestId,
+        });
+      }
 
       // Defense-in-depth: validate the capsule exists in this workspace
       // and isn't soft-deleted before calling stateMachine.createRun.

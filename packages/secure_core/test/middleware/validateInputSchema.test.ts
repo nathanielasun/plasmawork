@@ -91,7 +91,7 @@ function buildTestApp(audit: AuditStub) {
   const app = buildApp({
     appSql: stubSql,
     errorMapping: {},
-    cookieSecret: "test",
+    cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
   });
 
   // Test-only handler that registers `validateInputSchema` as a

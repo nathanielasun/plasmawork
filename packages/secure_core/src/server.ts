@@ -37,8 +37,14 @@ export interface BuildAppDeps {
   appSql: Sql;
   /** Forwarded to `toHttpResponse`. Set `mode: "production"` in deployed services. */
   errorMapping?: ToHttpResponseOptions;
-  /** Cookie signing secret. REQUIRED if any cookie is signed. */
-  cookieSecret?: string;
+  /**
+   * Cookie signing secret. REQUIRED at construction. Must be at least
+   * 32 bytes of entropy so HMAC-based cookie integrity holds. Audit
+   * fix F5 (2026-05-09): an optional secret turned a deployment
+   * misconfig into a silent integrity failure where signed cookies
+   * could be tampered without detection.
+   */
+  cookieSecret: string;
   /**
    * Body size limit in bytes. Defaults to 1 MiB; routes that accept
    * larger payloads (worker uploads in L4.11) override per-route.
@@ -46,7 +52,21 @@ export interface BuildAppDeps {
   bodyLimitBytes?: number;
 }
 
+const MIN_COOKIE_SECRET_BYTES = 32;
+
 export function buildApp(deps: BuildAppDeps): FastifyInstance {
+  if (typeof deps.cookieSecret !== "string") {
+    throw new Error(
+      "buildApp: cookieSecret is required. Provide a CSPRNG-generated string with ≥32 bytes of entropy.",
+    );
+  }
+  // Use Buffer.byteLength so multi-byte chars don't undercount entropy.
+  if (Buffer.byteLength(deps.cookieSecret, "utf-8") < MIN_COOKIE_SECRET_BYTES) {
+    throw new Error(
+      `buildApp: cookieSecret must be at least ${MIN_COOKIE_SECRET_BYTES} bytes (got ${Buffer.byteLength(deps.cookieSecret, "utf-8")}).`,
+    );
+  }
+
   const app = Fastify({
     logger: { level: readSecureCoreEnv("SECURE_CORE_LOG_LEVEL") ?? "info" },
     bodyLimit: deps.bodyLimitBytes ?? 1024 * 1024,

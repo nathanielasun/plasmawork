@@ -468,3 +468,265 @@ describe("L4.8 — recovery routes", () => {
     expect(r.statusCode).toBe(400);
   });
 });
+
+// ---------------------------------------------------------------------
+// Recovery → session bridge (Phase 0.5 audit fix, 2026-05-09)
+//
+// When `authRoutes` is wired with an optional `loginService`, the
+// consume endpoints mint a fresh session and set `secure_session` /
+// `csrf_token` cookies so the user lands logged in. Without this dep
+// the old "200 + { status: 'ok' }" envelope is preserved (covered by
+// the legacy tests above).
+// ---------------------------------------------------------------------
+
+describe("L4.8 — recovery → session bridge", () => {
+  interface BridgeHarness {
+    app: FastifyInstance;
+    audit: AuditHarness;
+    repoHarness: RepoHarness;
+    emailSender: StubEmailSender;
+    rateStore: InMemoryRateLimitStore;
+    service: RecoveryService;
+    mintCalls: Array<{
+      userId: string;
+      authMethod: string;
+      assuranceLevel: string;
+    }>;
+  }
+
+  function buildBridgeApp(): BridgeHarness {
+    const audit = makeAuditHarness();
+    const repoHarness = makeRepo();
+    const emailSender = new StubEmailSender();
+    const rateStore = new InMemoryRateLimitStore();
+    const service = new RecoveryService({
+      repo: repoHarness.repo,
+      emailSender,
+      auditLogger: audit.logger,
+      rateLimitStore: rateStore,
+      frontendOrigin: ALLOWED_ORIGIN,
+    });
+    const mintCalls: BridgeHarness["mintCalls"] = [];
+    const loginService = {
+      async mintSessionForUser(input: {
+        userId: string;
+        authMethod: string;
+        assuranceLevel: string;
+        requestId: string;
+      }) {
+        mintCalls.push({
+          userId: input.userId,
+          authMethod: input.authMethod,
+          assuranceLevel: input.assuranceLevel,
+        });
+        return {
+          userId: input.userId,
+          sessionId: `sess-${input.authMethod}`,
+          assuranceLevel: input.assuranceLevel as "aal1" | "aal2" | "aal3",
+          rawSessionToken: `raw_session_${input.authMethod}`,
+          rawCsrfToken: `raw_csrf_${input.authMethod}`,
+          expiresAt: new Date("2026-05-10T00:00:00Z"),
+        };
+      },
+    } as unknown as import("../../src/auth/loginService.js").LoginService;
+
+    const mw: AuthRoutesMiddleware = {
+      enforceRateLimit: enforceRateLimit({
+        limit: 100,
+        windowMs: 60_000,
+        store: rateStore,
+        auditLogger: audit.logger,
+        endpoint: "auth.recovery",
+      }),
+      enforceCsrfForStateChange: enforceCsrfForStateChange({
+        auditLogger: audit.logger,
+        allowedOrigins: [ALLOWED_ORIGIN],
+      }),
+      validateInputSchemaPasswordResetRequest: validateInputSchema(
+        REQUEST_EMAIL_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaPasswordResetConsume: validateInputSchema(
+        PASSWORD_RESET_CONSUME_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaEmailVerifyRequest: validateInputSchema(
+        REQUEST_EMAIL_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaEmailVerifyConsume: validateInputSchema(
+        EMAIL_VERIFY_CONSUME_SCHEMA,
+        { auditLogger: audit.logger },
+      ),
+      validateInputSchemaMfaRecovery: validateInputSchema(MFA_RECOVERY_SCHEMA, {
+        auditLogger: audit.logger,
+      }),
+    };
+
+    const app = Fastify({
+      logger: false,
+      ajv: {
+        customOptions: {
+          removeAdditional: false,
+          useDefaults: false,
+          coerceTypes: false,
+          allErrors: false,
+          strict: false,
+        },
+      },
+    });
+    void app.register(import("@fastify/cookie"));
+    app.addHook("onRequest", requireRequestId);
+    app.setErrorHandler((err, req, reply) => {
+      const fErr = err as Error & {
+        statusCode?: number;
+        validation?: unknown;
+      };
+      if (
+        typeof fErr.statusCode === "number" &&
+        fErr.statusCode === 400 &&
+        fErr.validation !== undefined
+      ) {
+        reply.code(400).send({
+          error: {
+            code: "INPUT_INVALID",
+            message: "Schema validation failed.",
+            request_id: req.requestId ?? "unknown",
+          },
+        });
+        return;
+      }
+      const mapped = toHttpResponse(err, req.requestId ?? "unknown");
+      reply.code(mapped.status).send(mapped.body);
+    });
+    void app.register(authRoutes, {
+      service,
+      mw,
+      loginService,
+      cookieSecure: false,
+    });
+    return {
+      app,
+      audit,
+      repoHarness,
+      emailSender,
+      rateStore,
+      service,
+      mintCalls,
+    };
+  }
+
+  it("password-reset/consume happy path mints session + sets cookies", async () => {
+    const h = buildBridgeApp();
+    const rawToken = mintToken();
+    h.repoHarness.state.passwordResetTokens.set(hashToken(rawToken), {
+      userId: KNOWN_USER_ID,
+      expiresAt: new Date(Date.now() + 60_000),
+      used: false,
+    });
+
+    const r = await h.app.inject({
+      method: "POST",
+      url: "/auth/password-reset/consume",
+      headers: goodHeaders,
+      payload: {
+        token: rawToken,
+        new_password: "new_strong_password_123",
+      },
+    });
+
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      user_id: KNOWN_USER_ID,
+      session_id: "sess-password_reset",
+      assurance_level: "aal2",
+      csrf_token: "raw_csrf_password_reset",
+    });
+    expect(JSON.stringify(body)).not.toContain("raw_session_password_reset");
+
+    const setCookies = r.headers["set-cookie"];
+    const cookies = Array.isArray(setCookies) ? setCookies : [setCookies ?? ""];
+    expect(
+      cookies.find((c) => c.startsWith("secure_session=")),
+    ).toContain("raw_session_password_reset");
+    expect(cookies.find((c) => c.startsWith("csrf_token="))).toContain(
+      "raw_csrf_password_reset",
+    );
+
+    expect(h.mintCalls).toEqual([
+      {
+        userId: KNOWN_USER_ID,
+        authMethod: "password_reset",
+        assuranceLevel: "aal2",
+      },
+    ]);
+    // Password actually applied (not just a session minted).
+    expect(h.repoHarness.state.passwordResetsApplied).toEqual([
+      { userId: KNOWN_USER_ID, newPassword: "new_strong_password_123" },
+    ]);
+  });
+
+  it("password-reset/consume failure does NOT mint a session", async () => {
+    const h = buildBridgeApp();
+    const r = await h.app.inject({
+      method: "POST",
+      url: "/auth/password-reset/consume",
+      headers: goodHeaders,
+      payload: {
+        token: "definitely-not-a-real-token",
+        new_password: "new_strong_password_123",
+      },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(h.mintCalls).toHaveLength(0);
+    expect(r.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("email-verify/consume happy path mints session at aal1", async () => {
+    const h = buildBridgeApp();
+    const rawToken = mintToken();
+    h.repoHarness.state.emailVerificationTokens.set(hashToken(rawToken), {
+      userId: KNOWN_USER_ID,
+      email: KNOWN_EMAIL,
+      expiresAt: new Date(Date.now() + 60_000),
+      used: false,
+    });
+
+    const r = await h.app.inject({
+      method: "POST",
+      url: "/auth/email-verify/consume",
+      headers: goodHeaders,
+      payload: { token: rawToken },
+    });
+
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      user_id: KNOWN_USER_ID,
+      session_id: "sess-email_verify",
+      assurance_level: "aal1",
+      csrf_token: "raw_csrf_email_verify",
+    });
+    expect(h.mintCalls).toEqual([
+      {
+        userId: KNOWN_USER_ID,
+        authMethod: "email_verify",
+        assuranceLevel: "aal1",
+      },
+    ]);
+  });
+
+  it("email-verify/consume failure does NOT mint a session", async () => {
+    const h = buildBridgeApp();
+    const r = await h.app.inject({
+      method: "POST",
+      url: "/auth/email-verify/consume",
+      headers: goodHeaders,
+      payload: { token: "no-such-token" },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(h.mintCalls).toHaveLength(0);
+    expect(r.headers["set-cookie"]).toBeUndefined();
+  });
+});

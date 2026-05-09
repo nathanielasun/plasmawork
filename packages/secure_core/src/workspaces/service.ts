@@ -283,7 +283,17 @@ export class WorkspaceService {
       );
     }
     const sqlClient = this.#pool.sql;
-    return await sqlClient.begin(async (tx) => {
+    // The audit row MUST be emitted AFTER the tx commits — the audit
+    // logger writes through a separate hash-chained pool, so emitting
+    // inside `sqlClient.begin(...)` could land a phantom audit row if
+    // the membership tx rolled back. We capture state from the tx,
+    // resolve the membership write, then emit on the success path.
+    type TxResult = {
+      readonly row: { id: string; workspace_id: string; user_id: string; role_id: string; created_at: Date };
+      readonly roleName: string;
+      readonly emitAudit: boolean;
+    };
+    const result: TxResult = await sqlClient.begin(async (tx) => {
       await this.#assertCanManageMembersAtCommit(
         tx,
         opts.workspaceId,
@@ -322,7 +332,19 @@ export class WorkspaceService {
         LIMIT 1
       `;
       if (existing.length > 0) {
-        return existing[0];
+        // Idempotent path: no membership change → no audit row.
+        const e = existing[0];
+        return {
+          row: {
+            id: e.id,
+            workspace_id: e.workspace_id,
+            user_id: e.user_id,
+            role_id: e.role_id,
+            created_at: e.created_at,
+          },
+          roleName: e.role_name,
+          emitAudit: false,
+        };
       }
 
       const membershipId = randomUUID();
@@ -348,7 +370,14 @@ export class WorkspaceService {
         VALUES (${randomUUID()}, ${opts.workspaceId}, ${opts.targetUserId},
                 ${opts.actorUserId}, 'added', NULL, ${roleId})
       `;
-      const row = inserted[0];
+      return {
+        row: inserted[0],
+        roleName: opts.roleName,
+        emitAudit: true,
+      };
+    });
+
+    if (result.emitAudit) {
       await this.#auditLogger.write({
         workspaceId: opts.workspaceId,
         actorUserId: opts.actorUserId,
@@ -360,11 +389,12 @@ export class WorkspaceService {
         requestId: opts.requestId,
         metadata: { target_user_id_redacted: hashId(opts.targetUserId) },
       });
-      return {
-        ...row,
-        role_name: opts.roleName,
-      };
-    });
+    }
+
+    return {
+      ...result.row,
+      role_name: result.roleName,
+    };
   }
 
   /**
@@ -378,7 +408,11 @@ export class WorkspaceService {
     opts: ChangeMemberRoleOptions,
   ): Promise<MembershipRow> {
     const sqlClient = this.#pool.sql;
-    return await sqlClient.begin(async (tx) => {
+    // Audit emission lives outside the membership tx — see addMember
+    // for the rationale (audit logger writes through a separate
+    // hash-chained pool; emitting inside `sqlClient.begin(...)` could
+    // land a phantom audit row if the membership tx rolled back).
+    const row = await sqlClient.begin(async (tx) => {
       await this.#assertCanManageMembersAtCommit(
         tx,
         opts.workspaceId,
@@ -428,35 +462,38 @@ export class WorkspaceService {
           user_id_redacted: hashId(opts.targetUserId),
         });
       }
-      const row = updated[0];
+      const r = updated[0];
       await tx`
         INSERT INTO workspace_membership_events
           (id, workspace_id, target_user_id, actor_user_id, event_type,
            old_role_id, new_role_id)
         VALUES (${randomUUID()}, ${opts.workspaceId}, ${opts.targetUserId},
                 ${opts.actorUserId}, 'role_changed',
-                ${row.old_role_id}, ${newRoleId})
+                ${r.old_role_id}, ${newRoleId})
       `;
-      await this.#auditLogger.write({
-        workspaceId: opts.workspaceId,
-        actorUserId: opts.actorUserId,
-        actorType: "human",
-        action: "workspace.role_changed",
-        result: "succeeded",
-        objectType: "workspace",
-        objectId: opts.workspaceId,
-        requestId: opts.requestId,
-        metadata: { target_user_id_redacted: hashId(opts.targetUserId) },
-      });
-      return {
-        id: row.id,
-        workspace_id: row.workspace_id,
-        user_id: row.user_id,
-        role_id: row.role_id,
-        role_name: opts.newRoleName,
-        created_at: row.created_at,
-      };
+      return r;
     });
+
+    await this.#auditLogger.write({
+      workspaceId: opts.workspaceId,
+      actorUserId: opts.actorUserId,
+      actorType: "human",
+      action: "workspace.role_changed",
+      result: "succeeded",
+      objectType: "workspace",
+      objectId: opts.workspaceId,
+      requestId: opts.requestId,
+      metadata: { target_user_id_redacted: hashId(opts.targetUserId) },
+    });
+
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      user_id: row.user_id,
+      role_id: row.role_id,
+      role_name: opts.newRoleName,
+      created_at: row.created_at,
+    };
   }
 
   /**

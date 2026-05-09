@@ -154,6 +154,12 @@ export function requireAuth(deps: RequireAuthDeps): NamedMiddleware {
       throw new UnauthenticatedError("Authentication required.");
     }
 
+    // Cookie-session auth (this middleware) ONLY mints human sessions.
+    // Worker auth flows through `workerAuth.ts` and lands in `req.auth`
+    // with `actorType: "worker"`. AI-agent / operator actor types are
+    // not currently issued via cookie session — when that changes,
+    // derive `actorType` from `sessions.auth_method` instead of pinning
+    // it to "human" here.
     const actorType: ActorType = "human";
 
     if (row.revokedAt !== null) {

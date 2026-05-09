@@ -81,7 +81,7 @@ async function buildHarness(store: readonly PlatformGrant[]) {
   const calls: unknown[] = [];
   const app = buildApp({
     appSql: undefined as unknown as SecureCorePool["sql"],
-    cookieSecret: "test",
+    cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
   });
   app.get(
     "/operator/probe",

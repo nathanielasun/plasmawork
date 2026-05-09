@@ -108,7 +108,7 @@ describe("loadWorkspace", () => {
     ]);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -150,7 +150,7 @@ describe("loadWorkspace", () => {
     const pool = makePoolWithWorkspaces([]);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -175,7 +175,7 @@ describe("loadWorkspace", () => {
     const pool = makePoolWithWorkspaces([]);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -200,7 +200,7 @@ describe("loadWorkspace", () => {
     const pool = makePoolWithWorkspaces([]);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -241,7 +241,7 @@ describe("loadWorkspace", () => {
     ]);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -275,7 +275,7 @@ describe("loadWorkspace", () => {
   it("enforceUniformNotFound 404s when loadWorkspace was skipped upstream", async () => {
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(

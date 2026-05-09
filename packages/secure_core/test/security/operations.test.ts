@@ -101,7 +101,7 @@ describe("security operations route composition", () => {
   it("registers the dashboard route with real auth and platform-capability middleware", async () => {
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
     });
     await registerSecurityOperationsRoutes(app, {
       appPool: appPool({ platformAllowed: true }),
@@ -124,7 +124,7 @@ describe("security operations route composition", () => {
   it("denies dashboard access when the authenticated user lacks platform:audit_read", async () => {
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
     });
     await registerSecurityOperationsRoutes(app, {
       appPool: appPool({ platformAllowed: false }),

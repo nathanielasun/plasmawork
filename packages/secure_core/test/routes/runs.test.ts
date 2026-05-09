@@ -316,6 +316,7 @@ function buildApp(
   stateMachine: RunStateMachine,
   queryService: RunQueryService,
   mw: RunRoutesMiddleware,
+  approvalService?: import("../../src/approvals/service.js").ApprovalService,
 ): FastifyInstance {
   const app = Fastify({
     logger: false,
@@ -355,7 +356,13 @@ function buildApp(
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(runRoutes, { stateMachine, queryService, auditLogger, mw });
+  app.register(runRoutes, {
+    stateMachine,
+    queryService,
+    auditLogger,
+    mw,
+    approvalService,
+  });
   return app;
 }
 
@@ -736,5 +743,205 @@ describe("L4.3 — run routes", () => {
     });
     expect(r.statusCode).toBe(404);
     expect(smStub.calls.transition).toHaveLength(0);
+  });
+
+  // -----------------------------------------------------------------
+  // F3 — high-risk backend approval gate (audit fix 2026-05-09)
+  // -----------------------------------------------------------------
+
+  function makeStubApprovalService(opts: {
+    consumeError?: unknown;
+  }): {
+    service: import("../../src/approvals/service.js").ApprovalService;
+    calls: Array<
+      import("../../src/approvals/service.js").ConsumeTokenOptions
+    >;
+  } {
+    const calls: Array<
+      import("../../src/approvals/service.js").ConsumeTokenOptions
+    > = [];
+    const service = {
+      async consumeToken(
+        o: import("../../src/approvals/service.js").ConsumeTokenOptions,
+      ) {
+        calls.push(o);
+        if (opts.consumeError !== undefined) throw opts.consumeError;
+        return {
+          requestRow: {
+            id: o.expectedRequestId,
+            workspace_id: VALID_WS,
+            object_type: "run",
+            object_id: VALID_CAP,
+            requested_action: o.expectedAction,
+            requested_by: ACTOR,
+            requested_by_agent: false,
+            status: "pending",
+            decided_by: null,
+            decided_at: null,
+            created_at: new Date(),
+          },
+          tokenRow: {
+            id: "tok-1",
+            workspace_id: VALID_WS,
+            approval_request_id: o.expectedRequestId,
+            token_hash: "h",
+            token_context_hash: "c",
+            approver_user_id: o.consumerUserId,
+            approver_role_id: null,
+            created_by: ACTOR,
+            created_at: new Date(),
+            expires_at: new Date(Date.now() + 60_000),
+            used_at: null,
+            revoked_at: null,
+          },
+        };
+      },
+    } as unknown as import("../../src/approvals/service.js").ApprovalService;
+    return { service, calls };
+  }
+
+  const APPROVAL_REQ = "55555555-5555-4555-8555-555555555555";
+
+  it("low-risk backend (local) does NOT consume an approval token", async () => {
+    const qStub = makeStubQueryService();
+    const aStub = makeStubApprovalService({});
+    const app = buildApp(
+      smStub.stateMachine,
+      qStub.queryService,
+      makeMiddlewareBundle({}),
+      aStub.service,
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}/runs`,
+      payload: { backend: "local" },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(aStub.calls).toHaveLength(0);
+    expect(smStub.calls.createRun).toHaveLength(1);
+  });
+
+  it("hpc:slurm backend without X-Approval-Token → 403 + approval.required audit", async () => {
+    const qStub = makeStubQueryService();
+    const aStub = makeStubApprovalService({});
+    const app = buildApp(
+      smStub.stateMachine,
+      qStub.queryService,
+      makeMiddlewareBundle({}),
+      aStub.service,
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}/runs`,
+      payload: { backend: "hpc:slurm", approval_request_id: APPROVAL_REQ },
+    });
+    expect(r.statusCode).toBe(403);
+    const body = r.json() as { error: { code: string } };
+    expect(body.error.code).toBe("APPROVAL_REQUIRED");
+    expect(aStub.calls).toHaveLength(0);
+    expect(smStub.calls.createRun).toHaveLength(0);
+  });
+
+  it("hpc:slurm with token + approval_request_id → consumeToken called with hpc_submission action", async () => {
+    const qStub = makeStubQueryService();
+    const aStub = makeStubApprovalService({});
+    const app = buildApp(
+      smStub.stateMachine,
+      qStub.queryService,
+      makeMiddlewareBundle({}),
+      aStub.service,
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}/runs`,
+      headers: { "x-approval-token": "raw-token" },
+      payload: { backend: "hpc:slurm", approval_request_id: APPROVAL_REQ },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(aStub.calls).toHaveLength(1);
+    expect(aStub.calls[0]).toMatchObject({
+      expectedAction: "hpc_submission",
+      expectedRequestId: APPROVAL_REQ,
+      consumerUserId: ACTOR,
+    });
+    expect(smStub.calls.createRun).toHaveLength(1);
+  });
+
+  it("expensive:gpu maps to expensive_run action", async () => {
+    const qStub = makeStubQueryService();
+    const aStub = makeStubApprovalService({});
+    const app = buildApp(
+      smStub.stateMachine,
+      qStub.queryService,
+      makeMiddlewareBundle({}),
+      aStub.service,
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}/runs`,
+      headers: { "x-approval-token": "raw-token" },
+      payload: { backend: "expensive:gpu", approval_request_id: APPROVAL_REQ },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(aStub.calls[0].expectedAction).toBe("expensive_run");
+  });
+
+  it("hpc backend with token but no approval_request_id → 403", async () => {
+    const qStub = makeStubQueryService();
+    const aStub = makeStubApprovalService({});
+    const app = buildApp(
+      smStub.stateMachine,
+      qStub.queryService,
+      makeMiddlewareBundle({}),
+      aStub.service,
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}/runs`,
+      headers: { "x-approval-token": "raw-token" },
+      payload: { backend: "hpc:slurm" },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(aStub.calls).toHaveLength(0);
+    expect(smStub.calls.createRun).toHaveLength(0);
+  });
+
+  it("ApprovalService.consumeToken throws → run is not created", async () => {
+    const qStub = makeStubQueryService();
+    const aStub = makeStubApprovalService({
+      consumeError: new SecureCoreError(
+        "APPROVAL_TOKEN_REUSED",
+        "Token already used.",
+      ),
+    });
+    const app = buildApp(
+      smStub.stateMachine,
+      qStub.queryService,
+      makeMiddlewareBundle({}),
+      aStub.service,
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}/runs`,
+      headers: { "x-approval-token": "raw-token" },
+      payload: { backend: "hpc:slurm", approval_request_id: APPROVAL_REQ },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(smStub.calls.createRun).toHaveLength(0);
+  });
+
+  it("Ajv refuses unknown backend (not in RUN_BACKENDS)", async () => {
+    const qStub = makeStubQueryService();
+    const app = buildApp(
+      smStub.stateMachine,
+      qStub.queryService,
+      makeMiddlewareBundle({}),
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/workspaces/${VALID_WS}/capsules/${VALID_CAP}/runs`,
+      payload: { backend: "remote:elsewhere" },
+    });
+    expect(r.statusCode).toBe(400);
   });
 });

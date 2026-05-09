@@ -570,6 +570,8 @@ check_file_exists packages/core/src/simworkbench/tools/run_manager.py \
   "tool run manager"
 check_file_exists packages/core/src/simworkbench/tools/authoring.py \
   "tool draft authoring service"
+check_file_exists packages/core/src/simworkbench/tools/authoring_preview.py \
+  "tool draft preview subprocess runner"
 check_grep_in_file '/api/tools/\{name\}/schema' packages/core/src/simworkbench/api/server.py \
   "API exposes /api/tools/{name}/schema"
 check_grep_in_file '/api/tools/\{name\}/preview' packages/core/src/simworkbench/api/server.py \
@@ -580,6 +582,16 @@ check_grep_in_file '/api/tool-artifacts/\{artifact_id\}' packages/core/src/simwo
   "API exposes /api/tool-artifacts/{artifact_id}"
 check_grep_in_file '/api/tool-authoring/drafts' packages/core/src/simworkbench/api/server.py \
   "API exposes controlled tool-authoring drafts"
+check_grep_in_file '/api/tool-authoring/code-templates' packages/core/src/simworkbench/api/server.py \
+  "API exposes controlled tool-authoring code templates"
+check_grep_in_file '/api/tool-authoring/drafts/\{draft_id\}/preview' packages/core/src/simworkbench/api/server.py \
+  "API exposes bounded draft preview harnesses"
+for template in diagnostic_summary quick_ode_solver quick_visualization structured_diagram_output; do
+  check_file_exists "packages/internal_tools/code_templates/$template/template.yaml" \
+    "$template code template metadata"
+  check_file_exists "packages/internal_tools/code_templates/$template/snippet.py" \
+    "$template code template snippet"
+done
 check_file_exists apps/workbench-ui/src/components/tools/ToolWorkbench.tsx \
   "ToolWorkbench UI binding component"
 check_file_exists apps/workbench-ui/src/components/tools/ToolAuthoringPanel.tsx \
@@ -600,6 +612,8 @@ check_file_exists tests/regression/test_tool_artifact_path_isolation.py \
   "tool artifact path isolation regression tests"
 check_grep_in_file 'local_cache/workspaces/local/tool_drafts' docs_site/src/content/internal_tools.tsx \
   "internal tools docs describe controlled tool-draft storage"
+check_grep_in_file 'tool_code_templates' docs_site/src/content/internal_tools.tsx \
+  "internal tools docs describe workspace-local code templates"
 check_file_exists tests/regression/test_tool_construction_skill.py \
   "tool-construction skill regression tests"
 check_file_exists tests/unit/test_tool_metadata.py \
@@ -2818,6 +2832,119 @@ check_grep_in_file 'exit 1' scripts/dev/postgres_up.sh \
 check_grep_in_file 'security_live_db\.sh' scripts/dev/postgres_up.sh \
   "postgres_up.sh points users at the live DB probe lane"
 
+# Phase 0.5 audit fix bundle (2026-05-09): F1+F2 login + CSRF cookie issuance,
+# F3 backend high-risk gating, F4 audit-tx ordering, F5 cookieSecret hardening.
+section "Phase 0.5 audit fixes (2026-05-09: F1-F5)"
+# F1+F2 — login + logout routes mint sessions and CSRF cookies.
+check_file_exists packages/secure_core/src/auth/loginService.ts
+check_file_exists packages/secure_core/src/routes/login.ts
+check_file_exists packages/secure_core/test/auth/loginService.test.ts
+check_file_exists packages/secure_core/test/routes/login.test.ts
+check_grep_in_file 'export class LoginService' \
+  packages/secure_core/src/auth/loginService.ts \
+  "F1 LoginService is exported"
+check_grep_in_file 'authenticatePassword' \
+  packages/secure_core/src/auth/loginService.ts \
+  "F1 LoginService.authenticatePassword exists"
+check_grep_in_file 'terminateSession' \
+  packages/secure_core/src/auth/loginService.ts \
+  "F1 LoginService.terminateSession exists"
+check_grep_in_file 'DUMMY_PASSWORD_HASH' \
+  packages/secure_core/src/auth/loginService.ts \
+  "F1 LoginService runs verifyPasswordHash even when user is null (constant-time anti-enumeration)"
+check_grep_in_file 'Invalid email or password\.' \
+  packages/secure_core/src/auth/loginService.ts \
+  "F1 LoginService uses the generic anti-enumeration error message (v4 §8)"
+check_grep_in_file 'export const loginRoutes' \
+  packages/secure_core/src/routes/login.ts \
+  "F1 loginRoutes Fastify plugin exported"
+check_grep_in_file '/auth/login' \
+  packages/secure_core/src/routes/login.ts \
+  "F1 login route declares POST /auth/login"
+check_grep_in_file '/auth/logout' \
+  packages/secure_core/src/routes/login.ts \
+  "F1 login route declares POST /auth/logout"
+check_grep_in_file 'SESSION_COOKIE_NAME = "secure_session"' \
+  packages/secure_core/src/routes/login.ts \
+  "F2 session cookie name is secure_session (v4 §7)"
+check_grep_in_file 'CSRF_COOKIE_NAME = "csrf_token"' \
+  packages/secure_core/src/routes/login.ts \
+  "F2 CSRF cookie name is csrf_token (v4 §7.2 double-submit)"
+check_grep_in_file 'httpOnly: true' \
+  packages/secure_core/src/routes/login.ts \
+  "F2 secure_session cookie is HttpOnly"
+check_grep_in_file 'httpOnly: false' \
+  packages/secure_core/src/routes/login.ts \
+  "F2 csrf_token cookie is non-HttpOnly so the SPA can echo X-CSRF-Token"
+check_grep_in_file 'additionalProperties: false' \
+  packages/secure_core/src/routes/login.ts \
+  "F1 login body schema sets additionalProperties:false"
+check_grep_absent_in_file 'req\.body\.actor' \
+  packages/secure_core/src/routes/login.ts \
+  "F1 login route never reads req.body.actor (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.actor_user_id' \
+  packages/secure_core/src/routes/login.ts \
+  "F1 login route never reads req.body.actor_user_id (v4 §19.1)"
+check_grep_absent_in_file 'req\.body\.user_id' \
+  packages/secure_core/src/routes/login.ts \
+  "F1 login route never reads req.body.user_id (v4 §19.1)"
+# F3 — backend classifier + approval gating in run-create.
+check_file_exists packages/secure_core/src/runs/backendClassifier.ts
+check_grep_in_file 'export const RUN_BACKENDS' \
+  packages/secure_core/src/runs/backendClassifier.ts \
+  "F3 RUN_BACKENDS enum exported"
+check_grep_in_file 'classifyRunBackend' \
+  packages/secure_core/src/runs/backendClassifier.ts \
+  "F3 classifyRunBackend helper exported"
+check_grep_in_file 'expensive_run' \
+  packages/secure_core/src/runs/backendClassifier.ts \
+  "F3 expensive backends map to expensive_run high-risk action (v4 §17)"
+check_grep_in_file 'hpc_submission' \
+  packages/secure_core/src/runs/backendClassifier.ts \
+  "F3 hpc backends map to hpc_submission high-risk action (v4 §17)"
+check_grep_in_file 'classifyRunBackend' \
+  packages/secure_core/src/routes/runs.ts \
+  "F3 run create route classifies backend before mutation"
+check_grep_in_file 'consumeToken' \
+  packages/secure_core/src/routes/runs.ts \
+  "F3 run create route consumes an approval token for high-risk backends"
+# F5 — cookieSecret is required AND length-validated at buildApp boundary.
+check_grep_in_file 'cookieSecret: string;' \
+  packages/secure_core/src/server.ts \
+  "F5 cookieSecret is required (no '?' optional marker)"
+check_grep_in_file 'MIN_COOKIE_SECRET_BYTES' \
+  packages/secure_core/src/server.ts \
+  "F5 server.ts enforces a minimum cookie secret length"
+check_grep_in_file 'cookieSecret must be at least' \
+  packages/secure_core/src/server.ts \
+  "F5 buildApp throws on a too-short cookieSecret (no silent integrity failure)"
+# F4 — audit emission lives OUTSIDE the workspaces tx block.
+check_grep_in_file 'emitAudit' \
+  packages/secure_core/src/workspaces/service.ts \
+  "F4 workspaces.service uses an emitAudit flag returned from begin() (audit fires after commit)"
+check_file_exists packages/secure_core/test/workspaces/service.test.ts
+check_grep_in_file 'tx rollback at commit' \
+  packages/secure_core/test/workspaces/service.test.ts \
+  "F4 has a behavioral test that asserts zero audit writes on tx rollback"
+# Recovery → session bridge: the consume routes optionally accept a
+# LoginService and mint a fresh session so password-reset / email-verify
+# users land logged in (no UX dead-end).
+check_grep_in_file 'mintSessionForUser' \
+  packages/secure_core/src/auth/loginService.ts \
+  "Recovery bridge: LoginService exposes mintSessionForUser"
+check_grep_in_file 'loginService' \
+  packages/secure_core/src/routes/auth.ts \
+  "Recovery bridge: authRoutes accepts an optional LoginService"
+check_grep_in_file 'password_reset' \
+  packages/secure_core/src/routes/auth.ts \
+  "Recovery bridge: password-reset/consume mints session via authMethod=password_reset"
+check_grep_in_file 'email_verify' \
+  packages/secure_core/src/routes/auth.ts \
+  "Recovery bridge: email-verify/consume mints session via authMethod=email_verify"
+check_grep_in_file 'mintSessionForUser' \
+  packages/secure_core/test/routes/auth.test.ts \
+  "Recovery bridge: tests cover the mintSessionForUser bridge path"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard
@@ -2900,7 +3027,37 @@ check_grep_absent_in_file 'Phase 0 placeholder|UI placeholder' apps/workbench-ui
 # phases scheduled.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  echo "  no open workstreams — Phase 10 closed 2026-05-04 (final phase)."
+  # Phase 0.5 audit-fix follow-ups (deferred from the 2026-05-09 F1-F5
+  # bundle). These remain visible as opt-in failures so the deferrals
+  # do not silently bit-rot.
+  # 1. HMAC-signed pagination cursors. Audit-events and operator routes
+  #    currently emit/accept opaque cursors that are not HMAC-signed.
+  #    Per v4 §10.3 + §22.2, cursors must be tamper-evident.
+  if grep -qE 'createHmac|hmacSign|signCursor' \
+       packages/secure_core/src/routes/auditEvents.ts \
+       packages/secure_core/src/routes/operator.ts 2>/dev/null; then
+    PASS=$((PASS+1))
+    note "Pagination cursors are HMAC-signed in audit-events + operator routes"
+  else
+    FAIL=$((FAIL+1))
+    fail "Pagination cursors are NOT HMAC-signed in audit-events + operator routes (deferred follow-up from 2026-05-09 F1-F5 bundle; v4 §10.3)"
+  fi
+  # 2. requireAuth hardcodes ActorType = "human". This is correct for
+  #    Phase 0.5 (cookie-session auth ONLY mints human sessions; worker
+  #    auth flows through `workerAuth.ts`), but the assignment site
+  #    should at minimum carry a comment naming the design decision —
+  #    or, if a future deployment introduces non-human cookie sessions,
+  #    derive the value from the session row's `auth_method`. The
+  #    deferred follow-up: either add the design-decision comment or
+  #    move the assignment to a derivation.
+  if grep -qiE 'cookie-session auth.*ONLY mints human|cookie session.*human session' \
+       packages/secure_core/src/middleware/requireAuth.ts 2>/dev/null; then
+    PASS=$((PASS+1))
+    note "requireAuth documents why ActorType is hardcoded to 'human'"
+  else
+    FAIL=$((FAIL+1))
+    fail "requireAuth hardcodes 'const actorType: ActorType = \"human\"' without naming the design decision (deferred follow-up from 2026-05-09 F1-F5 bundle)"
+  fi
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"
   echo "  skipped (pass --include-open-workstreams to inspect open TODO backlog)"

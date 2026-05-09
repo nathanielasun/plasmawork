@@ -32,6 +32,139 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-09: Phase 0.5 audit fixes F1+F2+F3+F4+F5
+
+### Affected subsystem
+- `packages/secure_core/src/auth/loginService.ts` (new)
+- `packages/secure_core/src/auth/recoveryService.ts` (consume returns userId)
+- `packages/secure_core/src/routes/login.ts` (new)
+- `packages/secure_core/src/routes/auth.ts` (recovery → session bridge)
+- `packages/secure_core/src/routes/index.ts` (export barrel)
+- `packages/secure_core/src/runs/backendClassifier.ts` (new)
+- `packages/secure_core/src/routes/runs.ts` (high-risk gating)
+- `packages/secure_core/src/workspaces/service.ts` (audit-tx ordering)
+- `packages/secure_core/src/middleware/requireAuth.ts` (design comment)
+- `packages/secure_core/src/server.ts` (cookieSecret hardening)
+
+### Symptoms
+A targeted security audit on 2026-05-08 found five live deployment-blockers
+in the Phase 0.5 secure-core stack:
+
+- **F1 (deployment blocker).** No code in `secure_core/src/` ever created a
+  `sessions` row or set the `secure_session` / `csrf_token` cookies. The
+  recovery flows shipped earlier were post-login token consumers — they never
+  minted a session — so password-reset was a UX dead-end and the entire auth
+  substrate (sessions, capabilities, audit-actor, CSRF) was structurally
+  complete but operationally unreachable from any browser.
+- **F2.** Even if F1 had been wired, `enforceCsrfForStateChange` looked for a
+  `csrf_token` cookie that no code ever wrote. State-changing requests
+  authenticated via `requireAuth` would then fail CSRF on the synchronizer-
+  token branch.
+- **F3.** `POST /workspaces/:id/capsules/:id/runs` accepted an arbitrary
+  `backend` body field with no v4 §17 high-risk gate. A workspace member with
+  `run:create` could submit `backend: "hpc:slurm"` or `backend: "expensive:gpu"`
+  with zero approval flow — the §17 high-risk action enum (`expensive_run`,
+  `hpc_submission`) was unreachable.
+- **F4.** `WorkspaceService.addMember` and `WorkspaceService.changeMemberRole`
+  emitted audit rows INSIDE the `sqlClient.begin(...)` transaction. If the
+  outer transaction rolled back, the audit chain would still carry phantom
+  rows — but the membership change would not have committed. Every other
+  service in the codebase (and the v4 audit invariant) requires audit
+  emission to happen AFTER tx commits resolve.
+- **F5.** `cookieSecret` was `cookieSecret?: string` in `BuildAppDeps` —
+  optional, with no length validation. Deployment misconfiguration (e.g.
+  forgetting to wire the env var) became a silent integrity failure: cookies
+  would still be issued with `undefined` as the signing key, which
+  `@fastify/cookie` accepts but renders unverifiable.
+
+### Root cause
+- F1+F2: nothing wrote sessions or CSRF cookies. The L2 middleware was the
+  consumer of state set by a producer that did not exist.
+- F3: route used a tuple of body fields with `additionalProperties:false` but
+  the `backend` enum was over-permissive and the L2.9 approval token gate
+  composes statically — middleware can't dispatch on a body field, so the
+  approval consumption needs to happen in the route handler after the body
+  is parsed.
+- F4: classic "audit is part of the transactional unit" trap. The audit
+  chain is its own pool (separate hash-chained pool) precisely so that a
+  service tx rolling back doesn't leave an orphan audit row.
+- F5: TypeScript optional marker on a security-critical config knob is a
+  "make tests easy" foot-gun. Deployments would forget the secret and the
+  cookie integrity would be a no-op silently.
+
+### Fix
+- **F1+F2.** New `LoginService` with `authenticatePassword` /
+  `terminateSession`. Constant-time anti-enumeration via `DUMMY_PASSWORD_HASH`
+  (verifyPasswordHash always runs even when user is null). Generic 401
+  message ("Invalid email or password.") regardless of denied reason; audit
+  carries the discriminated `denied_reason`. `LoginRoutes` mints both
+  cookies — session is HttpOnly, CSRF is non-HttpOnly — and returns the raw
+  CSRF token in the response body for the SPA to cache + echo as
+  `X-CSRF-Token`. Logout clears both cookies even if revocation fails.
+- **F3.** New `runs/backendClassifier.ts` exports `RUN_BACKENDS` and
+  `classifyRunBackend`. POST `/runs` reads the body's `backend`, classifies
+  it, and if high-risk consumes an approval token via the L2.9 service
+  before `stateMachine.createRun` is called. Body schema's `backend.enum`
+  is `[...RUN_BACKENDS]` so unknown values fail Ajv at the boundary.
+- **F4.** Refactored `addMember` and `changeMemberRole` to return a
+  discriminated `{ row, roleName, emitAudit }` from `sqlClient.begin`, then
+  emit audit AFTER the tx resolves. Idempotent existing-membership path
+  skips audit emission via `emitAudit: false`.
+- **F5.** `cookieSecret` is now `cookieSecret: string` (required) and
+  `buildApp` throws if it's missing OR shorter than 32 bytes
+  (`MIN_COOKIE_SECRET_BYTES`). All test fixtures updated.
+- **Recovery → session bridge.** `RecoveryService.consumePasswordReset`
+  and `consumeEmailVerification` now return `{ userId }` on success.
+  `LoginService.mintSessionForUser` is the shared helper that issues a
+  session for an already-authenticated user; `authenticatePassword`
+  delegates to it and the recovery routes call it directly. When
+  `authRoutes` is wired with a `LoginService`, password-reset/consume
+  mints at aal2 (user proved email + new password) and email-verify/
+  consume mints at aal1 (user proved email control only); both set
+  `secure_session` and `csrf_token` cookies and return the
+  `LoginResponseBody` envelope. Without a `LoginService` the legacy
+  `{ status: "ok" }` shape is preserved (pre-bridge consumers stay
+  green).
+
+### Regression protection
+- `packages/secure_core/test/auth/loginService.test.ts` — 7 tests pinning
+  anti-enumeration, denied_reason discrimination, constant-time path,
+  email normalization, raw-token-not-in-audit-metadata invariants.
+- `packages/secure_core/test/routes/login.test.ts` — 12 tests pinning cookie
+  shape (HttpOnly / non-HttpOnly), generic 401 response, Origin/CSRF
+  enforcement, schema rejection, logout idempotency.
+- `packages/secure_core/test/routes/runs.test.ts` — 7 new tests covering
+  high-risk backend approval consumption + low-risk pass-through.
+- `packages/secure_core/test/workspaces/service.test.ts` — 4 new tests
+  that pin F4 *behaviorally*: with the inner callback resolved but
+  `begin()` rejecting at "commit", the audit logger receives ZERO
+  writes; the happy path emits exactly one row post-tx; idempotent
+  existing-membership path emits none.
+- `packages/secure_core/test/routes/auth.test.ts` — 4 new tests
+  covering the recovery → session bridge: password-reset/consume +
+  email-verify/consume happy paths mint cookies and return the login
+  body; failure paths set NO cookies and never call mintSessionForUser.
+- `scripts/dev/check_repo_conventions.sh` — 31 new assertions under
+  "Phase 0.5 audit fixes (2026-05-09: F1-F5)".
+
+### Agent warning
+- Anti-enumeration is a wall-clock + response-shape invariant, not a
+  message-only invariant. If you change `LoginService.authenticatePassword`,
+  do NOT skip the `verifyPasswordHash` call when the user is null and do
+  NOT vary the error message by denied reason.
+- Audit emission lives OUTSIDE service transactions. If a refactor moves
+  audit writes inside `sqlClient.begin(...)`, the audit chain becomes
+  capable of carrying phantom rows.
+- Security-critical config (cookieSecret, JWT keys, encryption keys) is
+  a required input with a size floor — never optional, never empty-string-
+  acceptable. Tests pay for the inconvenience of a 32+ byte fixture; prod
+  pays nothing for the silent failure mode.
+- High-risk run backends consume an approval token via L2.9; static
+  composition can't dispatch on body shape, so backend classification +
+  approval consumption belong in the route handler, not in middleware.
+
+---
+
 ## 2026-05-08: Workbench locality guard rejected case-aliased roots
 
 ### Affected subsystem

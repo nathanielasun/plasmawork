@@ -139,7 +139,7 @@ describe("enforceObjectWorkspaceScope", () => {
     const pool = makePool(store);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -172,7 +172,7 @@ describe("enforceObjectWorkspaceScope", () => {
     const pool = makePool(store);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -204,7 +204,7 @@ describe("enforceObjectWorkspaceScope", () => {
     const pool = makePool(emptyStore());
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -236,7 +236,7 @@ describe("enforceObjectWorkspaceScope", () => {
     const pool = makePool(emptyStore());
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(
@@ -290,7 +290,7 @@ describe("enforceObjectWorkspaceScope", () => {
     for (const { kind, param, slug } of kinds) {
       const app = buildApp({
         appSql: undefined as unknown as SecureCorePool["sql"],
-        cookieSecret: "test",
+        cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
         errorMapping: { dev: false },
       });
       app.get(
@@ -323,7 +323,7 @@ describe("enforceObjectWorkspaceScope", () => {
     const pool = makePool(store);
     const app = buildApp({
       appSql: undefined as unknown as SecureCorePool["sql"],
-      cookieSecret: "test",
+      cookieSecret: "test_cookie_secret_minimum_32_bytes_for_hmac",
       errorMapping: { dev: false },
     });
     app.get(

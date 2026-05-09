@@ -60,6 +60,18 @@ export {
 } from "./auth.js";
 
 export {
+  loginRoutes,
+  type LoginRoutesOptions,
+  type LoginRoutesMiddleware,
+  type LoginResponseBody,
+  SESSION_COOKIE_NAME,
+  CSRF_COOKIE_NAME,
+  LOGIN_RESPONSE_SCHEMA,
+  LOGIN_SCHEMA,
+  LOGOUT_SCHEMA,
+} from "./login.js";
+
+export {
   sessionRoutes,
   CURRENT_SESSION_RESPONSE_SCHEMA,
   type SessionRoutesOptions,

@@ -78,6 +78,149 @@ symlinks, or promote content that changed after the last check.
   construction gained controlled draft storage, hash-bound package checks,
   symlink rejection, and backend-owned registration/export.
 
+## Error Pattern: Auth substrate ships without the producer that mints sessions
+
+### Failure mode
+A multi-layer auth/session/CSRF stack lands middleware (`requireAuth`,
+`enforceCsrfForStateChange`), a session reader, recovery flows, and a
+dashboard — but no code ever creates a `sessions` row or sets the
+`secure_session` / `csrf_token` cookies. Every consumer is structurally
+complete; no producer exists. Browser flows are operationally unreachable
+in production even though the code "compiles and tests pass".
+
+### Required behavior
+- For every cookie that middleware consumes, name the producer that mints
+  it and ship a regression that pins both sides of the pair.
+- For every server-derived field that authorization depends on (session
+  row, capability join, audit actor), there must be a happy-path mutation
+  that commits it.
+- Recovery flows that *consume* tokens (password-reset/consume,
+  email-verify/consume) MUST connect to a session-issuing primitive, or
+  the user is left mid-flight with no way to land authenticated.
+
+### Detection
+- For each `Set-Cookie` cookie name referenced in middleware, grep for the
+  matching `setCookie(<name>` writer; absence is a failure.
+- For each session table column read by any service, prove a writer
+  inserts that column with non-null content.
+
+### Bug log
+- 2026-05-09 *Phase 0.5 audit fixes F1+F2*: shipped `LoginService` +
+  `loginRoutes` so `secure_session` and `csrf_token` cookies are actually
+  minted; added route + service tests pinning cookie shape and the
+  generic-401 anti-enumeration response.
+
+## Error Pattern: Anti-enumeration treated as a message-only invariant
+
+### Failure mode
+A login service returns the same generic error message for every failure
+mode but discriminates timing or response shape based on the underlying
+reason (skips the password verifier when the user doesn't exist, varies
+the response headers, or omits a Set-Cookie that succeeds elsewhere). The
+prose says "anti-enumeration"; the wall clock and the response envelope
+leak the truth.
+
+### Required behavior
+- The verifier (Argon2id / equivalent) runs on every code path, including
+  when the user lookup returned null — verify against a fixed dummy hash
+  to keep wall-clock parity.
+- The HTTP response is byte-shape identical regardless of denied reason
+  (same status, same body keys, same headers).
+- The discriminated `denied_reason` lives in the audit row only.
+
+### Detection
+- For every login/auth code path, prove `verifyPasswordHash` is called
+  before the early-return branch.
+- For every "generic error" response, assert the same headers and body
+  shape across all failure inputs in tests, not just the message.
+
+### Bug log
+- 2026-05-09 *Phase 0.5 audit fix F1*: anti-enumeration tests now pin the
+  verifier-runs-when-user-is-null invariant explicitly.
+
+## Error Pattern: Audit emission inside the service transaction
+
+### Failure mode
+A service writes to multiple rows inside `sqlClient.begin(...)` and emits
+its audit event inside the same transaction. If the tx rolls back, the
+audit chain still carries the row (the audit logger uses a separate
+hash-chained pool). Audit shows a state change that never committed —
+phantom audit rows.
+
+### Required behavior
+- Audit emission lives OUTSIDE the service transaction. Pass a
+  discriminated `{ row, emitAudit }` out of `begin()` and emit AFTER it
+  resolves on the success path.
+- Idempotent paths (existing row found inside tx) explicitly opt out via
+  `emitAudit: false`.
+
+### Detection
+- Grep service files for `auditLogger.write` calls within `sqlClient.begin`
+  blocks.
+- For every committed mutation, verify the corresponding audit row is
+  emitted by the post-tx code path, not the inner transactional callback.
+
+### Bug log
+- 2026-05-09 *Phase 0.5 audit fix F4*: `WorkspaceService.addMember` and
+  `changeMemberRole` now emit audit AFTER tx commits; idempotent paths
+  skip emission via `emitAudit: false`.
+
+## Error Pattern: Security-critical config marked optional
+
+### Failure mode
+A required deployment secret (cookie signing key, JWT secret, encryption
+key) is typed as `optional?` in the build/config interface. Tests pass
+empty fixtures; production deployments forget to wire it. The framework
+silently accepts `undefined` and downstream cryptography becomes a no-op
+(unverifiable cookies, unsigned tokens). The failure mode is silent.
+
+### Required behavior
+- Security-critical secrets are required (no `?` optional marker) AND
+  length-validated at the build boundary.
+- Build throws on missing or under-size secrets, naming the variable.
+- Tests pay for the inconvenience of a 32+ byte fixture; production
+  pays nothing for the silent failure.
+
+### Detection
+- Grep build/config interfaces for `<secret>?: string` patterns and
+  refuse them.
+- Add a build-time test that constructs `buildApp({})` and asserts a
+  throw mentioning the missing/short secret.
+
+### Bug log
+- 2026-05-09 *Phase 0.5 audit fix F5*: `cookieSecret` is now required
+  with a 32-byte floor; missing/short values throw at `buildApp`.
+
+## Error Pattern: Static composition for body-dispatched gating
+
+### Failure mode
+A route needs to consume an approval token only for some body shapes
+(e.g. `backend: "hpc:slurm"` requires approval; `backend: "local"` does
+not). Author tries to express this as conditional middleware composition,
+or falls back to skipping the gate entirely when middleware can't see the
+body. Either way, the high-risk action ships without an approval gate.
+
+### Required behavior
+- Static middleware composition (§6.2 ordering) cannot dispatch on body
+  shape; body-dispatched gates live in the route handler, AFTER body
+  parsing + before mutation.
+- The classification function exports a closed enum (e.g.
+  `RUN_BACKENDS`) so the body schema can use it as `enum`.
+- The handler classifies the body field, and on the high-risk branch
+  reads the `X-Approval-Token` header + body's `approval_request_id` and
+  consumes the token before any mutation.
+
+### Detection
+- For every action enumerated in the §17 high-risk list, prove a route
+  handler consumes the matching approval token before mutation.
+- Negative test: missing approval token on a high-risk body returns 403
+  + emits an `approval.required` audit row.
+
+### Bug log
+- 2026-05-09 *Phase 0.5 audit fix F3*: `runs/backendClassifier.ts` exports
+  `RUN_BACKENDS` + `classifyRunBackend`; `POST /runs` consumes an L2.9
+  approval token for `expensive_run` / `hpc_submission` actions.
+
 ## Error Pattern: Security route export without production composition
 
 ### Why it is bad

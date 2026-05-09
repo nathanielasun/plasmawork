@@ -288,7 +288,7 @@ export class RecoveryService {
   // -----------------------------------------------------------------
   public async consumePasswordReset(
     input: ConsumePasswordResetInput,
-  ): Promise<void> {
+  ): Promise<{ userId: string }> {
     if (
       typeof input.token !== "string" ||
       input.token.length === 0 ||
@@ -325,6 +325,7 @@ export class RecoveryService {
       userId: outcome.userId,
       newPassword: input.newPassword,
     });
+    return { userId: outcome.userId };
   }
 
   // -----------------------------------------------------------------
@@ -372,7 +373,7 @@ export class RecoveryService {
   // -----------------------------------------------------------------
   public async consumeEmailVerification(
     input: ConsumeEmailVerificationInput,
-  ): Promise<void> {
+  ): Promise<{ userId: string }> {
     if (typeof input.token !== "string" || input.token.length === 0) {
       throw new InputInvalidError("Token invalid or expired.");
     }
@@ -398,6 +399,7 @@ export class RecoveryService {
         "Token invalid or expired.",
       );
     }
+    return { userId: outcome.userId };
   }
 
   // -----------------------------------------------------------------

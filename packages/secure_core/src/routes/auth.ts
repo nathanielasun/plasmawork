@@ -41,6 +41,12 @@ import {
   type NamedMiddleware,
 } from "../middleware/compose.js";
 import type { RecoveryService } from "../auth/recoveryService.js";
+import type { LoginService } from "../auth/loginService.js";
+import {
+  SESSION_COOKIE_NAME,
+  CSRF_COOKIE_NAME,
+  type LoginResponseBody,
+} from "./login.js";
 
 /**
  * Middleware bundle the host composes into route preHandlers. The
@@ -67,6 +73,23 @@ export interface AuthRoutesMiddleware {
 export interface AuthRoutesOptions {
   readonly service: RecoveryService;
   readonly mw: AuthRoutesMiddleware;
+  /**
+   * Optional login service. When provided, the consume endpoints
+   * (`password-reset/consume`, `email-verify/consume`) bridge to a
+   * fresh session: after the recovery service resolves the user id,
+   * `LoginService.mintSessionForUser` is called and `secure_session` /
+   * `csrf_token` cookies are set so the user lands logged in. Without
+   * this dep, the consume endpoints return the legacy `{ status: "ok" }`
+   * envelope (Phase 0.5 backwards-compatible behavior).
+   */
+  readonly loginService?: LoginService;
+  /**
+   * Cookie shape overrides for the recovery → session bridge. Mirror
+   * the `loginRoutes` knobs so deployments can keep them in sync.
+   */
+  readonly cookieDomain?: string;
+  readonly cookiePath?: string;
+  readonly cookieSecure?: boolean;
 }
 
 // ---------------------------------------------------------------------
@@ -154,6 +177,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
   opts,
 ) => {
   const { service, mw } = opts;
+  const cookiePath = opts.cookiePath ?? "/";
+  const cookieSecure = opts.cookieSecure ?? true;
   const passwordResetRequestRateLimit =
     mw.enforcePasswordResetRequestRateLimit ?? mw.enforceRateLimit;
   const passwordResetConsumeRateLimit =
@@ -199,11 +224,45 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
       ]),
     },
     async (req, reply) => {
-      await service.consumePasswordReset({
+      const consumed = await service.consumePasswordReset({
         token: req.body.token,
         newPassword: req.body.new_password,
         requestId: req.requestId,
       });
+      // Recovery → session bridge: when a LoginService is wired, the
+      // user lands logged in instead of being kicked back to /login.
+      if (opts.loginService !== undefined) {
+        const outcome = await opts.loginService.mintSessionForUser({
+          userId: consumed.userId,
+          authMethod: "password_reset",
+          assuranceLevel: "aal2",
+          requestId: req.requestId,
+        });
+        reply.setCookie(SESSION_COOKIE_NAME, outcome.rawSessionToken, {
+          httpOnly: true,
+          secure: cookieSecure,
+          sameSite: "lax",
+          path: cookiePath,
+          domain: opts.cookieDomain,
+          expires: outcome.expiresAt,
+        });
+        reply.setCookie(CSRF_COOKIE_NAME, outcome.rawCsrfToken, {
+          httpOnly: false,
+          secure: cookieSecure,
+          sameSite: "lax",
+          path: cookiePath,
+          domain: opts.cookieDomain,
+          expires: outcome.expiresAt,
+        });
+        const body: LoginResponseBody = {
+          user_id: outcome.userId,
+          session_id: outcome.sessionId,
+          assurance_level: outcome.assuranceLevel,
+          csrf_token: outcome.rawCsrfToken,
+          expires_at: outcome.expiresAt.toISOString(),
+        };
+        return reply.code(200).send(body);
+      }
       return reply.code(200).send(CONSUME_OK_BODY);
     },
   );
@@ -242,10 +301,46 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
       ]),
     },
     async (req, reply) => {
-      await service.consumeEmailVerification({
+      const consumed = await service.consumeEmailVerification({
         token: req.body.token,
         requestId: req.requestId,
       });
+      // Recovery → session bridge: same shape as password-reset/consume.
+      // Email-verify mints at aal1 (single-factor — only email control
+      // proven). Deployments that want stricter AAL handling should
+      // wrap this route or pass a stricter `loginService`.
+      if (opts.loginService !== undefined) {
+        const outcome = await opts.loginService.mintSessionForUser({
+          userId: consumed.userId,
+          authMethod: "email_verify",
+          assuranceLevel: "aal1",
+          requestId: req.requestId,
+        });
+        reply.setCookie(SESSION_COOKIE_NAME, outcome.rawSessionToken, {
+          httpOnly: true,
+          secure: cookieSecure,
+          sameSite: "lax",
+          path: cookiePath,
+          domain: opts.cookieDomain,
+          expires: outcome.expiresAt,
+        });
+        reply.setCookie(CSRF_COOKIE_NAME, outcome.rawCsrfToken, {
+          httpOnly: false,
+          secure: cookieSecure,
+          sameSite: "lax",
+          path: cookiePath,
+          domain: opts.cookieDomain,
+          expires: outcome.expiresAt,
+        });
+        const body: LoginResponseBody = {
+          user_id: outcome.userId,
+          session_id: outcome.sessionId,
+          assurance_level: outcome.assuranceLevel,
+          csrf_token: outcome.rawCsrfToken,
+          expires_at: outcome.expiresAt.toISOString(),
+        };
+        return reply.code(200).send(body);
+      }
       return reply.code(200).send(CONSUME_OK_BODY);
     },
   );
