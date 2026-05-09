@@ -3168,6 +3168,39 @@ check_grep_in_file 'wrong Origin' \
   apps/workbench-gateway/test/integration/loginVertical.test.ts \
   "loginVertical test pins Origin allowlist enforcement"
 
+# Phase 0.5 auth gateway / Phase E2-min (workbench proxy plugin).
+# E2-min lands the @fastify/http-proxy mount + the HMAC handoff sign-
+# and-forward path. E2-rest (workspace authorization, CSRF on the
+# proxied state-changing methods, slug cross-check) follows in a
+# subsequent commit.
+section "Phase 0.5 auth gateway / Phase E2-min (proxy plugin)"
+check_file_exists apps/workbench-gateway/src/proxy/workbenchProxy.ts
+check_grep_in_file 'export const workbenchProxyPlugin' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy exports the FastifyPluginAsync workbenchProxyPlugin"
+check_grep_in_file 'rewritePrefix: "/api"' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy preserves /api prefix when forwarding (FastAPI mount)"
+check_grep_in_file 'rewriteRequestHeaders' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy uses rewriteRequestHeaders to attach signed headers"
+check_grep_in_file 'stripInboundHandoffHeaders' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy strips inbound X-Workbench-* (defense vs. client spoofing)"
+check_grep_in_file 'app\.register\(workbenchProxyPlugin' \
+  apps/workbench-gateway/src/main.ts \
+  "main.ts registers workbenchProxyPlugin LAST"
+check_file_exists apps/workbench-gateway/test/proxy/workbenchProxy.test.ts
+check_grep_in_file 'forwards GET /api/.*X-Workbench-' \
+  apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
+  "workbenchProxy test pins outbound 7-header HMAC sign + forward"
+check_grep_in_file 'strips inbound X-Workbench-' \
+  apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
+  "workbenchProxy test pins inbound-header strip defense"
+check_grep_in_file 'upstream-side HMAC verification' \
+  apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
+  "workbenchProxy test pins HMAC round-trip against verifying upstream"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard

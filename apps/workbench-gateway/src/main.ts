@@ -31,6 +31,7 @@ import { sessionRoutes } from "../../../packages/secure_core/src/routes/session.
 import { bootstrapRoutes } from "../../../packages/secure_core/src/routes/bootstrap.js";
 import type { FastifyInstance } from "fastify";
 
+import { workbenchProxyPlugin } from "./proxy/workbenchProxy.js";
 import { loadGatewayEnv, type GatewayEnv } from "./env.js";
 import {
   buildGatewayServices,
@@ -123,9 +124,22 @@ export async function buildGateway(
     rateLimitKeyExtractor: ipKeyExtractor,
   });
 
-  // TODO Phase E2: register `workbenchProxyPlugin` LAST. The proxy
-  // mounts a catch-all at `/api/*`; registering it before the routes
-  // above would shadow them. Phase E5 + F also depend on this.
+  // Phase E2-min: workbench proxy. Registered LAST because it
+  // mounts a catch-all at `/api/*`; the secure_core routes above
+  // (`/auth/*` + `/bootstrap`) live on different prefixes so there
+  // is no shadowing in practice, but a registration order swap
+  // would cause Fastify to reject duplicates. The auth chain at
+  // minimum runs the cookie-session `requireAuth`; `attachAuditActor`
+  // ensures any audit emission for proxy traffic carries the
+  // server-derived actor id rather than `null`.
+  await app.register(workbenchProxyPlugin, {
+    upstreamUrl: `http://127.0.0.1:${env.backendPort}`,
+    handoffSecret: env.handoffSecret,
+    authChain: [
+      mw.session.requireAuth.handler,
+      mw.session.attachAuditActor.handler,
+    ],
+  });
 
   return {
     env,
