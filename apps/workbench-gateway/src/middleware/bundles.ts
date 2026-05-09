@@ -1,6 +1,6 @@
 /**
  * Middleware bundles for the workbench-gateway — Phase 0.5 / Phase D
- * (2026-05-09).
+ * + Phase E2-rest (2026-05-09).
  *
  * Pre-composes the per-route middleware bundles that the secure_core
  * route plugins consume. v4 §6.2 fixes the strict ordering
@@ -14,13 +14,20 @@
  * The factories take a single shared `RateLimitStore` so the same IP
  * can't game the limiter by hopping between routes; production swaps
  * the in-memory store for a Redis-backed one without touching this file.
+ *
+ * Phase E2-rest adds the `proxy` chain — an explicit list of plain
+ * MiddlewareHandlers (not NamedMiddleware) that the proxy plugin
+ * splices in front of its handoff signer.
  */
 import type { FastifyRequest } from "fastify";
 
 import type { LoginRoutesMiddleware } from "../../../../packages/secure_core/src/routes/login.js";
 import type { SessionRoutesMiddleware } from "../../../../packages/secure_core/src/routes/session.js";
 import type { BootstrapRoutesMiddleware } from "../../../../packages/secure_core/src/routes/bootstrap.js";
-import type { NamedMiddleware } from "../../../../packages/secure_core/src/middleware/compose.js";
+import type {
+  MiddlewareHandler,
+  NamedMiddleware,
+} from "../../../../packages/secure_core/src/middleware/compose.js";
 import type { AuditLogger } from "../../../../packages/secure_core/src/audit/logger.js";
 import type { RateLimitStore } from "../../../../packages/secure_core/src/middleware/enforceRateLimit.js";
 import {
@@ -31,6 +38,8 @@ import { enforceCsrfForStateChange } from "../../../../packages/secure_core/src/
 import { validateInputSchema } from "../../../../packages/secure_core/src/middleware/validateInputSchema.js";
 import { attachAuditActor } from "../../../../packages/secure_core/src/middleware/attachAuditActor.js";
 import { requireAuth } from "../../../../packages/secure_core/src/middleware/requireAuth.js";
+import { loadWorkspaceBySlug } from "../../../../packages/secure_core/src/middleware/loadWorkspaceBySlug.js";
+import { requireWorkspaceMembership } from "../../../../packages/secure_core/src/middleware/requireWorkspaceMembership.js";
 import {
   LOGIN_SCHEMA,
   LOGOUT_SCHEMA,
@@ -63,13 +72,21 @@ export interface GatewayMiddlewareBundles {
   readonly login: LoginRoutesMiddleware;
   readonly session: SessionRoutesMiddleware;
   readonly bootstrap: BootstrapRoutesMiddleware;
+  /**
+   * Proxy auth chain. Plain MiddlewareHandlers (not NamedMiddleware)
+   * because `@fastify/http-proxy`'s `preHandler` option takes plain
+   * functions. The chain is built in §6.2 order:
+   *   requireAuth → loadWorkspaceBySlug → requireWorkspaceMembership
+   *     → enforceCsrfForStateChange → attachAuditActor.
+   */
+  readonly proxyAuthChain: ReadonlyArray<MiddlewareHandler>;
   readonly rateLimitStore: RateLimitStore;
 }
 
 /**
- * Build the three minimum bundles the auth-vertical needs. Phase D
- * additions (workspaces / capsules / runs / tools / operator) extend
- * this object; the existing fields stay stable.
+ * Build all middleware bundles the gateway needs. Phase D additions
+ * (workspaces / capsules / runs / tools / operator) extend this
+ * object; the existing fields stay stable.
  */
 export function buildGatewayMiddleware(
   deps: MiddlewareBundleDeps,
@@ -114,6 +131,9 @@ export function buildGatewayMiddleware(
     auditLogger,
   });
 
+  const loadWsMw = loadWorkspaceBySlug({ pool: appPool });
+  const requireMembershipMw = requireWorkspaceMembership({ pool: appPool });
+
   return {
     login: {
       enforceLoginRateLimit,
@@ -131,6 +151,13 @@ export function buildGatewayMiddleware(
       enforceRateLimit: enforceBootstrapRateLimit,
       enforceCsrfForStateChange: enforceCsrf,
     },
+    proxyAuthChain: [
+      requireAuthMw.handler,
+      loadWsMw.handler,
+      requireMembershipMw.handler,
+      enforceCsrf.handler,
+      attachAuditActor.handler,
+    ],
     rateLimitStore,
   };
 }

@@ -37,6 +37,10 @@ export {
   type LoadWorkspaceDeps,
 } from "./loadWorkspace.js";
 export {
+  loadWorkspaceBySlug,
+  type LoadWorkspaceBySlugDeps,
+} from "./loadWorkspaceBySlug.js";
+export {
   requireWorkspaceMembership,
   type RequireMembershipDeps,
 } from "./requireWorkspaceMembership.js";

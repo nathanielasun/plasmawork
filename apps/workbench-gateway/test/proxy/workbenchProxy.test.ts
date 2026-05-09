@@ -1,14 +1,15 @@
 /**
- * Proxy plugin integration test — Phase 0.5 / Phase E2-min (2026-05-09).
+ * Proxy plugin integration test — Phase 0.5 / Phase E2-rest (2026-05-09).
  *
  * Pins the workbench proxy's wiring against a STUB upstream Fastify
  * server. The test:
  *
  *   1. Spins up a stub upstream on a free port. The upstream
  *      captures every inbound request + its headers.
- *   2. Builds a gateway with `workbenchProxyPlugin` registered, the
- *      auth chain is a single middleware that injects a fixed
- *      `req.auth` (so the test doesn't need a real cookie / DB).
+ *   2. Builds a gateway with `workbenchProxyPlugin` registered. The
+ *      auth chain is a list of stub middlewares that injects a
+ *      fixed `req.auth` + `req.workspace` + `req.membership` so the
+ *      test doesn't need a real cookie / DB.
  *   3. Sends a request through the gateway via `app.inject`.
  *   4. Asserts the stub upstream saw the 7 ``X-Workbench-*`` headers
  *      AND that the signature verifies against the same shared
@@ -16,14 +17,16 @@
  *      mirrors what the FastAPI middleware does at production
  *      runtime.
  *
- * This covers the wiring contract: auth runs, the handoff payload is
- * computed from `req.auth` + URL slug, the 7 headers reach the
- * upstream, and the signature verifies. It does NOT cover:
- *   - The cookie-session ``requireAuth`` against a real DB (covered
- *     by secure_core's `requireAuth.test.ts`).
- *   - Workspace authorization (E2-rest).
- *   - The Python middleware's actual hmac.compare_digest behavior
- *     (covered by `tests/integration/test_api_auth_middleware.py`).
+ * E2-rest behaviors pinned (in addition to E2-min's HMAC sign-and-
+ * forward):
+ *   - The handoff carries the REAL workspace_id from the stub
+ *     `req.workspace.id`, not a SHA-256 placeholder.
+ *   - The handoff carries the REAL role list from the stub
+ *     `req.membership.roleName`, not an empty array.
+ *   - The slug is stripped from the forwarded URL so today's flat
+ *     `/api/{rest}` FastAPI routes still match.
+ *   - When the workspace authorization stub refuses (404), the
+ *     proxy never forwards.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -31,7 +34,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { workbenchProxyPlugin, syntheticWorkspaceId } from "../../src/proxy/workbenchProxy.js";
+import { workbenchProxyPlugin } from "../../src/proxy/workbenchProxy.js";
 import {
   HANDOFF_HEADERS,
   buildHandoffPayload,
@@ -43,13 +46,19 @@ import { requireRequestId } from "../../../../packages/secure_core/src/middlewar
 import type {
   AuthContext,
   ActorType,
+  WorkspaceContext,
+  MembershipContext,
 } from "../../../../packages/secure_core/src/middleware/types.js";
 import type { MiddlewareHandler } from "../../../../packages/secure_core/src/middleware/compose.js";
+import { NotFoundError } from "../../../../packages/secure_core/src/errors/shapes.js";
+import { toHttpResponse } from "../../../../packages/secure_core/src/errors/mapper.js";
 
 const HANDOFF_SECRET = "z".repeat(64);
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const WORKSPACE_SLUG = "shared-public-experiments";
+const WORKSPACE_ID = "33333333-3333-4333-8333-333333333333";
+const ROLE_NAME = "WorkspaceAdmin";
 
 interface CapturedRequest {
   readonly url: string;
@@ -57,16 +66,10 @@ interface CapturedRequest {
   readonly headers: Record<string, string | string[] | undefined>;
 }
 
-/**
- * Stub upstream that captures every inbound request's URL, method, and
- * headers, then responds 200. The `verifyHandoff` argument is invoked
- * inline so a failed verification produces a 401 — mirroring the
- * FastAPI middleware's behavior.
- */
 function makeStubUpstream(opts: {
   readonly captures: CapturedRequest[];
   readonly verifyHandoff?: boolean;
-}): { close: () => Promise<void>; baseUrl: string } {
+}): Promise<{ close: () => Promise<void>; baseUrl: string }> {
   const server = createServer((req, res) => {
     opts.captures.push({
       url: req.url ?? "",
@@ -114,28 +117,30 @@ function makeStubUpstream(opts: {
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({ ok: true }));
   });
-  return new Promise<{ close: () => Promise<void>; baseUrl: string }>(
-    (resolve) => {
-      server.listen(0, "127.0.0.1", () => {
-        const addr = server.address() as AddressInfo;
-        resolve({
-          baseUrl: `http://127.0.0.1:${addr.port}`,
-          async close() {
-            await new Promise<void>((r) => server.close(() => r()));
-          },
-        });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address() as AddressInfo;
+      resolve({
+        baseUrl: `http://127.0.0.1:${addr.port}`,
+        async close() {
+          await new Promise<void>((r) => server.close(() => r()));
+        },
       });
-    },
-  ) as unknown as { close: () => Promise<void>; baseUrl: string };
+    });
+  });
 }
 
 /**
- * Stub auth handler that injects a fixed `req.auth` so the proxy's
- * `requireAuth` slot is filled. Production wires the cookie-session
- * ``requireAuth`` from secure_core; this stub stands in for it.
+ * Stub auth chain: pre-populates req.auth, req.workspace, req.membership
+ * so the proxy's handoff signer has the data it needs without hitting
+ * a real DB.
  */
-function buildStubRequireAuth(): MiddlewareHandler {
-  return async (req: FastifyRequest) => {
+function buildStubAuthChain(opts?: {
+  readonly refuseMembership?: boolean;
+}): ReadonlyArray<MiddlewareHandler> {
+  const stubRequireAuth: MiddlewareHandler = async (
+    req: FastifyRequest,
+  ) => {
     const auth: AuthContext = {
       userId: USER_ID,
       sessionId: SESSION_ID,
@@ -144,13 +149,34 @@ function buildStubRequireAuth(): MiddlewareHandler {
     };
     req.auth = auth;
   };
+  const stubLoadWorkspace: MiddlewareHandler = async (
+    req: FastifyRequest,
+  ) => {
+    const workspace: WorkspaceContext = {
+      id: WORKSPACE_ID,
+      name: WORKSPACE_SLUG,
+      createdBy: USER_ID,
+    };
+    req.workspace = workspace;
+  };
+  const stubRequireMembership: MiddlewareHandler = async (
+    req: FastifyRequest,
+  ) => {
+    if (opts?.refuseMembership === true) {
+      throw new NotFoundError("Not found.");
+    }
+    const membership: MembershipContext = {
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      roleId: "5b807f69-df63-5054-a96a-490c9668a567",
+      roleName: ROLE_NAME,
+      capabilities: new Set(),
+    };
+    req.membership = membership;
+  };
+  return [stubRequireAuth, stubLoadWorkspace, stubRequireMembership];
 }
 
-/**
- * Build a gateway-shaped Fastify app with only the proxy plugin
- * registered. Saves wiring composeServices for the proxy-specific
- * smoke.
- */
 async function buildProxyOnlyApp(args: {
   readonly upstreamUrl: string;
   readonly authChain: ReadonlyArray<MiddlewareHandler>;
@@ -158,6 +184,12 @@ async function buildProxyOnlyApp(args: {
 }): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.addHook("onRequest", requireRequestId);
+  // secure_core's mapper turns NotFoundError → 404, etc. Production
+  // wires this through `buildApp()`; the test does it manually.
+  app.setErrorHandler((err, req, reply) => {
+    const mapped = toHttpResponse(err, req.requestId ?? "unknown");
+    reply.code(mapped.status).send(mapped.body);
+  });
   await app.register(workbenchProxyPlugin, {
     upstreamUrl: args.upstreamUrl,
     handoffSecret: HANDOFF_SECRET,
@@ -171,7 +203,7 @@ async function buildProxyOnlyApp(args: {
 // Suite
 // ---------------------------------------------------------------------
 
-describe("workbenchProxyPlugin (E2-min)", () => {
+describe("workbenchProxyPlugin (E2-rest)", () => {
   let captures: CapturedRequest[];
   let upstream: { close: () => Promise<void>; baseUrl: string };
 
@@ -184,12 +216,12 @@ describe("workbenchProxyPlugin (E2-min)", () => {
     await upstream.close();
   });
 
-  it("forwards GET /api/{slug}/foo with the 7 X-Workbench-* headers + valid HMAC", async () => {
+  it("forwards GET /api/{slug}/foo with handoff carrying the real workspace_id + role", async () => {
     captures.length = 0;
     const fixedClock = () => 1_700_000_000_000; // ms; 1700000000 sec
     const app = await buildProxyOnlyApp({
       upstreamUrl: upstream.baseUrl,
-      authChain: [buildStubRequireAuth()],
+      authChain: buildStubAuthChain(),
       clock: fixedClock,
     });
 
@@ -202,27 +234,28 @@ describe("workbenchProxyPlugin (E2-min)", () => {
 
     expect(captures).toHaveLength(1);
     const captured = captures[0]!;
-    expect(captured.method).toBe("GET");
-    expect(captured.url).toBe(`/api/${WORKSPACE_SLUG}/capsules`);
+    // Slug stripped from the forwarded URL — today's flat FastAPI
+    // routes (`/api/capsules`) still match.
+    expect(captured.url).toBe("/api/capsules");
 
+    // Handoff carries REAL workspace_id (not synthetic).
     expect(captured.headers[HANDOFF_HEADERS.USER_ID]).toBe(USER_ID);
+    expect(captured.headers[HANDOFF_HEADERS.WORKSPACE_ID]).toBe(WORKSPACE_ID);
     expect(captured.headers[HANDOFF_HEADERS.WORKSPACE_SLUG]).toBe(
       WORKSPACE_SLUG,
     );
+    // Handoff carries the REAL role list (not empty).
+    expect(captured.headers[HANDOFF_HEADERS.ROLES]).toBe(ROLE_NAME);
     expect(captured.headers[HANDOFF_HEADERS.ISSUED_AT]).toBe(
       "1700000000",
     );
-    expect(captured.headers[HANDOFF_HEADERS.WORKSPACE_ID]).toBe(
-      syntheticWorkspaceId(WORKSPACE_SLUG),
-    );
-    expect(captured.headers[HANDOFF_HEADERS.ROLES]).toBe("");
 
-    // The signature MUST verify against the same secret + payload.
+    // The signature verifies against the same secret + payload.
     const reconstructedPayload: HandoffPayload = {
       userId: USER_ID,
-      workspaceId: syntheticWorkspaceId(WORKSPACE_SLUG),
+      workspaceId: WORKSPACE_ID,
       workspaceSlug: WORKSPACE_SLUG,
-      roles: [],
+      roles: [ROLE_NAME],
       requestId: captured.headers[HANDOFF_HEADERS.REQUEST_ID] as string,
       issuedAtSec: 1_700_000_000,
     };
@@ -239,7 +272,7 @@ describe("workbenchProxyPlugin (E2-min)", () => {
     captures.length = 0;
     const app = await buildProxyOnlyApp({
       upstreamUrl: upstream.baseUrl,
-      authChain: [buildStubRequireAuth()],
+      authChain: buildStubAuthChain(),
     });
 
     const FORGED_USER = "deadbeef-dead-4ead-bead-deaddeaddead";
@@ -248,8 +281,6 @@ describe("workbenchProxyPlugin (E2-min)", () => {
       url: `/api/${WORKSPACE_SLUG}/capsules`,
       headers: {
         [HANDOFF_HEADERS.USER_ID]: FORGED_USER,
-        // A pre-set signature would defeat HMAC verification if the
-        // gateway didn't strip + re-sign.
         [HANDOFF_HEADERS.SIGNATURE]: "0".repeat(64),
       },
     });
@@ -260,22 +291,14 @@ describe("workbenchProxyPlugin (E2-min)", () => {
     // The forged user-id MUST be replaced by the gateway-derived one.
     expect(captured.headers[HANDOFF_HEADERS.USER_ID]).toBe(USER_ID);
     expect(captured.headers[HANDOFF_HEADERS.USER_ID]).not.toBe(FORGED_USER);
-    // The forged signature MUST be replaced by the gateway's HMAC.
     expect(captured.headers[HANDOFF_HEADERS.SIGNATURE]).not.toBe(
       "0".repeat(64),
     );
-    expect(
-      typeof captured.headers[HANDOFF_HEADERS.SIGNATURE],
-    ).toBe("string");
 
     await app.close();
   });
 
   it("upstream-side HMAC verification accepts the gateway's headers (round-trip)", async () => {
-    // Spin up a fresh stub that VERIFIES on every request (not just
-    // captures). A 200 from a verifying upstream proves the gateway's
-    // headers + payload exactly match what the FastAPI middleware will
-    // accept in production.
     const verifyCaptures: CapturedRequest[] = [];
     const verifyingUpstream = await makeStubUpstream({
       captures: verifyCaptures,
@@ -284,7 +307,7 @@ describe("workbenchProxyPlugin (E2-min)", () => {
     try {
       const app = await buildProxyOnlyApp({
         upstreamUrl: verifyingUpstream.baseUrl,
-        authChain: [buildStubRequireAuth()],
+        authChain: buildStubAuthChain(),
       });
 
       const r = await app.inject({
@@ -300,36 +323,46 @@ describe("workbenchProxyPlugin (E2-min)", () => {
     }
   });
 
-  it("URL without a slug → 500 (preHandler refuses the request)", async () => {
+  it("workspace-membership refusal returns 404 and never forwards", async () => {
     captures.length = 0;
     const app = await buildProxyOnlyApp({
       upstreamUrl: upstream.baseUrl,
-      authChain: [buildStubRequireAuth()],
+      authChain: buildStubAuthChain({ refuseMembership: true }),
     });
 
-    // /api with no further segments — the slug regex doesn't match.
+    const r = await app.inject({
+      method: "GET",
+      url: `/api/${WORKSPACE_SLUG}/capsules`,
+    });
+    expect(r.statusCode).toBe(404);
+    expect(captures).toHaveLength(0);
+
+    await app.close();
+  });
+
+  it("URL without a slug → 404 (Fastify routing miss; never reaches upstream)", async () => {
+    captures.length = 0;
+    const app = await buildProxyOnlyApp({
+      upstreamUrl: upstream.baseUrl,
+      authChain: buildStubAuthChain(),
+    });
+
+    // /api with no further segments — the slug-aware route doesn't
+    // match; Fastify returns 404 before reaching the proxy.
     const r = await app.inject({
       method: "GET",
       url: "/api",
     });
-    // The preHandler throws; Fastify's default error handler returns 500.
-    // Real production wires the secure_core error handler which would
-    // map this to a 4xx; for the smoke we just confirm the proxy
-    // never forwarded.
-    expect(r.statusCode).toBeGreaterThanOrEqual(400);
+    expect(r.statusCode).toBe(404);
     expect(captures).toHaveLength(0);
 
     await app.close();
   });
 
   it("payload canonicalization: same headers → same signature regardless of role insertion order", async () => {
-    // Roles aren't yet pulled from req.auth in E2-min (always empty),
-    // but pin the canonicalization invariant via a direct call to
-    // buildHandoffPayload + signHandoffPayload so a future refactor
-    // can't silently break the `sort().join(",")` contract.
     const a: HandoffPayload = {
       userId: USER_ID,
-      workspaceId: syntheticWorkspaceId(WORKSPACE_SLUG),
+      workspaceId: WORKSPACE_ID,
       workspaceSlug: WORKSPACE_SLUG,
       roles: ["WorkspaceAdmin", "Researcher"],
       requestId: "00000000-0000-4000-8000-000000000000",

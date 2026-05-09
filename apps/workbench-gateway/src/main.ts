@@ -124,21 +124,19 @@ export async function buildGateway(
     rateLimitKeyExtractor: ipKeyExtractor,
   });
 
-  // Phase E2-min: workbench proxy. Registered LAST because it
-  // mounts a catch-all at `/api/*`; the secure_core routes above
+  // Phase E2-rest: workbench proxy. Registered LAST because it
+  // mounts at `/api/:slug/*`; the secure_core routes above
   // (`/auth/*` + `/bootstrap`) live on different prefixes so there
   // is no shadowing in practice, but a registration order swap
-  // would cause Fastify to reject duplicates. The auth chain at
-  // minimum runs the cookie-session `requireAuth`; `attachAuditActor`
-  // ensures any audit emission for proxy traffic carries the
-  // server-derived actor id rather than `null`.
+  // would cause Fastify to reject duplicates. The proxy auth chain
+  // runs the full §6.2 sequence:
+  //   requireAuth → loadWorkspaceBySlug → requireWorkspaceMembership
+  //     → enforceCsrfForStateChange → attachAuditActor
+  // before the handoff signer attaches the 7 X-Workbench-* headers.
   await app.register(workbenchProxyPlugin, {
     upstreamUrl: `http://127.0.0.1:${env.backendPort}`,
     handoffSecret: env.handoffSecret,
-    authChain: [
-      mw.session.requireAuth.handler,
-      mw.session.attachAuditActor.handler,
-    ],
+    authChain: mw.proxyAuthChain,
   });
 
   return {

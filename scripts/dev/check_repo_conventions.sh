@@ -3181,6 +3181,29 @@ check_grep_in_file 'export const workbenchProxyPlugin' \
 check_grep_in_file 'rewritePrefix: "/api"' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy preserves /api prefix when forwarding (FastAPI mount)"
+check_grep_in_file 'preRewrite' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy preRewrite strips slug from forwarded URL (E2-rest)"
+check_grep_in_file 'routes: \["/:slug"' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy route shape is /api/:slug (E2-rest workspace authorization)"
+check_grep_in_file 'req\.workspace\.id' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy uses real workspace_id from req.workspace (no synthetic)"
+check_grep_in_file 'req\.membership\.roleName' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "workbenchProxy uses real role list from req.membership (no empty)"
+check_file_exists packages/secure_core/src/middleware/loadWorkspaceBySlug.ts
+check_grep_in_file 'export function loadWorkspaceBySlug' \
+  packages/secure_core/src/middleware/loadWorkspaceBySlug.ts \
+  "secure_core exports loadWorkspaceBySlug middleware (E2-rest)"
+check_grep_in_file 'loadWorkspaceBySlug' \
+  packages/secure_core/src/middleware/index.ts \
+  "secure_core middleware barrel re-exports loadWorkspaceBySlug"
+check_file_exists packages/secure_core/test/middleware/loadWorkspaceBySlug.test.ts
+check_grep_in_file 'proxyAuthChain' \
+  apps/workbench-gateway/src/middleware/bundles.ts \
+  "gateway middleware bundle exposes proxyAuthChain"
 check_grep_in_file 'rewriteRequestHeaders' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy uses rewriteRequestHeaders to attach signed headers"
@@ -3191,9 +3214,9 @@ check_grep_in_file 'app\.register\(workbenchProxyPlugin' \
   apps/workbench-gateway/src/main.ts \
   "main.ts registers workbenchProxyPlugin LAST"
 check_file_exists apps/workbench-gateway/test/proxy/workbenchProxy.test.ts
-check_grep_in_file 'forwards GET /api/.*X-Workbench-' \
+check_grep_in_file 'forwards GET /api/.*workspace_id' \
   apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
-  "workbenchProxy test pins outbound 7-header HMAC sign + forward"
+  "workbenchProxy test pins outbound real workspace_id + role HMAC sign"
 check_grep_in_file 'strips inbound X-Workbench-' \
   apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
   "workbenchProxy test pins inbound-header strip defense"

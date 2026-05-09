@@ -1,35 +1,46 @@
 /**
- * Workbench proxy plugin — Phase 0.5 / Phase E2-min (2026-05-09).
+ * Workbench proxy plugin — Phase 0.5 / Phase E2-rest (2026-05-09).
  *
- * Mounts ``@fastify/http-proxy`` at the ``/api/*`` prefix and forwards
- * authenticated requests to the loopback-bound FastAPI workbench. The
- * 7 ``X-Workbench-*`` headers are computed in the ``preHandler``
- * chain and merged into the outbound request via the
- * ``replyOptions.rewriteRequestHeaders`` seam — the FastAPI side
- * verifies the HMAC against the same shared secret in
- * ``packages/core/src/simworkbench/api/auth_middleware.py``.
+ * Mounts ``@fastify/http-proxy`` at the ``/api/:slug/*`` URL pattern
+ * and forwards authenticated, workspace-authorized requests to the
+ * loopback-bound FastAPI workbench. The 7 ``X-Workbench-*`` headers
+ * are signed by the gateway and verified by the FastAPI middleware
+ * (``packages/core/src/simworkbench/api/auth_middleware.py``).
  *
- * Scope of this commit (E2-min, per advisor):
- *   - requireAuth (cookie session) → strip inbound X-Workbench-*
- *     headers → compute handoff → forward.
- *   - The 7 outbound headers verify against the same secret in the
- *     FastAPI middleware.
+ * Defenses composed in this commit:
+ *   - cookie-session ``requireAuth`` (any unauthenticated caller
+ *     never reaches the proxy);
+ *   - ``loadWorkspaceBySlug`` (resolves the URL slug to a real
+ *     workspace UUID; non-existent / soft-deleted workspaces collapse
+ *     into the §4.4 uniform 404);
+ *   - ``requireWorkspaceMembership`` (membership lookup; non-members
+ *     hit the same 404, never see the workspace exists);
+ *   - inbound ``X-Workbench-*`` headers stripped (defense vs. client
+ *     spoofing the handoff);
+ *   - HMAC sign with ``WORKBENCH_GATEWAY_HANDOFF_SECRET`` (prevents
+ *     same-host process spoofing if the operator forgets to bind
+ *     loopback);
+ *   - real workspace_id + role list in the handoff payload (no
+ *     synthetic placeholders any more).
  *
- * NOT in this commit (E2-rest, follow-on):
- *   - loadWorkspace + requireWorkspaceMembership: workspace-id
- *     resolution by URL slug, membership check.
- *   - enforceCsrfForStateChange on state-changing methods.
- *   - URL slug cross-check (FastAPI side flips on once the gateway
- *     opts in).
+ * What lands here that was DELIBERATELY missing from E2-min:
+ *   - workspace_id + roles use the gateway's authorized membership,
+ *     not a SHA-256-derived placeholder. E2-min shipped a proxy that
+ *     authenticated users could point at any workspace slug they
+ *     liked because no membership check ran; this commit closes that
+ *     hole.
+ *   - state-changing methods are now CSRF-checked at the gateway
+ *     boundary via ``enforceCsrfForStateChange`` from secure_core.
  *
- * Until E2-rest lands, the workspace_id forwarded is a synthetic
- * placeholder derived from the URL slug — sufficient for HMAC
- * verification in the FastAPI middleware (which validates UUID
- * shape) but NOT sufficient for workspace authorization. The
- * workspace authorization gate lives in the gateway, NOT in the
- * FastAPI backend.
+ * Slug → URL mapping for forwarding:
+ *   - The gateway's URL pattern is ``/api/:slug/{rest}``. Today the
+ *     FastAPI workbench has flat ``/api/{rest}`` routes (not yet
+ *     slug-prefixed; that's Phase E5). The proxy strips the slug from
+ *     the forwarded URL via ``preRewrite`` so today's flat FastAPI
+ *     routes still match. When E5 introduces ``/api/{slug}/{rest}``
+ *     routes, the strip becomes a no-op and ``slug_prefixed_paths``
+ *     can be turned on at the FastAPI side.
  */
-import { createHash } from "node:crypto";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import fastifyHttpProxy from "@fastify/http-proxy";
 
@@ -55,56 +66,19 @@ declare module "fastify" {
   }
 }
 
-/**
- * Slug pattern matches the workspace-slug validator
- * (``packages/core/src/simworkbench/paths.py:_WORKSPACE_SLUG_PATTERN``)
- * AND the LOGIN_SCHEMA username pattern, both 3-64 chars of
- * ``[A-Za-z0-9_-]``. Keeping them aligned means the gateway, the
- * FastAPI middleware, and the path resolver all reject the same
- * malformed inputs.
- */
-const SLUG_FROM_URL_RE = /^\/api\/([A-Za-z0-9_-]{3,64})(?:\/|$|\?)/;
-
-/**
- * Synthetic workspace UUID derivation. The HMAC payload requires a
- * workspace_id even when the gateway has not yet looked one up; we
- * use a SHA-256-derived UUID so the same slug always produces the
- * same workspace_id. E2-rest replaces this with the real DB-resolved
- * workspace_id from `loadWorkspace`.
- */
-const SYNTHETIC_WORKSPACE_NAMESPACE =
-  "00000000-0000-4000-8000-000000000000";
-
-export function syntheticWorkspaceId(slug: string): string {
-  // SHA-256(namespace|slug) → first 16 bytes → UUIDv4-shaped string.
-  // Real cryptographic UUIDv5 would import `uuid` — overkill for a
-  // placeholder. The FastAPI middleware only validates UUID shape,
-  // not the namespace.
-  const bytes = Buffer.from(
-    createHash("sha256")
-      .update(`${SYNTHETIC_WORKSPACE_NAMESPACE}|${slug}`)
-      .digest()
-      .subarray(0, 16),
-  );
-  // Set version 4 + variant bits per RFC 4122.
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
-
 export interface WorkbenchProxyOptions {
   /** Loopback URL of the FastAPI backend (e.g. ``http://127.0.0.1:8000``). */
   readonly upstreamUrl: string;
   /** HMAC key shared with the FastAPI middleware. */
   readonly handoffSecret: string;
   /**
-   * Authentication chain run BEFORE the proxy forwards. Must contain
-   * (at minimum) the cookie-session ``requireAuth`` handler, plus
-   * ``attachAuditActor`` if the deployment wants audit emissions to
-   * carry a server-derived actor for proxy traffic. The chain is
-   * built by the host's ``buildGatewayMiddleware`` and run in order
-   * before the handoff strip + sign.
+   * Authentication chain run BEFORE the proxy forwards. The host's
+   * ``buildGatewayMiddleware`` factory composes this list in §6.2
+   * order:
+   *   requireAuth → loadWorkspaceBySlug → requireWorkspaceMembership
+   *     → enforceCsrfForStateChange → attachAuditActor
+   * Tests can pass stub handlers that pre-populate ``req.auth`` /
+   * ``req.workspace`` / ``req.membership`` directly.
    */
   readonly authChain: ReadonlyArray<MiddlewareHandler>;
   /** Optional clock seam — defaults to `Date.now`. Tests inject a fixed clock. */
@@ -124,8 +98,11 @@ export function stripInboundHandoffHeaders(req: FastifyRequest): void {
 }
 
 /**
- * Build the handoff payload from `req.auth` + the URL slug, compute
- * the HMAC signature, and stash both on ``req.workbenchHandoff``.
+ * Build the handoff payload from `req.auth` + `req.workspace` +
+ * `req.membership`, compute the HMAC signature, and stash both on
+ * ``req.workbenchHandoff``. Throws if any required field on `req` is
+ * missing — the auth chain MUST have populated them upstream.
+ *
  * The actual header emission happens in
  * ``replyOptions.rewriteRequestHeaders`` (configured below) because
  * @fastify/http-proxy forwards via reply.from; the rewriter is the
@@ -137,32 +114,34 @@ export function buildHandoffPreHandler(opts: {
 }): MiddlewareHandler {
   return async (req) => {
     if (req.auth === undefined) {
-      // requireAuth is registered earlier in the chain; this is a
-      // safety check that fails LOUD if the chain is mis-ordered.
       throw new Error(
-        "workbenchProxyPlugin: req.auth missing at handoff stage — preHandler chain must run requireAuth first.",
+        "workbenchProxyPlugin: req.auth missing — preHandler must run requireAuth first.",
+      );
+    }
+    if (req.workspace === undefined) {
+      throw new Error(
+        "workbenchProxyPlugin: req.workspace missing — preHandler must run loadWorkspaceBySlug first.",
+      );
+    }
+    if (req.membership === undefined) {
+      throw new Error(
+        "workbenchProxyPlugin: req.membership missing — preHandler must run requireWorkspaceMembership first.",
       );
     }
     stripInboundHandoffHeaders(req);
 
-    const slugMatch = SLUG_FROM_URL_RE.exec(req.url);
-    if (slugMatch === null) {
-      throw new Error(
-        "workbenchProxyPlugin: /api/* URL must include a workspace slug as the first path segment.",
-      );
-    }
-    const workspaceSlug = slugMatch[1]!;
-    const workspaceId = syntheticWorkspaceId(workspaceSlug);
     const issuedAtSec = Math.floor(opts.now() / 1000);
+    // The role name (single string) is the canonical role assignment;
+    // capabilities aren't passed in the handoff because they're not
+    // safe to trust on the FastAPI side without a gateway-supplied
+    // signature over each one. The FastAPI side treats roles as
+    // informational; authorization decisions live at the gateway.
+    const roles = [req.membership.roleName];
     const payload: HandoffPayload = {
       userId: req.auth.userId,
-      workspaceId,
-      workspaceSlug,
-      // E2-min: the user's roles aren't yet part of req.auth (the
-      // session reader builds them but requireAuth doesn't load
-      // them). Forward an empty role list — the FastAPI middleware
-      // only validates the canonicalization, not the contents.
-      roles: [],
+      workspaceId: req.workspace.id,
+      workspaceSlug: req.workspace.name,
+      roles,
       requestId: req.requestId,
       issuedAtSec,
     };
@@ -173,7 +152,7 @@ export function buildHandoffPreHandler(opts: {
 
 /**
  * Workbench proxy plugin. Registers @fastify/http-proxy mounted at
- * ``/api`` with the auth chain + handoff signer.
+ * ``/api`` with slug-aware routes + the auth chain + handoff signer.
  */
 export const workbenchProxyPlugin: FastifyPluginAsync<
   WorkbenchProxyOptions
@@ -185,34 +164,53 @@ export const workbenchProxyPlugin: FastifyPluginAsync<
   });
 
   // The preHandler argument accepts either a single function or an
-  // array. We splice the auth chain in front of the handoff so
-  // requireAuth fires first, attachAuditActor (if registered) lands
-  // before the proxy's own audit-emitting logic, and the handoff
-  // signer runs LAST.
+  // array. We splice the auth chain in front of the handoff so the
+  // §6.2 order runs first, the handoff signer runs LAST.
   const preHandler: ReadonlyArray<MiddlewareHandler> = [
     ...opts.authChain,
     handoffPreHandler,
   ];
 
-  await app.register(fastifyHttpProxy, {
+  // @fastify/http-proxy's TypeScript declaration omits the `routes`
+  // option (it's documented and exists at runtime). Cast through
+  // `unknown` so the slug-aware route shapes land verbatim — the
+  // alternative is forking the types, which is overkill for a single
+  // missing key.
+  await app.register(fastifyHttpProxy, ({
     upstream: opts.upstreamUrl,
     prefix: "/api",
-    // KEEP the `/api` prefix when forwarding. By default
-    // @fastify/http-proxy strips the registration prefix before
-    // forwarding, but the FastAPI workbench's routes are mounted
-    // under ``/api/...``; stripping would 404 every request. The
-    // rewritePrefix option keeps it intact.
+    // Capture the workspace slug as a named route param so
+    // loadWorkspaceBySlug can read it. The two route shapes cover
+    // both ``/api/:slug`` (no trailing path) and ``/api/:slug/...``.
+    routes: ["/:slug", "/:slug/*"],
+    // Keep the `/api` prefix when forwarding so today's flat
+    // FastAPI routes (``/api/{rest}``) still match. The default
+    // strip would replace `/api` with `/`.
     rewritePrefix: "/api",
+    // Strip the slug segment from the forwarded URL.
+    // preRewrite receives the FULL request URL (`/api/{slug}/{rest}`)
+    // and returns the URL the upstream sees. Removing the slug
+    // gives `/api/{rest}` so today's flat FastAPI routes still
+    // match. When Phase E5 introduces ``/api/{slug}/{rest}`` routes
+    // on the FastAPI side, this preRewrite becomes the operator's
+    // switch: drop the strip and the slug rides through to FastAPI
+    // verbatim.
+    preRewrite: (url: string) => {
+      const stripped = url.replace(
+        /^\/api\/[A-Za-z0-9_-]{3,64}(?=\/|$|\?)/,
+        "/api",
+      );
+      return stripped;
+    },
     preHandler: preHandler as unknown as Parameters<
       typeof fastifyHttpProxy
     >[1]["preHandler"],
     replyOptions: {
-      // Outbound header rewriter. @fastify/http-proxy passes this
-      // through to @fastify/reply-from which calls it once per
-      // proxied request. Returning a NEW object replaces the entire
-      // outbound header map.
-      rewriteRequestHeaders: (req, headers) => {
-        const handoff = (req as FastifyRequest).workbenchHandoff;
+      rewriteRequestHeaders: (
+        req: FastifyRequest,
+        headers: Record<string, string | string[] | undefined>,
+      ) => {
+        const handoff = req.workbenchHandoff;
         if (handoff === undefined) {
           // The preHandler chain refused to run; @fastify/http-proxy
           // shouldn't reach this branch in a normal request, but if
@@ -232,13 +230,5 @@ export const workbenchProxyPlugin: FastifyPluginAsync<
         };
       },
     },
-  });
+  } as unknown) as Parameters<typeof fastifyHttpProxy>[1]);
 };
-
-/**
- * Exposed for tests. Lets the test file recompute the slug → URL
- * extraction + the synthetic workspace UUID without re-deriving them.
- */
-export const _internal = Object.freeze({
-  SLUG_FROM_URL_RE,
-});
