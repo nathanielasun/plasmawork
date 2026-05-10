@@ -16,6 +16,7 @@ import { loadGatewayEnv } from "../../src/env.js";
 const STRONG_SECRET = "Aa!23456789012345678901234567890123456"; // 38 bytes
 const VALID_HEX = "a".repeat(64);
 
+const STRONG_SECRET_2 = "Bb!23456789012345678901234567890123456"; // 38 bytes
 const VALID_SOURCE: Record<string, string> = {
   BOOTSTRAP_ALLOWED: "1",
   BOOTSTRAP_CREDENTIAL_HASH: VALID_HEX,
@@ -24,6 +25,7 @@ const VALID_SOURCE: Record<string, string> = {
   WORKBENCH_BACKEND_PORT: "8000",
   WORKBENCH_GATEWAY_COOKIE_SECRET: STRONG_SECRET,
   WORKBENCH_GATEWAY_HANDOFF_SECRET: STRONG_SECRET,
+  WORKBENCH_INTERNAL_AUDIT_SECRET: STRONG_SECRET_2,
   WORKBENCH_GATEWAY_FRONTEND_ORIGIN: "https://app.plasmawork.test",
   PLASMAWORK_DB_URL: "postgres://x",
   PLASMAWORK_DB_AUDIT_URL: "postgres://y",
@@ -38,7 +40,20 @@ describe("loadGatewayEnv", () => {
     expect(env.backendPort).toBe(8000);
     expect(env.cookieSecret).toBe(STRONG_SECRET);
     expect(env.handoffSecret).toBe(STRONG_SECRET);
+    expect(env.internalAuditSecret).toBe(STRONG_SECRET_2);
     expect(env.frontendOrigin).toBe("https://app.plasmawork.test");
+  });
+
+  it("defaults gatewayHost to 127.0.0.1 (loopback) when WORKBENCH_GATEWAY_HOST is unset", () => {
+    const env = loadGatewayEnv({ envSource: VALID_SOURCE });
+    expect(env.gatewayHost).toBe("127.0.0.1");
+  });
+
+  it("honors WORKBENCH_GATEWAY_HOST=0.0.0.0 for production behind a TLS terminator", () => {
+    const env = loadGatewayEnv({
+      envSource: { ...VALID_SOURCE, WORKBENCH_GATEWAY_HOST: "0.0.0.0" },
+    });
+    expect(env.gatewayHost).toBe("0.0.0.0");
   });
 
   it.each([
@@ -46,6 +61,7 @@ describe("loadGatewayEnv", () => {
     "ROOT_ADMIN_USER_ID",
     "WORKBENCH_GATEWAY_COOKIE_SECRET",
     "WORKBENCH_GATEWAY_HANDOFF_SECRET",
+    "WORKBENCH_INTERNAL_AUDIT_SECRET",
     "WORKBENCH_GATEWAY_FRONTEND_ORIGIN",
     "PLASMAWORK_DB_URL",
     "PLASMAWORK_DB_AUDIT_URL",
@@ -68,6 +84,16 @@ describe("loadGatewayEnv", () => {
     const source = {
       ...VALID_SOURCE,
       WORKBENCH_GATEWAY_HANDOFF_SECRET: "short",
+    };
+    expect(() => loadGatewayEnv({ envSource: source })).toThrowError(
+      /at least 32 bytes/,
+    );
+  });
+
+  it("throws when WORKBENCH_INTERNAL_AUDIT_SECRET is shorter than 32 bytes", () => {
+    const source = {
+      ...VALID_SOURCE,
+      WORKBENCH_INTERNAL_AUDIT_SECRET: "short",
     };
     expect(() => loadGatewayEnv({ envSource: source })).toThrowError(
       /at least 32 bytes/,

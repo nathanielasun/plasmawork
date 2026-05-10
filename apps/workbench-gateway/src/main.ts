@@ -154,7 +154,11 @@ export async function buildGateway(
 
   await app.register(promotionAuditRoutes, {
     auditLogger: services.auditLogger,
-    internalSecret: env.handoffSecret,
+    // Sibling-bug fix (2026-05-10): the canonical audit bridge uses
+    // its own HMAC key, NOT the gateway↔FastAPI handoff secret. Key
+    // reuse across two boundaries means a future FastAPI compromise
+    // hands the attacker the audit-write key as well.
+    internalSecret: env.internalAuditSecret,
   });
 
   // Phase E2-rest: workbench proxy. Registered LAST because it
@@ -235,11 +239,14 @@ export async function buildGateway(
 export async function start(): Promise<void> {
   const gateway = await buildGateway();
   await gateway.app.listen({
-    host: "0.0.0.0",
+    // Sibling-bug fix (2026-05-10): default to loopback to match the
+    // symmetric FastAPI loopback-bind convention. Production behind a
+    // TLS terminator sets WORKBENCH_GATEWAY_HOST=0.0.0.0 explicitly.
+    host: gateway.env.gatewayHost,
     port: gateway.env.gatewayPort,
   });
   gateway.app.log.info(
-    `workbench-gateway listening on :${gateway.env.gatewayPort} (proxying /api → 127.0.0.1:${gateway.env.backendPort})`,
+    `workbench-gateway listening on ${gateway.env.gatewayHost}:${gateway.env.gatewayPort} (proxying /api → 127.0.0.1:${gateway.env.backendPort})`,
   );
 }
 

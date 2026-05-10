@@ -86,9 +86,11 @@ cd ../workbench-gateway && npm install`}</code>
       <pre>
         <code>{`cp .env.auth.example .env.auth
 
-# Generate the cookie + handoff secrets (32+ bytes each, base64).
+# Generate three INDEPENDENT secrets (32+ bytes each, base64) — do not
+# reuse one value for multiple variables, the boundaries differ.
 openssl rand -base64 32   # → WORKBENCH_GATEWAY_COOKIE_SECRET
-openssl rand -base64 32   # → WORKBENCH_GATEWAY_HANDOFF_SECRET`}</code>
+openssl rand -base64 32   # → WORKBENCH_GATEWAY_HANDOFF_SECRET
+openssl rand -base64 32   # → WORKBENCH_INTERNAL_AUDIT_SECRET`}</code>
       </pre>
       <p>
         The full env-var inventory and the first-boot bootstrap

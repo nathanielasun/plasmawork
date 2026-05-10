@@ -96,10 +96,17 @@ export default function SecurityAuthentication() {
         </li>
         <li>
           <strong>Gateway runtime</strong> —
+          <code>WORKBENCH_GATEWAY_HOST</code> (default
+          <code>127.0.0.1</code>; set to <code>0.0.0.0</code> only when
+          fronted by a TLS terminator),
           <code>WORKBENCH_GATEWAY_PORT</code>,
           <code>WORKBENCH_BACKEND_PORT</code>,
           <code>WORKBENCH_GATEWAY_COOKIE_SECRET</code>,
           <code>WORKBENCH_GATEWAY_HANDOFF_SECRET</code>,
+          <code>WORKBENCH_INTERNAL_AUDIT_SECRET</code> (distinct from
+          the handoff secret; signs the gateway-internal canonical
+          audit bridge so a future FastAPI compromise cannot forge
+          audit-chain entries),
           <code>WORKBENCH_GATEWAY_FRONTEND_ORIGIN</code>.
         </li>
         <li>

@@ -3828,6 +3828,52 @@ check_grep_fixed_in_file 'http://127.0.0.1:${env.backendPort}' \
   apps/workbench-gateway/src/main.ts \
   "gateway proxy upstream uses 127.0.0.1 (loopback)"
 
+# 1e — Gateway MUST NOT listen on 0.0.0.0 by default. Sibling-bug fix
+# (2026-05-10): the gateway loopback-binds via WORKBENCH_GATEWAY_HOST
+# (defaulting to 127.0.0.1); a 0.0.0.0 production deployment is an
+# explicit operator choice via env. A hardcoded 0.0.0.0 literal in
+# main.ts would silently expose bootstrap + /internal/* to the LAN.
+check_grep_absent_in_file 'host:\s*"0\.0\.0\.0"' \
+  apps/workbench-gateway/src/main.ts \
+  "gateway main.ts does NOT hardcode host: \"0.0.0.0\" (uses env-driven gatewayHost)"
+check_grep_fixed_in_file 'host: gateway.env.gatewayHost' \
+  apps/workbench-gateway/src/main.ts \
+  "gateway main.ts listens on gateway.env.gatewayHost (loopback default)"
+check_grep_fixed_in_file 'WORKBENCH_GATEWAY_HOST' \
+  .env.auth.example \
+  ".env.auth.example documents WORKBENCH_GATEWAY_HOST"
+
+# 1j — The /internal/audit-events route MUST gate non-loopback callers
+# BEFORE signature verification. Sibling-bug fix (2026-05-10): a stolen
+# secret alone must not be enough to forge canonical audit events from
+# off-host.
+check_grep_fixed_in_file 'isLoopback(req.ip)' \
+  apps/workbench-gateway/src/internal/promotionAuditRoutes.ts \
+  "promotionAuditRoutes refuses non-loopback callers"
+check_grep_fixed_in_file 'loopback-only' \
+  apps/workbench-gateway/src/internal/promotionAuditRoutes.ts \
+  "promotionAuditRoutes emits the loopback-only refusal"
+
+# 1k — Canonical-audit signing MUST use a distinct env var from the
+# gateway↔FastAPI handoff secret. Sibling-bug fix (2026-05-10): key
+# reuse across two boundaries means a future FastAPI compromise (e.g.
+# tool draft preview escape) hands the attacker the audit-write key.
+check_grep_in_file 'WORKBENCH_INTERNAL_AUDIT_SECRET' \
+  apps/workbench-gateway/src/env.ts \
+  "gateway env.ts reads WORKBENCH_INTERNAL_AUDIT_SECRET"
+check_grep_in_file 'WORKBENCH_INTERNAL_AUDIT_SECRET' \
+  packages/core/src/simworkbench/tools/promotion.py \
+  "Python promotion.py signs canonical audit with WORKBENCH_INTERNAL_AUDIT_SECRET"
+check_grep_fixed_in_file 'internalSecret: env.internalAuditSecret' \
+  apps/workbench-gateway/src/main.ts \
+  "gateway main.ts wires promotionAuditRoutes with the distinct internal-audit secret"
+check_grep_absent_in_file 'internalSecret:\s*env\.handoffSecret' \
+  apps/workbench-gateway/src/main.ts \
+  "gateway main.ts does NOT reuse env.handoffSecret for /internal/* (sibling-bug regression guard)"
+check_grep_fixed_in_file 'WORKBENCH_INTERNAL_AUDIT_SECRET' \
+  .env.auth.example \
+  ".env.auth.example documents WORKBENCH_INTERNAL_AUDIT_SECRET"
+
 # 1f — Handoff-secret env-var name identical in both languages. The
 # gateway signs with this; FastAPI verifies with it. A typo on either
 # side means every authenticated /api/* call 401s.

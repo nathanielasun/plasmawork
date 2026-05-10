@@ -225,10 +225,18 @@ def _emit_canonical_promotion_audit(
     action: str,
     record: PromotionRequest,
 ) -> None:
-    secret = os.environ.get("WORKBENCH_GATEWAY_HANDOFF_SECRET")
+    # Sibling-bug fix (2026-05-10): the canonical audit bridge uses
+    # its own HMAC key (``WORKBENCH_INTERNAL_AUDIT_SECRET``), distinct
+    # from the gateway↔FastAPI handoff secret. Reusing the handoff
+    # secret would mean a future FastAPI compromise (e.g. via a tool
+    # draft preview escape) hands the attacker the key to forge
+    # canonical audit-chain entries — the very thing this bridge is
+    # supposed to protect against.
+    secret = os.environ.get("WORKBENCH_INTERNAL_AUDIT_SECRET")
     if not secret:
         raise PromotionAuditError(
-            "WORKBENCH_GATEWAY_HANDOFF_SECRET is required for canonical promotion audit."
+            "WORKBENCH_INTERNAL_AUDIT_SECRET is required for canonical promotion audit. "
+            "Set this in .env.auth (distinct from WORKBENCH_GATEWAY_HANDOFF_SECRET)."
         )
     ts = str(int(time.time()))
     body = {

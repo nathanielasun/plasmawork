@@ -90,4 +90,78 @@ describe("promotionAuditRoutes", () => {
     expect(r.statusCode).toBe(401);
     await app.close();
   });
+
+  it("refuses non-loopback callers BEFORE signature verification (sibling-bug fix 2026-05-10)", async () => {
+    // The audit caught that /internal/audit-events/tool-promotion was
+    // registered without an IP-allowlist preHandler. A LAN attacker
+    // who learned the secret could forge canonical audit events from
+    // off-host. With the gateway listening on 127.0.0.1 by default,
+    // this is no longer reachable in practice — but defense in depth:
+    // even if WORKBENCH_GATEWAY_HOST=0.0.0.0, the route refuses non-
+    // loopback callers up front.
+    const auditLogger = {
+      async write() {
+        throw new Error("must not write");
+      },
+    } as unknown as AuditLogger;
+    const app = Fastify({ logger: false });
+    await app.register(promotionAuditRoutes, {
+      auditLogger,
+      internalSecret: SECRET,
+      now: () => Number.parseInt(TS, 10) * 1000,
+    });
+
+    // Inject with a non-loopback remoteAddress AND a VALID signature.
+    // The route must still refuse — signature verification is
+    // gated AFTER the loopback check.
+    const r = await app.inject({
+      method: "POST",
+      url: "/internal/audit-events/tool-promotion",
+      remoteAddress: "203.0.113.5",
+      headers: {
+        "content-type": "application/json",
+        "x-workbench-internal-audit-timestamp": TS,
+        "x-workbench-internal-audit-signature": signature(),
+      },
+      payload: BODY,
+    });
+
+    expect(r.statusCode).toBe(403);
+    expect(r.json()).toMatchObject({
+      error: "internal audit route is loopback-only",
+    });
+    await app.close();
+  });
+
+  it("accepts ::1 (IPv6 loopback)", async () => {
+    const calls: unknown[] = [];
+    const auditLogger = {
+      async write(input: unknown) {
+        calls.push(input);
+        return undefined as never;
+      },
+    } as unknown as AuditLogger;
+    const app = Fastify({ logger: false });
+    await app.register(promotionAuditRoutes, {
+      auditLogger,
+      internalSecret: SECRET,
+      now: () => Number.parseInt(TS, 10) * 1000,
+    });
+
+    const r = await app.inject({
+      method: "POST",
+      url: "/internal/audit-events/tool-promotion",
+      remoteAddress: "::1",
+      headers: {
+        "content-type": "application/json",
+        "x-workbench-internal-audit-timestamp": TS,
+        "x-workbench-internal-audit-signature": signature(),
+      },
+      payload: BODY,
+    });
+
+    expect(r.statusCode).toBe(200);
+    expect(calls).toHaveLength(1);
+    await app.close();
+  });
 });

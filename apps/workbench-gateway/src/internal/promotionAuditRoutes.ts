@@ -20,6 +20,26 @@ const SIGNATURE_HEADER = "x-workbench-internal-audit-signature";
 const TIMESTAMP_HEADER = "x-workbench-internal-audit-timestamp";
 const MAX_SKEW_SECONDS = 30;
 
+// Loopback addresses accepted by the /internal/* gate. The HMAC is the
+// primary defense, but defense-in-depth: even if the secret leaks, the
+// audit-write bridge is unreachable from anywhere but the same host.
+//
+// Sibling-bug fix (2026-05-10) to the cross-process audit: previously
+// the gateway listened on 0.0.0.0 and /internal/* was reachable from
+// any LAN client carrying the secret. With the gateway loopback by
+// default AND this allowlist, both defenses must fail for a non-local
+// caller to write canonical audit events.
+const LOOPBACK_IPS: ReadonlySet<string> = new Set([
+  "127.0.0.1",
+  "::1",
+  "::ffff:127.0.0.1",
+]);
+
+function isLoopback(ip: string | null | undefined): boolean {
+  if (typeof ip !== "string" || ip.length === 0) return false;
+  return LOOPBACK_IPS.has(ip);
+}
+
 const BODY_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -84,7 +104,21 @@ export const promotionAuditRoutes: FastifyPluginAsync<
 
   app.post<{ Body: PromotionAuditBody }>(
     "/internal/audit-events/tool-promotion",
-    { schema: { body: BODY_SCHEMA } },
+    {
+      schema: { body: BODY_SCHEMA },
+      // Loopback-only preHandler. The route exists for the colocated
+      // FastAPI process to POST canonical audit events through. A
+      // non-loopback caller has no business reaching this URL, even
+      // with a valid signature; refuse before signature verification
+      // so a stolen secret alone cannot fabricate events from off-host.
+      preHandler: async (req, reply) => {
+        if (!isLoopback(req.ip)) {
+          return reply
+            .code(403)
+            .send({ error: "internal audit route is loopback-only" });
+        }
+      },
+    },
     async (req, reply) => {
       const ts = req.headers[TIMESTAMP_HEADER];
       const signature = req.headers[SIGNATURE_HEADER];

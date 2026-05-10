@@ -27,10 +27,37 @@ export interface GatewayEnv {
   readonly bootstrapAllowed: string | undefined;
   readonly bootstrapCredentialHash: string;
   readonly rootAdminUserId: string;
+  /**
+   * Host the gateway binds. Defaults to ``127.0.0.1`` (loopback) so a
+   * developer running ``npm run dev`` does not silently expose the
+   * gateway — including the bootstrap endpoint when
+   * ``BOOTSTRAP_ALLOWED=1`` — to the LAN. Production behind a TLS
+   * terminator sets this to ``0.0.0.0`` explicitly via
+   * ``WORKBENCH_GATEWAY_HOST``.
+   *
+   * Sibling-bug fix (2026-05-10) to the cross-process audit: a 0.0.0.0
+   * default symmetrically violates the loopback-bind invariant the
+   * convention checker pins for FastAPI.
+   */
+  readonly gatewayHost: string;
   readonly gatewayPort: number;
   readonly backendPort: number;
   readonly cookieSecret: string;
   readonly handoffSecret: string;
+  /**
+   * HMAC-SHA256 key for the gateway-internal audit bridge
+   * (``/internal/audit-events/tool-promotion``). The Python promotion
+   * service signs canonical audit events with this secret; the
+   * gateway-side route handler verifies with the same secret.
+   *
+   * Sibling-bug fix (2026-05-10): previously the handoff secret was
+   * reused for both the gateway→FastAPI handoff AND the FastAPI→gateway
+   * canonical audit bridge, which means a future FastAPI compromise
+   * (e.g. via a tool draft preview) would yield the key for forging
+   * audit-chain entries. A distinct env var means rotation of one
+   * secret does not invalidate the other.
+   */
+  readonly internalAuditSecret: string;
   readonly frontendOrigin: string;
   readonly dbUrl: string;
   readonly dbAuditUrl: string;
@@ -185,10 +212,17 @@ export function loadGatewayEnv(opts?: {
     );
   }
 
+  // Sibling-bug fix (2026-05-10): WORKBENCH_GATEWAY_HOST defaults to
+  // loopback so dev installs do not silently expose bootstrap +
+  // /internal/* to the LAN. The convention checker pins the absence
+  // of a "0.0.0.0" literal in main.ts.
+  const gatewayHost = source.WORKBENCH_GATEWAY_HOST ?? "127.0.0.1";
+
   return {
     bootstrapAllowed: source.BOOTSTRAP_ALLOWED,
     bootstrapCredentialHash,
     rootAdminUserId,
+    gatewayHost,
     gatewayPort,
     backendPort,
     cookieSecret: requireMinBytes(
@@ -199,6 +233,11 @@ export function loadGatewayEnv(opts?: {
     handoffSecret: requireMinBytes(
       "WORKBENCH_GATEWAY_HANDOFF_SECRET",
       source.WORKBENCH_GATEWAY_HANDOFF_SECRET,
+      MIN_SECRET_BYTES,
+    ),
+    internalAuditSecret: requireMinBytes(
+      "WORKBENCH_INTERNAL_AUDIT_SECRET",
+      source.WORKBENCH_INTERNAL_AUDIT_SECRET,
       MIN_SECRET_BYTES,
     ),
     frontendOrigin: require(
