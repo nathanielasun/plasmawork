@@ -45,6 +45,10 @@ import {
   NotFoundError,
 } from "../errors/shapes.js";
 import type { AuditReadService, KeysetCursor } from "../audit/readService.js";
+import {
+  decodeSignedCursor,
+  encodeSignedCursor,
+} from "../crypto/signedCursor.js";
 
 export interface AuditEventsRoutesMiddleware {
   readonly requireAuth: NamedMiddleware;
@@ -59,6 +63,15 @@ export interface AuditEventsRoutesMiddleware {
 export interface AuditEventsRoutesOptions {
   readonly service: AuditReadService;
   readonly mw: AuditEventsRoutesMiddleware;
+  /**
+   * Secret used to HMAC-sign pagination cursors so a tampered cursor
+   * cannot select rows outside the prior-page boundary
+   * (v4 §10.3 + §22.2). Closed 2026-05-09 — the previous opaque-
+   * base64 cursor format trusted whatever payload the caller sent
+   * back. The host loads this from ``.env.auth`` and passes it
+   * through; in tests it can be any non-empty string.
+   */
+  readonly cursorSecret: string;
 }
 
 const UUID_V4 =
@@ -102,64 +115,36 @@ function assertUuid(value: unknown, label: string): string {
 }
 
 /**
- * Decode the wire-format keyset cursor. Failure modes map to
- * INPUT_INVALID with a stable detail key so the caller can recognize
- * "I sent a malformed cursor" without parsing the message.
+ * Decode + verify a signed pagination cursor. The signature is
+ * checked against ``opts.cursorSecret``; tampered cursors collapse
+ * into the same generic ``Cursor is invalid.`` 4xx as a malformed
+ * base64 string. Closed 2026-05-09 (v4 §10.3 + §22.2 — pagination
+ * cursors must be tamper-evident).
  */
-function decodeCursor(raw: string): KeysetCursor {
-  let json: string;
-  try {
-    json = Buffer.from(raw, "base64").toString("utf8");
-  } catch {
-    throw new InputInvalidError("Cursor decode failed.", {
-      field: "cursor",
-    });
+function decodeCursor(raw: string, secret: string): KeysetCursor {
+  const payload = decodeSignedCursor(raw, "audit_events", secret);
+  if (typeof payload.created_at !== "string" || typeof payload.id !== "string") {
+    throw new InputInvalidError("Cursor is invalid.", { field: "cursor" });
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new InputInvalidError("Cursor JSON parse failed.", {
-      field: "cursor",
-    });
+  if (!UUID_V4.test(payload.id)) {
+    throw new InputInvalidError("Cursor is invalid.", { field: "cursor" });
   }
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    Array.isArray(parsed)
-  ) {
-    throw new InputInvalidError("Cursor must be an object.", {
-      field: "cursor",
-    });
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj.created_at !== "string" || typeof obj.id !== "string") {
-    throw new InputInvalidError("Cursor missing required fields.", {
-      field: "cursor",
-    });
-  }
-  if (!UUID_V4.test(obj.id)) {
-    throw new InputInvalidError("Cursor id is not a UUID.", {
-      field: "cursor",
-    });
-  }
-  const date = new Date(obj.created_at);
+  const date = new Date(payload.created_at);
   if (Number.isNaN(date.getTime())) {
-    throw new InputInvalidError("Cursor created_at is not a valid date.", {
-      field: "cursor",
-    });
+    throw new InputInvalidError("Cursor is invalid.", { field: "cursor" });
   }
-  return { createdAt: date, id: obj.id };
+  return { createdAt: date, id: payload.id };
 }
 
-function encodeCursor(cursor: KeysetCursor): string {
-  return Buffer.from(
-    JSON.stringify({
+function encodeCursor(cursor: KeysetCursor, secret: string): string {
+  return encodeSignedCursor(
+    {
       created_at: cursor.createdAt.toISOString(),
       id: cursor.id,
-    }),
-    "utf8",
-  ).toString("base64");
+    },
+    "audit_events",
+    secret,
+  );
 }
 
 /**
@@ -190,7 +175,12 @@ function parseLimit(raw: string | undefined): number {
 export const auditEventsRoutes: FastifyPluginAsync<
   AuditEventsRoutesOptions
 > = async (app: FastifyInstance, opts) => {
-  const { service, mw } = opts;
+  const { service, mw, cursorSecret } = opts;
+  if (typeof cursorSecret !== "string" || cursorSecret.length === 0) {
+    throw new Error(
+      "auditEventsRoutes: cursorSecret is required (non-empty string).",
+    );
+  }
 
   const readChain = composeMiddleware([
     mw.requireAuth,
@@ -218,7 +208,7 @@ export const auditEventsRoutes: FastifyPluginAsync<
       const limit = parseLimit(req.query.limit);
       const cursor =
         req.query.cursor !== undefined
-          ? decodeCursor(req.query.cursor)
+          ? decodeCursor(req.query.cursor, cursorSecret)
           : undefined;
       const result = await service.listAuditEvents(workspaceId, {
         limit,
@@ -229,7 +219,7 @@ export const auditEventsRoutes: FastifyPluginAsync<
         next_cursor?: string;
       } = { events: result.rows };
       if (result.nextCursor !== null) {
-        body.next_cursor = encodeCursor(result.nextCursor);
+        body.next_cursor = encodeCursor(result.nextCursor, cursorSecret);
       }
       return body;
     },
@@ -252,7 +242,7 @@ export const auditEventsRoutes: FastifyPluginAsync<
       const limit = parseLimit(req.query.limit);
       const cursor =
         req.query.cursor !== undefined
-          ? decodeCursor(req.query.cursor)
+          ? decodeCursor(req.query.cursor, cursorSecret)
           : undefined;
       const result = await service.listProvenanceEvents(workspaceId, {
         limit,
@@ -263,7 +253,7 @@ export const auditEventsRoutes: FastifyPluginAsync<
         next_cursor?: string;
       } = { events: result.rows };
       if (result.nextCursor !== null) {
-        body.next_cursor = encodeCursor(result.nextCursor);
+        body.next_cursor = encodeCursor(result.nextCursor, cursorSecret);
       }
       return body;
     },

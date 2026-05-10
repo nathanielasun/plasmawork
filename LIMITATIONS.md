@@ -1,6 +1,33 @@
 # Capabilities and Limitations
 
-**Last updated: 2026-05-09 (Phase 0.5 audit fix bundle F1-F5 + recovery→session bridge + audit follow-up: login + CSRF cookie issuance, run-backend high-risk gating, workspaces audit-tx ordering with behavioral regression, cookieSecret hardening, password-reset/email-verify mint a fresh session unconditionally (`loginService` is now type-required on `authRoutes`, not optional), `LoginResponseBody` + `/auth/login` + `/auth/logout` are now in the frontend contracts surface. One known follow-up remains visible in `--include-open-workstreams`: HMAC-signed pagination cursors on audit-events + operator routes. Secure-core is implemented through Layer 5: identity/session/login, workspace-scoped routes, approval middleware, audit/provenance chains, sandbox spec guards, worker-token/upload paths, security dashboard, rate limits, production-secret validation, supply-chain gates, and frontend Security Ops binding. Production multi-user operation still requires target-runtime live probes for DB roles, gVisor/runsc, and WORM anchors, plus an explicit deployment cut-over from the local single-user FastAPI workbench.)**
+**Last updated: 2026-05-09 — Phase 0.5 auth gateway lands.**
+
+Secure-core ships through Layer 5 (identity, session, login + CSRF
+cookies, workspace-scoped routes, approval middleware, audit/provenance
+hash chains, sandbox spec guards, worker-token/upload paths, security
+dashboard, rate limits, production-secret validation, supply-chain
+gates, frontend Security Ops binding). The Phase 0.5 auth gateway
+(ADR-0014) now fronts the FastAPI workbench end-to-end on a developer
+machine: login → workspace switcher → `/api/{slug}/*` proxied to a
+loopback-bound FastAPI with HMAC-verified handoff headers. Username-
+primary identity, three seeded workspaces, one-shot WORM bootstrap
+seal.
+
+**Open follow-ups (visible in `--include-open-workstreams`):**
+
+- HMAC-signed pagination cursors on audit-events + operator routes
+  (v4 §10.3 — cursors are tamper-detectable but not yet signed).
+
+**Production cutover still requires:**
+
+- Target-runtime live probes for the DB role-segregation grants,
+  gVisor / runsc sandbox availability, and S3 Object-Lock WORM
+  anchors. The probe scripts exist; the CI lane that runs them
+  against a real deployment doesn't yet.
+- WebAuthn / TOTP enrollment for the platform admin (intentionally
+  deferred; password-only at aal2 in this cut).
+- Workspace-scoped imported-tool registries (the
+  `local_cache/imported_tools/` cache stays cross-tenant).
 
 This document is the honest, non-aspirational map of what the Scientific Simulation Workbench can and cannot do today. The convention checker verifies *structural* completeness — files exist, classes define the right fields, tests cover the named verbs. It does **not** verify scientific capability. A green gate plus a passing test suite means the wiring works and regressions don't sneak back in. It does NOT mean the system can take a real laser-physics paper and produce a publishable simulation autonomously.
 

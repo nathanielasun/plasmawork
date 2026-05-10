@@ -253,7 +253,12 @@ function buildApp(
     );
     reply.code(mapped.status).send(mapped.body);
   });
-  app.register(operatorRoutes, { service, auditLogger, mw });
+  app.register(operatorRoutes, {
+    service,
+    auditLogger,
+    mw,
+    cursorSecret: "test_cursor_secret_at_least_32_bytes_for_hmac_xxxxxx",
+  });
   return app;
 }
 

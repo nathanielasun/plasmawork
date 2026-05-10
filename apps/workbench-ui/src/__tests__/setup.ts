@@ -17,10 +17,29 @@ if (typeof globalThis.fetch !== "function") {
   }) as typeof fetch;
 }
 
-// Reset the workspace context between tests so a SessionProvider-using
-// test cannot leak its slug into a later raw-component test, which
-// would then fail because the prefixed URL stops matching the test's
-// fetch mocks. Phase 0.5 / Phase F-rest-final (2026-05-09).
+// LOAD-BEARING — DO NOT REMOVE.
+//
+// Phase 0.5 / Phase F-rest-final (2026-05-09) introduced module-level
+// state in `apps/workbench-ui/src/api/workspaceContext.ts` so the
+// active workspace slug can be read by `client.ts:fetchJson` without
+// threading a parameter through every component. The state survives
+// across Vitest cases by default, which means:
+//
+//   - Test A mounts <SessionProvider session={...}>; its useEffect
+//     writes the slug into workspaceContext.
+//   - Test A finishes; React unmounts the provider; the unmount
+//     teardown clears the slug.
+//   - Test B mounts a raw component (no SessionProvider) and calls
+//     fetchJson("/runs"). If A's teardown ran, fetchJson hits
+//     "/api/runs" — matching B's mock. If A's teardown DIDN'T run
+//     (synchronous test, error path that skipped cleanup, etc.),
+//     fetchJson hits "/api/{leaked-slug}/runs" and B's fetch mock
+//     misses, producing confusing failures far from the actual bug.
+//
+// The afterEach below is the belt to React's suspenders. Removing it
+// re-opens the leak class. If a future test legitimately needs a
+// non-null default slug, set it INSIDE that test's beforeEach + reset
+// in its own afterEach; do NOT delete this guard.
 afterEach(() => {
   setCurrentWorkspaceSlug(null);
 });

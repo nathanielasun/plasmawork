@@ -3497,40 +3497,44 @@ check_grep_in_file 'getCapsuleTree' apps/workbench-ui/src/components/CodeViewer.
 check_grep_absent_in_file 'Phase 0 placeholder|UI placeholder' apps/workbench-ui/src/app/page.tsx \
   "app/page.tsx no longer presents itself as Phase 0 placeholder UI"
 
-# Open-workstream TODO branch. Phase 10 closed 2026-05-04; no further
-# phases scheduled.
+# Phase 0.5 audit-fix follow-ups — closed 2026-05-09. Both items
+# previously lived in the --include-open-workstreams branch; ratcheted
+# into the default hard gate now that the code ships.
+section "Phase 0.5 audit-fix follow-ups (closed)"
+if grep -qE 'encodeSignedCursor|decodeSignedCursor|createHmac|hmacSign|signCursor' \
+     packages/secure_core/src/routes/auditEvents.ts \
+     packages/secure_core/src/routes/operator.ts 2>/dev/null; then
+  PASS=$((PASS+1))
+  note "Pagination cursors are HMAC-signed in audit-events + operator routes (v4 §10.3 + §22.2 — closed)"
+else
+  FAIL=$((FAIL+1))
+  fail "Pagination cursors are NOT HMAC-signed in audit-events + operator routes (regression vs. v4 §10.3 close)"
+fi
+check_file_exists packages/secure_core/src/crypto/signedCursor.ts \
+  "signedCursor helper present"
+check_file_exists packages/secure_core/test/crypto/signedCursor.test.ts \
+  "signedCursor regression test present"
+if grep -qiE 'cookie-session auth.*ONLY mints human|cookie session.*human session' \
+     packages/secure_core/src/middleware/requireAuth.ts 2>/dev/null; then
+  PASS=$((PASS+1))
+  note "requireAuth documents why ActorType is hardcoded to 'human' (closed)"
+else
+  FAIL=$((FAIL+1))
+  fail "requireAuth hardcodes 'const actorType: ActorType = \"human\"' without naming the design decision (regression vs. v4 §6.2 close)"
+fi
+
+# Open-workstream TODO branch. No items currently open — both Phase 0.5
+# audit-fix follow-ups closed 2026-05-09. The branch stays in place so
+# a future workstream can add items without re-introducing the
+# scaffolding.
 if [[ $INCLUDE_OPEN_WORKSTREAMS -eq 1 ]]; then
   section "Open Workstream TODOs"
-  # Phase 0.5 audit-fix follow-ups (deferred from the 2026-05-09 F1-F5
-  # bundle). These remain visible as opt-in failures so the deferrals
-  # do not silently bit-rot.
-  # 1. HMAC-signed pagination cursors. Audit-events and operator routes
-  #    currently emit/accept opaque cursors that are not HMAC-signed.
-  #    Per v4 §10.3 + §22.2, cursors must be tamper-evident.
-  if grep -qE 'createHmac|hmacSign|signCursor' \
-       packages/secure_core/src/routes/auditEvents.ts \
-       packages/secure_core/src/routes/operator.ts 2>/dev/null; then
-    PASS=$((PASS+1))
-    note "Pagination cursors are HMAC-signed in audit-events + operator routes"
-  else
-    FAIL=$((FAIL+1))
-    fail "Pagination cursors are NOT HMAC-signed in audit-events + operator routes (deferred follow-up from 2026-05-09 F1-F5 bundle; v4 §10.3)"
-  fi
-  # 2. requireAuth hardcodes ActorType = "human". This is correct for
-  #    Phase 0.5 (cookie-session auth ONLY mints human sessions; worker
-  #    auth flows through `workerAuth.ts`), but the assignment site
-  #    should at minimum carry a comment naming the design decision —
-  #    or, if a future deployment introduces non-human cookie sessions,
-  #    derive the value from the session row's `auth_method`. The
-  #    deferred follow-up: either add the design-decision comment or
-  #    move the assignment to a derivation.
-  if grep -qiE 'cookie-session auth.*ONLY mints human|cookie session.*human session' \
-       packages/secure_core/src/middleware/requireAuth.ts 2>/dev/null; then
-    PASS=$((PASS+1))
-    note "requireAuth documents why ActorType is hardcoded to 'human'"
-  else
-    FAIL=$((FAIL+1))
-    fail "requireAuth hardcodes 'const actorType: ActorType = \"human\"' without naming the design decision (deferred follow-up from 2026-05-09 F1-F5 bundle)"
+  # Echo the empty-state message unconditionally (not via note(),
+  # which is gated on VERBOSE=1) so the regression test can assert
+  # on the literal string and a future opening of a workstream is
+  # the only thing that flips the test back to the failing form.
+  if [[ $QUIET -eq 0 ]]; then
+    echo "  no open workstreams"
   fi
 elif [[ $QUIET -eq 0 && $VERBOSE -eq 1 ]]; then
   section "Open Workstream TODOs"

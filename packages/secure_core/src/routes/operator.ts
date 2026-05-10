@@ -54,6 +54,10 @@ import type {
   RemediationAction,
 } from "../operator/service.js";
 import type { AuditLogger } from "../audit/logger.js";
+import {
+  decodeSignedCursor,
+  encodeSignedCursor,
+} from "../crypto/signedCursor.js";
 import { bodyValidationWithApprovalRequest } from "./validation.js";
 
 /** UUID v4 regex — used by URL-param + body probes. */
@@ -72,56 +76,39 @@ function assertUuid(value: unknown, label: string): string {
   return value;
 }
 
-function decodeCursor(raw: string): KeysetCursor {
-  let json: string;
-  try {
-    json = Buffer.from(raw, "base64").toString("utf8");
-  } catch {
-    throw new InputInvalidError("Cursor decode failed.", {
-      field: "cursor",
-    });
+/**
+ * Decode + verify a signed pagination cursor. Tampered cursors
+ * collapse into the same generic ``Cursor is invalid.`` 4xx as
+ * malformed input. Closed 2026-05-09 (v4 §10.3 + §22.2).
+ *
+ * Operator cursors use a different signing domain than audit-events
+ * cursors so a cursor leaked from one route family cannot be replayed
+ * against the other.
+ */
+function decodeCursor(raw: string, secret: string): KeysetCursor {
+  const payload = decodeSignedCursor(raw, "operator_events", secret);
+  if (typeof payload.created_at !== "string" || typeof payload.id !== "string") {
+    throw new InputInvalidError("Cursor is invalid.", { field: "cursor" });
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new InputInvalidError("Cursor JSON parse failed.", {
-      field: "cursor",
-    });
+  if (!UUID_V4.test(payload.id)) {
+    throw new InputInvalidError("Cursor is invalid.", { field: "cursor" });
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new InputInvalidError("Cursor must be an object.", {
-      field: "cursor",
-    });
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj.created_at !== "string" || typeof obj.id !== "string") {
-    throw new InputInvalidError("Cursor missing required fields.", {
-      field: "cursor",
-    });
-  }
-  if (!UUID_V4.test(obj.id)) {
-    throw new InputInvalidError("Cursor id is not a UUID.", {
-      field: "cursor",
-    });
-  }
-  const date = new Date(obj.created_at);
+  const date = new Date(payload.created_at);
   if (Number.isNaN(date.getTime())) {
-    throw new InputInvalidError("Cursor created_at is not a valid date.", {
-      field: "cursor",
-    });
+    throw new InputInvalidError("Cursor is invalid.", { field: "cursor" });
   }
-  return { createdAt: date, id: obj.id };
+  return { createdAt: date, id: payload.id };
 }
 
-function encodeCursor(cursor: KeysetCursor): string {
-  return Buffer.from(
-    JSON.stringify({
+function encodeCursor(cursor: KeysetCursor, secret: string): string {
+  return encodeSignedCursor(
+    {
       created_at: cursor.createdAt.toISOString(),
       id: cursor.id,
-    }),
-    "utf8",
-  ).toString("base64");
+    },
+    "operator_events",
+    secret,
+  );
 }
 
 function parseLimit(raw: string | undefined): number {
@@ -224,13 +211,26 @@ export interface OperatorRoutesOptions {
   readonly service: OperatorService;
   readonly auditLogger: AuditLogger;
   readonly mw: OperatorRoutesMiddleware;
+  /**
+   * Secret used to HMAC-sign pagination cursors so a tampered cursor
+   * cannot select rows outside the prior-page boundary
+   * (v4 §10.3 + §22.2 — closed 2026-05-09). Operator cursors use a
+   * different signing domain than audit-events cursors; cross-route
+   * replay is impossible by construction.
+   */
+  readonly cursorSecret: string;
 }
 
 export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
   app: FastifyInstance,
   opts,
 ) => {
-  const { service, mw } = opts;
+  const { service, mw, cursorSecret } = opts;
+  if (typeof cursorSecret !== "string" || cursorSecret.length === 0) {
+    throw new Error(
+      "operatorRoutes: cursorSecret is required (non-empty string).",
+    );
+  }
   const validateInvestigate = bodyValidationWithApprovalRequest(
     INVESTIGATE_BODY_SCHEMA,
     opts.auditLogger,
@@ -279,7 +279,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       const limit = parseLimit(req.query.limit);
       const cursor =
         req.query.cursor !== undefined
-          ? decodeCursor(req.query.cursor)
+          ? decodeCursor(req.query.cursor, cursorSecret)
           : undefined;
       const workspaceFilter = req.query.workspace_id;
       const result = await service.listAuditEventsCrossWorkspace({
@@ -295,7 +295,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         next_cursor?: string;
       } = { events: result.rows };
       if (result.nextCursor !== null) {
-        body.next_cursor = encodeCursor(result.nextCursor);
+        body.next_cursor = encodeCursor(result.nextCursor, cursorSecret);
       }
       return body;
     },
