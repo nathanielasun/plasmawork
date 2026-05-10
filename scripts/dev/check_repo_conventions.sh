@@ -2991,7 +2991,7 @@ check_grep_in_file "'email_verify'" \
 check_grep_in_file 'username: string' \
   packages/secure_core/src/auth/loginService.ts \
   "Phase A LoginService input keyed by username (not email)"
-check_grep_in_file 'lower\(username\)' \
+check_grep_in_file 'lower\((u\.)?username\)' \
   packages/secure_core/src/auth/loginService.ts \
   "Phase A LoginService looks up users by lower(username)"
 check_grep_in_file 'USERNAME_REGEX' \
@@ -3648,6 +3648,45 @@ check_grep_in_file 'getCapsuleTree' apps/workbench-ui/src/components/CodeViewer.
   "CodeViewer uses capsule tree API"
 check_grep_absent_in_file 'Phase 0 placeholder|UI placeholder' apps/workbench-ui/src/app/page.tsx \
   "app/page.tsx no longer presents itself as Phase 0 placeholder UI"
+
+# Phase α post-audit hardening (2026-05-10). Five issues caught by
+# the post-Phase-α audit close; this section pins the fixes:
+#   - test gate now includes workbench-gateway typecheck + tests
+#   - shutil.copytree usages replaced with safe_copy_tree
+#   - LoginService reads locked_until + recordVerificationOutcome
+#     wires the lockout policy
+#   - doc drift in login.ts / argon2Adapter.ts / ToolAuthoringPanel.tsx
+section "Phase α post-audit hardening (2026-05-10)"
+check_file_executable scripts/test/workbench_gateway.sh \
+  "workbench-gateway test+typecheck script executable"
+check_grep_in_file 'workbench_gateway\.sh' \
+  scripts/test/all.sh \
+  "scripts/test/all.sh runs the workbench-gateway gate"
+check_grep_in_file 'workbench-gateway-typecheck-and-tests' \
+  .github/workflows/security.yml \
+  "security.yml runs the workbench-gateway typecheck + tests"
+check_file_exists packages/core/src/simworkbench/tools/safe_copy.py
+check_grep_in_file 'def safe_copy_tree' \
+  packages/core/src/simworkbench/tools/safe_copy.py \
+  "safe_copy_tree helper exported"
+check_grep_in_file 'safe_copy_tree' \
+  packages/core/src/simworkbench/tools/registry.py \
+  "ToolRegistry.register_from_template uses safe_copy_tree (no symlink follow)"
+check_grep_in_file 'safe_copy_tree' \
+  packages/core/src/simworkbench/tools/promotion.py \
+  "PromotionService.approve uses safe_copy_tree (no symlink follow)"
+check_grep_in_file 'locked_until' \
+  packages/secure_core/src/auth/loginService.ts \
+  "LoginService reads locked_until before running the verifier"
+check_grep_in_file 'LOGIN_LOCKOUT_THRESHOLD' \
+  apps/workbench-gateway/src/auth/argon2Adapter.ts \
+  "argon2Adapter exports the lockout threshold constant"
+check_grep_in_file 'LOGIN_LOCKOUT_DURATION_MS' \
+  apps/workbench-gateway/src/auth/argon2Adapter.ts \
+  "argon2Adapter exports the lockout duration constant"
+check_grep_in_file 'account_locked' \
+  packages/secure_core/test/auth/loginService.test.ts \
+  "loginService test pins the account_locked branch"
 
 # Phase 0.5 audit-fix follow-ups — closed 2026-05-09. Both items
 # previously lived in the --include-open-workstreams branch; ratcheted

@@ -291,10 +291,25 @@ class PromotionService:
         # Two-step copy: stage to a temp dir alongside the target,
         # then atomic rename. Avoids leaving a half-copied tree if
         # the operator's filesystem fails mid-copy.
+        #
+        # Audit fix (2026-05-10): use safe_copy_tree so a workspace-
+        # local tool tree that contains symlinks is REFUSED at approval
+        # time instead of exfiltrating host files into the target
+        # workspace. Symlinks could only have been planted by an
+        # author who had write access to the source workspace's
+        # tool dir, but the threat model says we don't trust that
+        # author with cross-workspace promotion.
         staging = target_dir.with_name(f"{record.tool_name}.staging")
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
-        shutil.copytree(source_dir, staging)
+        from simworkbench.tools.safe_copy import (  # noqa: PLC0415
+            SafeCopyError,
+            safe_copy_tree,
+        )
+        try:
+            safe_copy_tree(source_dir, staging)
+        except SafeCopyError as exc:
+            raise PromotionError(str(exc)) from exc
         staging.rename(target_dir)
 
         approved = PromotionRequest(

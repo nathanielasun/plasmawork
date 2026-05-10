@@ -62,6 +62,9 @@ function makeStubAuditLogger(): {
 interface UserRow {
   readonly id: string;
   readonly disabled_at: Date | null;
+  /** Audit fix (2026-05-10): per-account lockout fields the join now carries. */
+  readonly failed_attempts?: number | null;
+  readonly locked_until?: Date | null;
 }
 
 function makeStubPool(opts: {
@@ -262,6 +265,65 @@ describe("LoginService.authenticatePassword — F1+F2", () => {
       ...DEFAULT_INPUT,
       username: "  Alice_42  ",
     });
+    expect(out.userId).toBe(ACTOR);
+  });
+
+  it("locked account is refused without running the verifier (audit fix 2026-05-10)", async () => {
+    // Audit fix: the previous LoginService incremented
+    // `user_credentials.failed_attempts` but NEVER read
+    // `locked_until`, so a documented lockout was a dead column.
+    // This test pins the read side: a user whose `locked_until` is
+    // in the future cannot authenticate, even with the right
+    // password, and the verifier is NOT called (so a server-side
+    // timing channel can't reveal the lockout state).
+    //
+    // Service uses a fixed clock at 2026-05-09T12:00:00Z; lockout
+    // is set 5 minutes ahead of that.
+    const stub = makeStubPool({
+      userByUsername: {
+        id: ACTOR,
+        disabled_at: null,
+        failed_attempts: 10,
+        locked_until: new Date("2026-05-09T12:05:00Z"),
+      },
+    });
+    const audit = makeStubAuditLogger();
+    let verifierCalls = 0;
+    const svc = new LoginService({
+      pool: stub.pool,
+      auditLogger: audit.logger,
+      verifyPasswordHash: async () => {
+        verifierCalls++;
+        return true;
+      },
+      fetchPasswordHash: async () => null,
+      now: () => Date.parse("2026-05-09T12:00:00Z"),
+    });
+    await expect(
+      svc.authenticatePassword(DEFAULT_INPUT),
+    ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
+    expect(verifierCalls).toBe(0);
+    // Audit row carries the discriminated reason.
+    expect(audit.calls).toHaveLength(1);
+    expect(audit.calls[0]!.metadata).toMatchObject({
+      denied_reason: "account_locked",
+    });
+  });
+
+  it("expired lockout (locked_until in the past) does NOT block login", async () => {
+    // locked_until is BEFORE the service's fixed clock —
+    // 2026-05-09T11:00:00Z is one hour before 12:00:00Z.
+    const stub = makeStubPool({
+      userByUsername: {
+        id: ACTOR,
+        disabled_at: null,
+        failed_attempts: 0,
+        locked_until: new Date("2026-05-09T11:00:00Z"),
+      },
+    });
+    const audit = makeStubAuditLogger();
+    const svc = makeService(stub, audit.logger, { passwordOk: true });
+    const out = await svc.authenticatePassword(DEFAULT_INPUT);
     expect(out.userId).toBe(ACTOR);
   });
 });

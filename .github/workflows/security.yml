@@ -47,6 +47,35 @@ jobs:
       - name: Run supply-chain security guard
         run: scripts/test/security_supply_chain.sh
 
+  workbench-gateway-typecheck-and-tests:
+    # Audit fix (2026-05-10): the gateway package was previously
+    # excluded from the security workflow. A typecheck regression
+    # (unused-var error) shipped to main unnoticed because Vitest does
+    # not typecheck. This job closes that gap.
+    name: workbench-gateway-typecheck-and-tests
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/workbench-gateway/package-lock.json
+
+      - name: Install workbench-gateway dependencies
+        run: npm --prefix apps/workbench-gateway ci
+
+      - name: Typecheck workbench-gateway
+        run: npm --prefix apps/workbench-gateway run typecheck
+
+      - name: Test workbench-gateway
+        run: npm --prefix apps/workbench-gateway test
+
   secure-core-db-live-probes:
     name: secure-core-db-live-probes
     runs-on: ubuntu-latest

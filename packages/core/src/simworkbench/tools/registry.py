@@ -346,7 +346,19 @@ class ToolRegistry:
                 f"Tool target already exists: {target}. Pick a different name "
                 "or remove the existing tool first."
             )
-        shutil.copytree(src, target)
+        # Audit fix (2026-05-10): use safe_copy_tree so a tool tree
+        # containing a symlink (pointing at /etc/passwd, host config,
+        # whatever) is REFUSED instead of silently exfiltrated into
+        # the workspace's imported_tools/. The previous shutil.copytree
+        # call followed symlinks by default.
+        from simworkbench.tools.safe_copy import (  # noqa: PLC0415
+            SafeCopyError,
+            safe_copy_tree,
+        )
+        try:
+            safe_copy_tree(src, target)
+        except SafeCopyError as exc:
+            raise ToolRegistryError(str(exc)) from exc
         # Stamp the new tool.yaml's `name` field if the template's was a
         # placeholder; otherwise leave the user's deliberate name in place.
         target_yaml = target / "tool.yaml"

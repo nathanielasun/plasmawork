@@ -202,18 +202,68 @@ export class LoginService {
     const username = input.username.trim().toLowerCase();
     const sql = this.#pool.sql;
 
+    // Audit fix (2026-05-10): join user_credentials so the per-account
+    // lockout fields ride along with the user row. The previous
+    // implementation only incremented `failed_attempts` via
+    // `recordVerificationOutcome`; nothing READ the counter, so the
+    // documented per-account backoff was a dead column.
     const userRows = await sql<
       Array<{
         id: string;
         disabled_at: Date | null;
+        failed_attempts: number | null;
+        locked_until: Date | null;
       }>
     >`
-      SELECT id, disabled_at
-      FROM users
-      WHERE lower(username) = ${username}
+      SELECT
+        u.id,
+        u.disabled_at,
+        c.failed_attempts,
+        c.locked_until
+      FROM users u
+      LEFT JOIN user_credentials c ON c.user_id = u.id
+      WHERE lower(u.username) = ${username}
       LIMIT 1
     `;
     const user = userRows[0] ?? null;
+
+    // If the account is currently locked (locked_until in the future),
+    // refuse the login WITHOUT running the verifier. This is the read
+    // side of the per-account counter — combined with
+    // `recordVerificationOutcome` resetting the counter on success and
+    // the route's per-IP rate limit, distributed password guessing
+    // is gated on BOTH signals (per v4 §8 + §22.1 documented posture).
+    //
+    // Anti-enumeration: the response shape is identical to a regular
+    // wrong-password failure (generic 401 + audit row with discriminated
+    // reason). The caller cannot tell whether the account is locked,
+    // disabled, or simply has the wrong password.
+    // ``locked_until`` is undefined in legacy tests that stub the
+    // user row without the user_credentials join columns; treat it
+    // as null in that case so the lockout branch only fires for
+    // rows that actually carry the column.
+    const lockedUntil = user?.locked_until ?? null;
+    if (
+      user !== null &&
+      lockedUntil !== null &&
+      lockedUntil.getTime() > this.#now()
+    ) {
+      await this.#auditLogger.write({
+        workspaceId: null,
+        actorUserId: user.id,
+        actorType: "human",
+        action: "login.failed",
+        result: "denied",
+        requestId: input.requestId,
+        ipHmac: input.ipHmac,
+        userAgentHmac: input.userAgentHmac,
+        metadata: {
+          denied_reason: "account_locked",
+          locked_until: lockedUntil.toISOString(),
+        },
+      });
+      throw new UnauthenticatedError("Invalid username or password.");
+    }
 
     // Constant-time path: ALWAYS run verifyPasswordHash so the wall
     // clock doesn't reveal whether the user exists. If user is null,

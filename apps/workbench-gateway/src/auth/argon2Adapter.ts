@@ -89,13 +89,12 @@ export function createArgon2Adapter(deps: Argon2AdapterDeps): {
      * the hash is malformed — the LoginService treats verification
      * failure as an authentication denial regardless of cause.
      *
-     * On a mismatch we increment `failed_attempts`; on success we
-     * reset it. The `userId` of the row whose hash we're verifying
-     * isn't available here (LoginService passes only the stored hash
-     * string), so the counter update happens out-of-band via
-     * `recordVerificationOutcome` — the LoginService doesn't call
-     * that today; deployments that want failed-attempt accounting
-     * wrap this adapter.
+     * The per-account counter update happens elsewhere — the
+     * LoginService NOW calls ``recordVerificationOutcome`` directly
+     * (post-2026-05-10 audit fix), threading the resolved userId
+     * through the seam. The function below ONLY runs the
+     * cryptographic verify; the counter + lockout policy live in
+     * ``recordVerificationOutcome`` further down.
      */
     async verifyPasswordHash(
       presented: string,
@@ -130,9 +129,32 @@ export function createArgon2Adapter(deps: Argon2AdapterDeps): {
 }
 
 /**
- * Out-of-band failed-attempt accounting. The LoginService doesn't
- * call this directly — deployments that want lockout dashboards wrap
- * the adapter and call this on every verify outcome.
+ * Failed-attempt threshold + lockout duration. Audit fix
+ * (2026-05-10): the previous implementation incremented
+ * ``failed_attempts`` but nothing READ it; the documented per-account
+ * lockout was a dead column. These constants pin the lockout policy
+ * v4 §8 calls for: ten consecutive failures locks the account for
+ * fifteen minutes. The numbers are deliberately conservative so a
+ * legitimate user fat-fingering their password ten times still
+ * recovers within the typical "I'll come back after a coffee" window.
+ *
+ * Production deployments that need a different policy should wrap the
+ * adapter rather than mutating these constants — both numbers are
+ * load-bearing for the operator dashboard's "locked accounts" view.
+ */
+export const LOGIN_LOCKOUT_THRESHOLD = 10;
+export const LOGIN_LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
+/**
+ * Per-account verification outcome. The LoginService calls this on
+ * every authentication attempt; success resets the counter + clears
+ * any active lockout, failure increments the counter and conditionally
+ * sets ``locked_until``.
+ *
+ * The increment + lockout decision is done in ONE UPDATE so two
+ * concurrent failed attempts can't race past the threshold without
+ * being locked. The ``CASE`` expression evaluates the post-increment
+ * count in-statement.
  */
 export async function recordVerificationOutcome(
   pool: SecureCorePool,
@@ -142,13 +164,21 @@ export async function recordVerificationOutcome(
   if (success) {
     await pool.sql`
       UPDATE user_credentials
-      SET failed_attempts = 0
+      SET failed_attempts = 0,
+          locked_until = NULL
       WHERE user_id = ${userId}
     `;
   } else {
+    const lockoutMs = LOGIN_LOCKOUT_DURATION_MS;
+    const threshold = LOGIN_LOCKOUT_THRESHOLD;
     await pool.sql`
       UPDATE user_credentials
-      SET failed_attempts = failed_attempts + 1
+      SET failed_attempts = failed_attempts + 1,
+          locked_until = CASE
+            WHEN failed_attempts + 1 >= ${threshold}
+              THEN NOW() + (${lockoutMs} || ' milliseconds')::interval
+            ELSE locked_until
+          END
       WHERE user_id = ${userId}
     `;
   }

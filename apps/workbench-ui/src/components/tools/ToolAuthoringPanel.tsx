@@ -574,7 +574,7 @@ export default function ToolAuthoringPanel({ onRegistered }: ToolAuthoringPanelP
             >
               Create draft
             </button>
-            <span className="muted">Drafts stay under local_cache/workspaces/local/tool_drafts.</span>
+            <span className="muted">Drafts stay under local_cache/workspaces/&#123;workspace&#125;/tool_drafts (per-workspace since Phase α, 2026-05-10).</span>
           </div>
 
           {drafts.length > 0 && (

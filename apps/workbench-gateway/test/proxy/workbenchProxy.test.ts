@@ -364,7 +364,7 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
       [`/api/${WORKSPACE_SLUG}/runs/abc`, "/api/runs/abc"],
       [`/api/${WORKSPACE_SLUG}/tools/foo/runs`, "/api/tools/foo/runs"],
     ];
-    for (const [inUrl, expectedUpstreamUrl] of cases) {
+    for (const [inUrl] of cases) {
       const r = await app.inject({ method: "GET", url: inUrl });
       expect(r.statusCode).toBe(200);
     }

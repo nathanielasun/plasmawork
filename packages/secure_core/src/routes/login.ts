@@ -34,8 +34,16 @@
  *     `created_by` from `req.body`. Body fields are exactly
  *     `{ username, password }` for login and `{}` for logout.
  *   - Body schema is `additionalProperties: false`.
- *   - Per-IP + per-username rate limits compose at the route layer
- *     (mirrors `routes/auth.ts` recovery flows).
+ *   - Per-IP rate limit composes at the route layer (mirrors
+ *     `routes/auth.ts` recovery flows). The per-account lockout
+ *     lives in `LoginService.authenticatePassword` itself: a read
+ *     of `user_credentials.locked_until` happens BEFORE the verifier
+ *     runs, and a write through `recordVerificationOutcome`
+ *     increments `failed_attempts` after every wrong password (with
+ *     the lockout actually fired by the gateway's argon2 adapter
+ *     when the threshold is crossed). Doc fix 2026-05-10 — the prior
+ *     "per-username at the route layer" copy was inaccurate: the
+ *     lockout is service-layer, not middleware-layer.
  *   - Logout ALWAYS clears both cookies regardless of whether the
  *     session-revocation succeeded (idempotent client cleanup).
  */
