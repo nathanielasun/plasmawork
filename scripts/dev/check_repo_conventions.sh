@@ -3276,6 +3276,55 @@ check_grep_in_file 'Storage seam stays flat after workspace isolation' \
 check_grep_in_file '2026-05-10 — Tool registry becomes workspace-scoped' \
   bugs_and_fixes/regression_tests.md \
   "regression_tests.md indexes the workspace-scoped tool registry tests"
+
+# Phase α.4 (2026-05-10): cross-workspace tool promotion flow.
+# Lightweight Python-side dual-actor pattern: WorkspaceAdmin
+# requests, PlatformAdmin (IncidentRemediator) approves, the
+# approval performs the directory copy.
+section "Phase 0.5 / Phase α.4 (cross-workspace tool promotion)"
+check_file_exists packages/core/src/simworkbench/tools/promotion.py
+check_grep_in_file 'class PromotionService' \
+  packages/core/src/simworkbench/tools/promotion.py \
+  "PromotionService class exported"
+check_grep_in_file 'class PromotionRequest' \
+  packages/core/src/simworkbench/tools/promotion.py \
+  "PromotionRequest dataclass exported"
+check_grep_in_file 'def tool_promotions_root' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "paths.tool_promotions_root() helper ships"
+check_grep_in_file '_pending_promotions' \
+  packages/core/src/simworkbench/tools/registry.py \
+  "ToolRegistry skip-set includes _pending_promotions (audit-fix invariant)"
+check_grep_in_file '@app\.post\("/api/tools/{name}/promote"\)' \
+  packages/core/src/simworkbench/api/server.py \
+  "/api/tools/{name}/promote endpoint registered"
+check_grep_in_file '@app\.get\("/api/tool-promotions"\)' \
+  packages/core/src/simworkbench/api/server.py \
+  "/api/tool-promotions listing endpoint registered (PlatformAdmin)"
+check_grep_in_file '@app\.post\("/api/tool-promotions/{request_id}/approve"\)' \
+  packages/core/src/simworkbench/api/server.py \
+  "/api/tool-promotions/{id}/approve endpoint registered"
+check_grep_in_file '@app\.post\("/api/tool-promotions/{request_id}/deny"\)' \
+  packages/core/src/simworkbench/api/server.py \
+  "/api/tool-promotions/{id}/deny endpoint registered"
+check_file_exists tests/integration/test_tool_promotion_flow.py
+check_grep_in_file 'test_approved_tool_visible_from_every_workspace' \
+  tests/integration/test_tool_promotion_flow.py \
+  "promotion flow test pins post-approval cross-workspace visibility"
+check_file_exists apps/workbench-ui/src/components/tools/ToolPromotionPanel.tsx
+check_grep_in_file 'export function ToolPromotionPanel' \
+  apps/workbench-ui/src/components/tools/ToolPromotionPanel.tsx \
+  "ToolPromotionPanel component exported"
+check_grep_in_file 'platform:incident_remediate' \
+  apps/workbench-ui/src/components/tools/ToolPromotionPanel.tsx \
+  "ToolPromotionPanel gates approve actions on platform:incident_remediate"
+check_file_exists apps/workbench-ui/src/__tests__/ToolPromotionPanel.test.tsx
+check_grep_in_file 'requestToolPromotion' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts exposes requestToolPromotion helper"
+check_grep_in_file '"/tool-promotions"' \
+  apps/workbench-ui/src/App.tsx \
+  "App.tsx registers /tool-promotions route"
 check_grep_in_file 'routes: \["/:slug"' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy route shape is /api/:slug (E2-rest workspace authorization)"

@@ -173,6 +173,23 @@ def tool_drafts_root_for(workspace_slug: str) -> Path:
     return _ensure(base)
 
 
+def tool_promotions_root() -> Path:
+    """Return ``<repo>/local_cache/imported_tools/_pending_promotions``.
+
+    Tool promotion request queue (Phase α.4, 2026-05-10). A
+    promotion request creates a JSON record here keyed by request id;
+    a PlatformAdmin's approval reads the record, performs the
+    cross-workspace tool copy, then deletes the record.
+
+    Stored alongside ``imported_tools/`` (sibling to the workspace
+    slug folders) under the ``_`` prefix so the registry's reserved-
+    quarantine skip-set keeps the promotion queue out of the tool
+    listing. The directory is gitignored — promotion state is
+    deployment-local.
+    """
+    return _ensure(imported_tools_root() / "_pending_promotions")
+
+
 def is_under_workbench(path: Path | str) -> bool:
     """Return True iff ``path`` lies inside one of the four allowed roots.
 

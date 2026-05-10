@@ -177,6 +177,40 @@ export interface ToolDocs {
   tool_yaml: string;
 }
 
+/**
+ * Cross-workspace tool promotion — Phase α.4 (2026-05-10).
+ *
+ * Mirrors ``packages/core/src/simworkbench/tools/promotion.py``'s
+ * ``PromotionRequest`` dataclass. The backend persists each record
+ * under ``local_cache/imported_tools/_pending_promotions/{request_id}.json``;
+ * ``status`` advances ``pending → approved | denied`` via the
+ * approver endpoints.
+ */
+export type ToolPromotionStatus = "pending" | "approved" | "denied";
+
+export interface ToolPromotionRequest {
+  request_id: string;
+  tool_name: string;
+  from_workspace_slug: string;
+  to_workspace_slug: string;
+  requested_by: string;
+  requested_at: string;
+  justification: string;
+  status: ToolPromotionStatus;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  decision_note?: string | null;
+}
+
+export interface ToolPromoteRequestBody {
+  to_workspace_slug: string;
+  justification?: string;
+}
+
+export interface ToolPromotionDecisionBody {
+  decision_note?: string;
+}
+
 export interface ToolAuthoringTemplate {
   template_id: string;
   title: string;
@@ -877,6 +911,24 @@ export interface ApiClient {
   executeTool(name: string, kwargs: Record<string, unknown>, units?: Record<string, string>): Promise<{ name: string; output: Record<string, unknown> }>;
   exportTool(name: string): Promise<{ name: string; archive: string; size_bytes: number }>;
   importTool(sourcePath: string, targetName: string): Promise<{ name: string; directory: string }>;
+  /**
+   * Cross-workspace promotion — Phase α.4 (2026-05-10). Requires
+   * ``tool:request_promotion`` capability (WorkspaceAdmin). Creates
+   * a pending record; PlatformAdmin approves via ``approveToolPromotion``.
+   */
+  requestToolPromotion(
+    name: string,
+    body: ToolPromoteRequestBody,
+  ): Promise<ToolPromotionRequest>;
+  listToolPromotions(): Promise<ToolPromotionRequest[]>;
+  approveToolPromotion(
+    requestId: string,
+    body: ToolPromotionDecisionBody,
+  ): Promise<ToolPromotionRequest>;
+  denyToolPromotion(
+    requestId: string,
+    body: ToolPromotionDecisionBody,
+  ): Promise<ToolPromotionRequest>;
   importPaper(capsule: string, sourcePath: string): Promise<PaperImportResult>;
   getPaperExtracted(capsule: string): Promise<PaperExtracted>;
   editPaperArtifact(capsule: string, body: PaperEditPayload): Promise<{ capsule: string; ok: boolean }>;
@@ -1540,6 +1592,41 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_path: sourcePath, target_name: targetName }),
+        },
+        baseUrl,
+      ),
+    requestToolPromotion: (name, body) =>
+      fetchJson(
+        `/tools/${encodeURIComponent(name)}/promote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to_workspace_slug: body.to_workspace_slug,
+            justification: body.justification ?? "",
+          }),
+        },
+        baseUrl,
+      ),
+    listToolPromotions: () =>
+      fetchJson("/tool-promotions", undefined, baseUrl),
+    approveToolPromotion: (requestId, body) =>
+      fetchJson(
+        `/tool-promotions/${encodeURIComponent(requestId)}/approve`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision_note: body.decision_note ?? "" }),
+        },
+        baseUrl,
+      ),
+    denyToolPromotion: (requestId, body) =>
+      fetchJson(
+        `/tool-promotions/${encodeURIComponent(requestId)}/deny`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision_note: body.decision_note ?? "" }),
         },
         baseUrl,
       ),

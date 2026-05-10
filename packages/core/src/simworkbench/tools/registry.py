@@ -133,9 +133,14 @@ SHARED_INTERNAL_TOOLS_SLUG = "shared-internal-tools"
 
 # Reserved subdirectory names ToolRegistry MUST NOT walk. Phase α
 # (2026-05-10) added ``_pending_migration`` for the legacy flat-layout
-# quarantine sweep; future quarantine / archive buckets land here so a
-# new reserved name doesn't accidentally surface in a tool listing.
-RESERVED_QUARANTINE_DIRS = frozenset({"_pending_migration"})
+# quarantine sweep AND ``_pending_promotions`` for the cross-workspace
+# promotion request queue. Future quarantine / archive buckets land
+# here so a new reserved name doesn't accidentally surface in a tool
+# listing.
+RESERVED_QUARANTINE_DIRS = frozenset({
+    "_pending_migration",
+    "_pending_promotions",
+})
 
 
 def _imported_root_for_slug(slug: str) -> Path:

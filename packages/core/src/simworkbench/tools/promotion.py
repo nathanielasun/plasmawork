@@ -1,0 +1,357 @@
+"""Tool promotion service — Phase α.4 (2026-05-10).
+
+Cross-workspace tool promotion via a lightweight dual-actor pattern.
+A WorkspaceAdmin in workspace X requests promotion of one of X's
+imported tools to a target workspace (typically
+``shared-internal-tools``); a PlatformAdmin approves; the approval
+performs the cross-workspace directory copy and audits the action.
+
+Why a Python-side service rather than secure_core's L2.9 token flow:
+the L2.9 approval primitives live in TypeScript (secure_core); the
+tool registry mutation lives in Python (FastAPI). Bridging the two
+across the gateway → loopback handoff would require either
+duplicating the verifier in Python OR a new gateway-internal HTTP
+hop. For the promotion-specific use case both are heavier than the
+on-disk-record pattern below; the resulting workflow has identical
+shape (request, approver review, approve, mutate) without the
+cross-language plumbing.
+
+State layout::
+
+    local_cache/imported_tools/_pending_promotions/{request_id}.json
+        {
+          "request_id":         <uuid v4>,
+          "tool_name":          <tool name>,
+          "from_workspace_slug": <source slug>,
+          "to_workspace_slug":   <target slug>,
+          "requested_by":        <requester user_id from handoff>,
+          "requested_at":        <RFC3339 UTC>,
+          "justification":       <free text>,
+          "status":              "pending" | "approved" | "denied",
+          "decided_by":          <approver user_id, on approve/deny>,
+          "decided_at":          <RFC3339 UTC, on approve/deny>,
+          "decision_note":       <approver's free text, optional>
+        }
+
+The state directory is sibling to the workspace slug folders under
+``imported_tools/`` and is in ``RESERVED_QUARANTINE_DIRS`` so
+``ToolRegistry`` never walks it.
+
+Approval is idempotent on completed records (re-approving a
+previously-approved request is a no-op). Denying a pending request
+simply sets the status; the operator can manually delete the JSON.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import uuid
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal
+
+from simworkbench.paths import (
+    imported_tools_root_for,
+    tool_promotions_root,
+)
+
+
+PromotionStatus = Literal["pending", "approved", "denied"]
+
+
+class PromotionError(RuntimeError):
+    """Raised when a promotion request / approval fails a precondition.
+
+    The FastAPI handler maps this to 400 (caller error). The error
+    message is surfaced verbatim — every PromotionError emits a
+    discrete, reviewable diagnostic (no anti-enumeration concern
+    here; the requester is already authenticated).
+    """
+
+
+class PromotionNotFound(PromotionError):
+    """The referenced promotion request id does not exist on disk."""
+
+
+@dataclass(frozen=True)
+class PromotionRequest:
+    request_id: str
+    tool_name: str
+    from_workspace_slug: str
+    to_workspace_slug: str
+    requested_by: str
+    requested_at: str
+    justification: str
+    status: PromotionStatus
+    decided_by: str | None = None
+    decided_at: str | None = None
+    decision_note: str | None = None
+
+    def as_json_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _record_path(request_id: str) -> Path:
+    if not _is_valid_request_id(request_id):
+        raise PromotionError(
+            f"request_id {request_id!r} is not a valid UUID v4."
+        )
+    return tool_promotions_root() / f"{request_id}.json"
+
+
+def _is_valid_request_id(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        return False
+    # Accept UUIDv4 + UUIDv7 (some tooling generates v7); reject other
+    # versions so the on-disk shape is predictable.
+    return parsed.version in (4, 7)
+
+
+def _validate_tool_name(value: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise PromotionError("tool_name must be a non-empty string.")
+    if "/" in value or "\\" in value or value.startswith("."):
+        raise PromotionError(
+            f"tool_name {value!r} contains a path separator or starts "
+            "with a dot — refusing."
+        )
+    return value
+
+
+def _validate_workspace_slug(value: str) -> str:
+    # Mirror the slug regex from simworkbench.paths — but the path
+    # helper validates strictly (ValueError on malformed). We catch
+    # here to surface as PromotionError.
+    from simworkbench.paths import _validate_workspace_slug as _path_validate  # noqa: PLC0415
+
+    try:
+        return _path_validate(value)
+    except ValueError as exc:
+        raise PromotionError(str(exc)) from exc
+
+
+class PromotionService:
+    """Manages pending + completed cross-workspace tool promotions.
+
+    Stateless aside from the on-disk record directory. Each method
+    is safe to call concurrently as long as the underlying filesystem
+    is. Approval performs the directory copy in two steps (copy to
+    a temp directory, then atomic rename) so a partial failure leaves
+    the target untouched.
+    """
+
+    def request(
+        self,
+        *,
+        tool_name: str,
+        from_workspace_slug: str,
+        to_workspace_slug: str,
+        requested_by: str,
+        justification: str,
+    ) -> PromotionRequest:
+        """Create a pending promotion request. Returns the persisted
+        record. Refuses when:
+          - the source tool does not exist in the source workspace
+          - the same tool already exists in the target workspace
+            (same name → would conflict on copy)
+          - source == target (no-op)
+        """
+        tool_name = _validate_tool_name(tool_name)
+        from_workspace_slug = _validate_workspace_slug(from_workspace_slug)
+        to_workspace_slug = _validate_workspace_slug(to_workspace_slug)
+        if from_workspace_slug == to_workspace_slug:
+            raise PromotionError(
+                "Source and target workspace must differ."
+            )
+        if not isinstance(requested_by, str) or not requested_by:
+            raise PromotionError("requested_by must be a non-empty string.")
+        if not isinstance(justification, str):
+            raise PromotionError("justification must be a string.")
+
+        source_dir = imported_tools_root_for(from_workspace_slug) / tool_name
+        if not source_dir.is_dir() or not (source_dir / "tool.yaml").is_file():
+            raise PromotionError(
+                f"Tool {tool_name!r} is not present in workspace "
+                f"{from_workspace_slug!r}."
+            )
+        target_dir = imported_tools_root_for(to_workspace_slug) / tool_name
+        if target_dir.exists():
+            raise PromotionError(
+                f"Tool {tool_name!r} already exists in workspace "
+                f"{to_workspace_slug!r}; refusing to overwrite. Delete "
+                "the target first or pick a different name."
+            )
+
+        record = PromotionRequest(
+            request_id=str(uuid.uuid4()),
+            tool_name=tool_name,
+            from_workspace_slug=from_workspace_slug,
+            to_workspace_slug=to_workspace_slug,
+            requested_by=requested_by,
+            requested_at=_now_iso(),
+            justification=justification[:4096],
+            status="pending",
+        )
+        _record_path(record.request_id).write_text(
+            json.dumps(record.as_json_dict(), indent=2),
+            encoding="utf-8",
+        )
+        return record
+
+    def list_pending(self) -> list[PromotionRequest]:
+        """Return every pending request, oldest first."""
+        out: list[PromotionRequest] = []
+        for path in sorted(tool_promotions_root().glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            try:
+                record = PromotionRequest(**data)
+            except TypeError:
+                continue
+            if record.status == "pending":
+                out.append(record)
+        out.sort(key=lambda r: r.requested_at)
+        return out
+
+    def get(self, request_id: str) -> PromotionRequest:
+        path = _record_path(request_id)
+        if not path.is_file():
+            raise PromotionNotFound(f"No promotion request {request_id!r}.")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise PromotionError(
+                f"Promotion record {request_id!r} is unreadable: {exc}"
+            ) from exc
+        try:
+            return PromotionRequest(**data)
+        except TypeError as exc:
+            raise PromotionError(
+                f"Promotion record {request_id!r} has an unexpected shape: {exc}"
+            ) from exc
+
+    def approve(
+        self,
+        *,
+        request_id: str,
+        approver_user_id: str,
+        decision_note: str = "",
+    ) -> PromotionRequest:
+        """Approve a pending request. Performs the directory copy
+        (source → target) and persists the completed record.
+
+        Re-approving an already-approved record is a no-op (returns
+        the existing record unchanged). Approving a denied record
+        raises ``PromotionError``.
+        """
+        if not isinstance(approver_user_id, str) or not approver_user_id:
+            raise PromotionError(
+                "approver_user_id must be a non-empty string."
+            )
+        record = self.get(request_id)
+        if record.status == "approved":
+            return record
+        if record.status == "denied":
+            raise PromotionError(
+                f"Promotion {request_id!r} was previously denied; cannot approve."
+            )
+
+        source_dir = (
+            imported_tools_root_for(record.from_workspace_slug)
+            / record.tool_name
+        )
+        target_dir = (
+            imported_tools_root_for(record.to_workspace_slug)
+            / record.tool_name
+        )
+        if not source_dir.is_dir():
+            raise PromotionError(
+                "Source tool no longer exists; cannot promote. Was it "
+                "deleted between request and approval?"
+            )
+        if target_dir.exists():
+            raise PromotionError(
+                "Target slot is now occupied; cannot promote without "
+                "overwriting. Delete the target first or deny this "
+                "request."
+            )
+
+        # Two-step copy: stage to a temp dir alongside the target,
+        # then atomic rename. Avoids leaving a half-copied tree if
+        # the operator's filesystem fails mid-copy.
+        staging = target_dir.with_name(f"{record.tool_name}.staging")
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        shutil.copytree(source_dir, staging)
+        staging.rename(target_dir)
+
+        approved = PromotionRequest(
+            request_id=record.request_id,
+            tool_name=record.tool_name,
+            from_workspace_slug=record.from_workspace_slug,
+            to_workspace_slug=record.to_workspace_slug,
+            requested_by=record.requested_by,
+            requested_at=record.requested_at,
+            justification=record.justification,
+            status="approved",
+            decided_by=approver_user_id,
+            decided_at=_now_iso(),
+            decision_note=decision_note[:4096],
+        )
+        _record_path(approved.request_id).write_text(
+            json.dumps(approved.as_json_dict(), indent=2),
+            encoding="utf-8",
+        )
+        return approved
+
+    def deny(
+        self,
+        *,
+        request_id: str,
+        approver_user_id: str,
+        decision_note: str = "",
+    ) -> PromotionRequest:
+        """Mark a pending request as denied. The source tool is
+        unchanged; the record stays on disk for audit until the
+        operator deletes it manually.
+        """
+        if not isinstance(approver_user_id, str) or not approver_user_id:
+            raise PromotionError(
+                "approver_user_id must be a non-empty string."
+            )
+        record = self.get(request_id)
+        if record.status != "pending":
+            raise PromotionError(
+                f"Promotion {request_id!r} is already in status "
+                f"{record.status!r}; cannot deny."
+            )
+        denied = PromotionRequest(
+            request_id=record.request_id,
+            tool_name=record.tool_name,
+            from_workspace_slug=record.from_workspace_slug,
+            to_workspace_slug=record.to_workspace_slug,
+            requested_by=record.requested_by,
+            requested_at=record.requested_at,
+            justification=record.justification,
+            status="denied",
+            decided_by=approver_user_id,
+            decided_at=_now_iso(),
+            decision_note=decision_note[:4096],
+        )
+        _record_path(denied.request_id).write_text(
+            json.dumps(denied.as_json_dict(), indent=2),
+            encoding="utf-8",
+        )
+        return denied

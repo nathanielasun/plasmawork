@@ -20,6 +20,7 @@ import DiagnosticsPanel from "./components/DiagnosticsPanel";
 import PlotPanel from "./components/PlotPanel";
 import CapsuleExplorer from "./components/CapsuleExplorer";
 import ToolList from "./components/tools/ToolList";
+import { ToolPromotionPanel } from "./components/tools/ToolPromotionPanel";
 import PaperReview from "./components/papers/PaperReview";
 import ExperimentProposal from "./components/proposal/ExperimentProposal";
 import GeneratedCodeView from "./components/codegen/GeneratedCodeView";
@@ -47,6 +48,7 @@ const NAV: readonly NavEntry[] = [
   { to: "/plots", label: "Plots", icon: "⌁" },
   { to: "/capsules", label: "Capsules", icon: "▣" },
   { to: "/tools", label: "Tools", icon: "⚒" },
+  { to: "/tool-promotions", label: "Promotions", icon: "↑" },
   { to: "/papers", label: "Papers", icon: "¶" },
   { to: "/proposals", label: "Proposals", icon: "△" },
   { to: "/codegen", label: "Generated Code", icon: "⌬" },
@@ -151,6 +153,7 @@ function AppShell(): JSX.Element {
           <Route path="/plots" element={<PlotPanel />} />
           <Route path="/capsules" element={<CapsuleExplorer />} />
           <Route path="/tools" element={<ToolList />} />
+          <Route path="/tool-promotions" element={<ToolPromotionPanel />} />
           <Route path="/papers" element={<PaperReview />} />
           <Route path="/proposals" element={<ExperimentProposal />} />
           <Route path="/codegen" element={<GeneratedCodeView />} />

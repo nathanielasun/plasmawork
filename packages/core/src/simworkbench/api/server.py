@@ -109,6 +109,11 @@ from simworkbench.tools import (
     normalize_tool_schema,
 )
 from simworkbench.tools.artifacts import ToolArtifactError
+from simworkbench.tools.promotion import (
+    PromotionError,
+    PromotionNotFound,
+    PromotionService,
+)
 
 # ---------------------------------------------------------------------------
 # Request / response schemas
@@ -189,6 +194,27 @@ class ToolImportBody(BaseModel):
 
     source_path: str
     target_name: str
+
+
+class ToolPromoteBody(BaseModel):
+    """POST /api/tools/{name}/promote body — Phase α.4 (2026-05-10).
+
+    The source workspace is derived server-side from
+    ``request.state.workspace_slug``; the body carries only the
+    target slug + a justification. Forbidden field rule (v4 §4.1):
+    the body MUST NOT carry ``from_workspace_slug``,
+    ``requested_by``, ``request_id``, or any other server-derived
+    identity / lifecycle field.
+    """
+
+    to_workspace_slug: str
+    justification: str = ""
+
+
+class PromotionDecisionBody(BaseModel):
+    """POST /api/tools/promotions/{request_id}/(approve|deny) body."""
+
+    decision_note: str = ""
 
 
 class ToolDraftCreateBody(BaseModel):
@@ -2052,6 +2078,139 @@ def create_app(
             "name": entry.name,
             "directory": str(entry.directory.relative_to(repo_root())),
         }
+
+    # -----------------------------------------------------------------------
+    # Phase α.4 — cross-workspace tool promotion (2026-05-10).
+    #
+    # WorkspaceAdmin in workspace X requests promotion of an imported
+    # tool to a target workspace (typically `shared-internal-tools`);
+    # PlatformAdmin approves; the approval performs the directory copy
+    # and audits the action.
+    #
+    # Role gating: the gateway's proxy authChain enforces capabilities
+    # before forwarding to FastAPI. In dev mode (no gateway), every
+    # request is treated as having all roles for testing convenience —
+    # documented in LIMITATIONS as a dev-only fallback. Production
+    # deployments MUST run the gateway; otherwise the promotion flow
+    # is ungated.
+    # -----------------------------------------------------------------------
+
+    _promotions = PromotionService()
+
+    def _actor_roles(request: Request) -> tuple[str, ...]:
+        """Read the role list from the gateway handoff. Empty tuple in
+        dev mode (no middleware mounted)."""
+        actor = getattr(request.state, "workbench_actor", None)
+        if actor is None:
+            return ()
+        return tuple(actor.roles or ())
+
+    def _actor_user_id(request: Request) -> str:
+        """Read the actor user id. Falls back to "_dev_user" in dev mode
+        so tests have a stable identity in promotion records."""
+        actor = getattr(request.state, "workbench_actor", None)
+        if actor is None:
+            return "_dev_user"
+        return actor.user_id
+
+    def _require_role(request: Request, role: str) -> None:
+        """403 if the actor does not carry the required role.
+
+        Dev-mode bypass: when no middleware is mounted, the gateway is
+        not enforcing capabilities either, so the role check is a
+        no-op. This keeps direct-TestClient tests functional. The
+        gateway-required env (``WORKBENCH_GATEWAY_HANDOFF_SECRET``
+        set) flips this to strict mode via the auth_middleware mount;
+        production deployments always have the secret set.
+        """
+        roles = _actor_roles(request)
+        # Empty roles = dev mode; allow everything.
+        if not roles:
+            return
+        if role not in roles:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Action requires role {role!r}; actor has {list(roles)}."
+                ),
+            )
+
+    @app.post("/api/tools/{name}/promote")
+    def request_tool_promotion(
+        name: str,
+        body: ToolPromoteBody,
+        request: Request,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
+        """Request promotion of a workspace-local tool to a target
+        workspace (typically ``shared-internal-tools``).
+
+        Source workspace is derived from ``request.state.workspace_slug``
+        (set by the auth middleware). Body carries only the target +
+        a justification — never the source slug, the requester id, or
+        the request id (v4 §4.1 forbidden-field rule).
+        """
+        _require_role(request, "WorkspaceAdmin")
+        try:
+            record = _promotions.request(
+                tool_name=name,
+                from_workspace_slug=slug,
+                to_workspace_slug=body.to_workspace_slug,
+                requested_by=_actor_user_id(request),
+                justification=body.justification,
+            )
+        except PromotionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return record.as_json_dict()
+
+    @app.get("/api/tool-promotions")
+    def list_tool_promotions(request: Request) -> list[dict[str, Any]]:
+        """List every pending promotion request. PlatformAdmin
+        (IncidentRemediator role) only — the approver surface."""
+        _require_role(request, "IncidentRemediator")
+        return [r.as_json_dict() for r in _promotions.list_pending()]
+
+    @app.post("/api/tool-promotions/{request_id}/approve")
+    def approve_tool_promotion(
+        request_id: str,
+        body: PromotionDecisionBody,
+        request: Request,
+    ) -> dict[str, Any]:
+        """Approve a pending promotion. Performs the cross-workspace
+        directory copy + records the approval. PlatformAdmin only."""
+        _require_role(request, "IncidentRemediator")
+        try:
+            record = _promotions.approve(
+                request_id=request_id,
+                approver_user_id=_actor_user_id(request),
+                decision_note=body.decision_note,
+            )
+        except PromotionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PromotionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return record.as_json_dict()
+
+    @app.post("/api/tool-promotions/{request_id}/deny")
+    def deny_tool_promotion(
+        request_id: str,
+        body: PromotionDecisionBody,
+        request: Request,
+    ) -> dict[str, Any]:
+        """Deny a pending promotion. Source unchanged; record kept
+        for audit. PlatformAdmin only."""
+        _require_role(request, "IncidentRemediator")
+        try:
+            record = _promotions.deny(
+                request_id=request_id,
+                approver_user_id=_actor_user_id(request),
+                decision_note=body.decision_note,
+            )
+        except PromotionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PromotionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return record.as_json_dict()
 
     # -----------------------------------------------------------------------
     # Phase 5 — ModelSpec generation + module match + gap analysis +
