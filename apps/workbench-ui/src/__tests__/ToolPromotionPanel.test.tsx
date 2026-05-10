@@ -36,7 +36,7 @@ const PENDING: ToolPromotionRequest = {
 };
 
 function buildSession(
-  capabilities: readonly string[],
+  capabilities: readonly Capability[],
 ): CurrentSessionResponse {
   return {
     user_id: "11111111-1111-4111-8111-111111111111",
@@ -49,9 +49,7 @@ function buildSession(
         workspace_name: "shared-public-experiments",
         role_id: "5b807f69-df63-5054-a96a-490c9668a567",
         role_name: "WorkspaceAdmin",
-        // ``capabilities`` is a closed Capability union, so cast at the test
-        // boundary. The component reads via includes().
-        capabilities: capabilities as readonly never[],
+        capabilities: capabilities satisfies readonly Capability[],
       },
     ],
   };

@@ -2004,3 +2004,41 @@ Do not solve context growth by copying another full policy block into every
 manual. Add a lookup tag and link to the canonical owner. If a touched section
 is sprawling, reconstruct that section around a short index, stable tags, and
 links to the dated bug/provenance records.
+
+## 2026-05-10: UI dependency/type boundary drift in tool promotion tests
+
+### Affected subsystem
+Workbench UI dependency verification and tool-promotion authorization tests:
+`apps/workbench-ui`.
+
+### Symptoms
+The Vite dev server failed to resolve the Monaco editor wrapper in a sibling
+checkout when local `node_modules` was out of sync with the declared package
+manifest. The same UI lane also contained a stale test helper that cast closed
+authorization capabilities through `readonly never[]`, leaving the hard
+typecheck sensitive to TypeScript inference drift.
+
+### Root cause
+The durable repository contract already declared `@monaco-editor/react` and
+`monaco-editor`, but the affected local install had not been refreshed. The
+test helper also modeled capability fixtures as arbitrary strings instead of
+the exported `Capability` union, then bypassed the mismatch with an unsafe
+cast.
+
+### Fix
+- Verified the main repository package manifest and lockfile include Monaco.
+- Updated `ToolPromotionPanel.test.tsx` so fixture capabilities are typed as
+  `readonly Capability[]` and checked with `satisfies` instead of casting
+  through `readonly never[]`.
+
+### Regression protection
+- `npm --prefix apps/workbench-ui run build` exercises `tsc --noEmit` and Vite
+  import analysis for the Monaco dependency.
+- `npm --prefix apps/workbench-ui test -- ToolPromotionPanel.test.tsx` verifies
+  the affected authorization panel behavior.
+
+### Agent warning
+Do not treat a Vite dependency-resolution error as proof that the source import
+is wrong before comparing `package.json`, `package-lock.json`, and the local
+install state. Do not hide closed-union fixture drift with `never` casts; type
+test fixtures against the exported boundary type.
