@@ -189,9 +189,60 @@ workbench.
   reference, and the `user_credentials` migration.
 - **Open follow-ups** (tracked in `--include-open-workstreams`):
   WebAuthn / TOTP enrollment for the platform admin (Phase 0.5
-  deferred); HMAC-signed pagination cursors on audit-events + operator
-  routes (carried over from the prior audit); workspace-scoped
-  imported-tool registries.
+  deferred). HMAC-signed pagination cursors on audit-events + operator
+  routes closed 2026-05-09 (commit `b0222cb`). Workspace-scoped
+  imported-tool registries are the next slice in flight.
+
+## Slug cross-check posture (resolved 2026-05-10)
+
+This ADR's original Decision section listed three production
+defenses for the gateway → FastAPI handoff: HMAC over the 7
+forwarded headers, loopback-only FastAPI bind, and a URL-path slug
+cross-check (the `slug_prefixed_paths` opt-in in
+`packages/core/src/simworkbench/api/auth_middleware.py`). The
+post-shipment audit + the Phase 0.5 close review surfaced an
+ambiguity: the gateway's `preRewrite` callback in
+`apps/workbench-gateway/src/proxy/workbenchProxy.ts` strips the
+URL slug before forwarding to FastAPI (so today's flat
+`/api/{rest}` FastAPI routes still match). The strip means
+**there is no slug at the FastAPI side to cross-check**;
+`slug_prefixed_paths=()` (the empty default) makes the cross-check
+a runtime no-op.
+
+The resolved posture, dated 2026-05-10:
+
+- **Production defenses are HMAC + loopback bind.** Both are
+  active by default. HMAC verification rejects any
+  same-host process that lacks the shared secret; the loopback
+  bind keeps off-host access at the network layer. These two
+  defenses are sufficient for the threat model the ADR's
+  original Decision section describes.
+- **The slug cross-check is opt-in / no-op until URLs change.**
+  It exists in the code as a tested, deployable feature, but it
+  fires only when (a) the gateway stops stripping the slug in
+  `preRewrite`, AND (b) the FastAPI configuration sets
+  `slug_prefixed_paths=("/api",)`. Both flips happen together;
+  one without the other is a regression.
+- **The trade-off was an explicit choice.** Activating the
+  cross-check requires refactoring ~30 FastAPI route URLs from
+  `/api/foo` to `/api/{slug}/foo` (and updating every existing
+  test that asserts on those URLs). The cost is ~600 lines + a
+  multi-commit migration; the threat-model gain over HMAC alone
+  is "even if a same-host attacker learns the HMAC secret, they
+  still need to forge a URL slug that matches the asserted
+  workspace_slug". That gain is meaningful but speculative;
+  HMAC + loopback are sufficient for the deployments this ADR
+  was originally written for.
+- **Revisit triggers.** Pick up the URL refactor when (a) a
+  new same-host attack surface lands (e.g. unprivileged Linux
+  containers sharing a kernel namespace with the gateway), or
+  (b) the FastAPI URLs grow workspace-aware semantics that
+  benefit from the slug being part of the route shape.
+
+The decision is reversible. The opt-in surface
+(`slug_prefixed_paths=()` default) is preserved exactly so that
+flipping it back on requires a deliberate config change rather
+than a re-architecture.
 
 ## References
 

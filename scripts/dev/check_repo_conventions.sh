@@ -3184,6 +3184,20 @@ check_grep_in_file 'rewritePrefix: "/api"' \
 check_grep_in_file 'preRewrite' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy preRewrite strips slug from forwarded URL (E2-rest)"
+# Phase β (2026-05-10): pin the ADR-0014 "Slug cross-check posture
+# (resolved 2026-05-10)" decision. The two flips below MUST stay
+# coupled — the cross-check is opt-in / no-op until BOTH the proxy
+# stops stripping AND the FastAPI middleware sets a non-empty
+# slug_prefixed_paths. Decoupling them is a regression.
+check_grep_in_file 'slug_prefixed_paths: tuple\[str, \.\.\.\] = \(\)' \
+  packages/core/src/simworkbench/api/auth_middleware.py \
+  "auth_middleware default slug_prefixed_paths is the empty tuple (cross-check opt-in)"
+check_grep_in_file 'Slug cross-check posture \(resolved 2026-05-10\)' \
+  program_development/architectural_decisions/ADR-0014-auth-gateway.md \
+  "ADR-0014 records the slug cross-check posture decision (β close)"
+check_grep_in_file 'preRewrite strips the slug for every /api' \
+  apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
+  "workbenchProxy regression test names the slug-strip contract directly"
 check_grep_in_file 'routes: \["/:slug"' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy route shape is /api/:slug (E2-rest workspace authorization)"

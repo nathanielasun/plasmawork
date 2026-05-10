@@ -340,6 +340,41 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
     await app.close();
   });
 
+  it("preRewrite strips the slug for every /api/{slug}/{...} URL (ADR-0014 posture)", async () => {
+    // Explicit regression for ADR-0014's "Slug cross-check posture
+    // (resolved 2026-05-10)" section. The gateway MUST strip the
+    // workspace slug before forwarding to FastAPI — flipping this
+    // off requires a coordinated change to both the proxy AND the
+    // FastAPI middleware's slug_prefixed_paths config (the third
+    // defense). One without the other is a regression.
+    //
+    // The strip is exercised by every handoff test above as a side
+    // effect; this test names the contract directly so a future
+    // refactor that drops `preRewrite` (e.g. a config-cleanup PR)
+    // surfaces the intent change at review time.
+    captures.length = 0;
+    const app = await buildProxyOnlyApp({
+      upstreamUrl: upstream.baseUrl,
+      authChain: buildStubAuthChain(),
+    });
+
+    // Three different URL shapes, all must arrive slug-stripped.
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      [`/api/${WORKSPACE_SLUG}/capsules`, "/api/capsules"],
+      [`/api/${WORKSPACE_SLUG}/runs/abc`, "/api/runs/abc"],
+      [`/api/${WORKSPACE_SLUG}/tools/foo/runs`, "/api/tools/foo/runs"],
+    ];
+    for (const [inUrl, expectedUpstreamUrl] of cases) {
+      const r = await app.inject({ method: "GET", url: inUrl });
+      expect(r.statusCode).toBe(200);
+    }
+    expect(captures.map((c) => c.url)).toEqual(
+      cases.map(([, expected]) => expected),
+    );
+
+    await app.close();
+  });
+
   it("URL without a slug → 404 (Fastify routing miss; never reaches upstream)", async () => {
     captures.length = 0;
     const app = await buildProxyOnlyApp({
