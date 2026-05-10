@@ -2275,3 +2275,86 @@ ol.lifecycle li.lifecycle-active {
   font-size: 0.8rem;
   color: var(--muted);
 }
+
+/* ---- Login (Phase 0.5 / Phase F-min, 2026-05-09) ---------------------- */
+/* Standalone login surface — no sidebar, no header. The page renders */
+/* before the workspace switcher exists, so it can't lean on the layout */
+/* shell. Uses the existing card / surface / spacing tokens. */
+.login-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+  background: var(--surface-page);
+}
+.login-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-6);
+  width: 100%;
+  max-width: 24rem;
+}
+.login-title {
+  margin: 0 0 var(--space-5);
+  font-size: 1.25rem;
+  color: var(--fg);
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.login-field span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.login-field input {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--fg);
+  font-size: 1rem;
+}
+.login-field input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.login-field input:disabled {
+  background: var(--surface-nested);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.login-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid #c0392b;
+  background: #fef0ec;
+  color: #842029;
+  font-size: 0.875rem;
+  border-radius: var(--radius-sm);
+}
+.login-submit {
+  padding: var(--space-3);
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.login-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.login-submit:hover:not(:disabled) {
+  filter: brightness(0.95);
+}

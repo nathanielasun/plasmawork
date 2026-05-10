@@ -120,9 +120,53 @@ export interface SecureCoreErrorEnvelope {
   };
 }
 
+/**
+ * Login request — Phase 0.5 / Phase F-min (2026-05-09).
+ *
+ * Username-primary identity. The username regex
+ * ``^[A-Za-z0-9_-]{3,64}$`` matches LOGIN_SCHEMA at the gateway.
+ * Email is intentionally NOT a login identifier; it is optional
+ * supplementary metadata for recovery flows only.
+ */
+export interface LoginRequestBody {
+  readonly username: string;
+  readonly password: string;
+}
+
+/**
+ * Login response. The raw session token is delivered ONLY as a
+ * Set-Cookie (``secure_session``); the response body never carries it.
+ * The CSRF token IS in the body so the SPA can cache it in memory and
+ * echo it as ``X-CSRF-Token`` on every state-changing request (the
+ * cookie copy is the redundant defense — v4 §7.2 double-submit).
+ */
+export interface LoginResponseBody {
+  readonly user_id: string;
+  readonly session_id: string;
+  readonly assurance_level: AssuranceLevel;
+  readonly csrf_token: string;
+  readonly expires_at: string;
+}
+
 export interface SecureCoreClient {
   currentSession(signal?: AbortSignal): Promise<CurrentSessionResponse>;
   securityDashboard(signal?: AbortSignal): Promise<SecurityDashboardResponse>;
+  /**
+   * POST /auth/login — anti-enumeration. Every failure (unknown
+   * username, wrong password, disabled account) surfaces as the same
+   * `UNAUTHENTICATED` 401 with a generic message. Callers MUST NOT
+   * branch UI behavior on the error code.
+   */
+  login(
+    body: LoginRequestBody,
+    signal?: AbortSignal,
+  ): Promise<LoginResponseBody>;
+  /**
+   * POST /auth/logout — revokes the session and clears both cookies
+   * (idempotent; succeeds even if the session is already expired).
+   * Callers should redirect to the login page after this resolves.
+   */
+  logout(signal?: AbortSignal): Promise<void>;
 }
 
 export class SecureCoreHttpError extends Error {
@@ -167,10 +211,16 @@ async function readJson<T>(
   baseUrl: string,
   path: string,
   signal?: AbortSignal,
+  init?: RequestInit,
 ): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...((init?.headers as Record<string, string> | undefined) ?? {}),
+  };
   const response = await fetch(joinUrl(baseUrl, path), {
     credentials: "include",
-    headers: { Accept: "application/json" },
+    ...(init ?? {}),
+    headers,
     signal,
   });
   const text = await response.text();
@@ -224,6 +274,28 @@ export function createSecureCoreClient(
         baseUrl,
         "/operator/security-dashboard",
         signal,
+      );
+    },
+    login(body: LoginRequestBody, signal?: AbortSignal) {
+      return readJson<LoginResponseBody>(baseUrl, "/auth/login", signal, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: body.username,
+          password: body.password,
+        }),
+      });
+    },
+    async logout(signal?: AbortSignal) {
+      await readJson<{ status: "ok" } | null>(
+        baseUrl,
+        "/auth/logout",
+        signal,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        },
       );
     },
   };

@@ -3262,6 +3262,33 @@ check_grep_in_file 'workspace_slug_dep' \
   packages/core/src/simworkbench/api/server.py \
   "server.py threads workspace_slug_dep through handlers (Phase E5)"
 
+# Phase 0.5 auth gateway / Phase F-min (login UI + auth API).
+# F-min ships the login page + the auth API helpers. F-rest
+# (SessionGuard, WorkspaceSwitcher, LogoutButton, client.ts
+# credentials/CSRF) follows in subsequent commits.
+section "Phase 0.5 auth gateway / Phase F-min (login UI)"
+check_file_exists apps/workbench-ui/src/components/auth/LoginForm.tsx
+check_grep_in_file 'export function LoginForm' \
+  apps/workbench-ui/src/components/auth/LoginForm.tsx \
+  "LoginForm component exported"
+check_grep_in_file 'Invalid username or password\.' \
+  apps/workbench-ui/src/components/auth/LoginForm.tsx \
+  "LoginForm uses generic auth-failure message (anti-enumeration)"
+check_file_exists apps/workbench-ui/src/app/login/page.tsx
+check_file_exists apps/workbench-ui/src/__tests__/LoginForm.test.tsx
+check_grep_in_file 'login\(' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "secureCoreClient exports login() method"
+check_grep_in_file 'logout\(' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "secureCoreClient exports logout() method"
+check_grep_in_file 'LoginRequestBody' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "secureCoreClient exports LoginRequestBody type"
+check_grep_in_file 'LoginResponseBody' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "secureCoreClient exports LoginResponseBody type"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard
