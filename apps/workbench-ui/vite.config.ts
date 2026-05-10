@@ -40,5 +40,10 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/__tests__/setup.ts"],
+    // Layer 5 lives in apps/workbench-ui/e2e/ and runs under
+    // Playwright (npm run test:e2e). Exclude it from vitest so the
+    // .spec.ts files don't accidentally get picked up by the default
+    // vitest discovery.
+    exclude: ["node_modules", "dist", "build", "e2e/**"],
   },
 });

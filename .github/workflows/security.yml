@@ -221,6 +221,35 @@ jobs:
       - name: Run Layer 4 cross-process smoke
         run: scripts/test/cross_process_smoke.sh
 
+  ui-cross-process-e2e:
+    name: ui-cross-process-e2e
+    runs-on: ubuntu-latest
+    # Layer 5 of the cross-process wiring test strategy. Drives a real
+    # Chromium against vite-dev + a stub gateway to catch the SPA-
+    # fallback regression shape (vite serving 200 text/html for a
+    # proxied path). Opt-in via repo variable; scheduled nightly only.
+    if: github.event_name != 'pull_request' && vars.PLASMAWORK_E2E == '1'
+    env:
+      PLASMAWORK_E2E: "1"
+      CI: "true"
+      PLAYWRIGHT_INSTALL_BROWSERS: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/workbench-ui/package-lock.json
+
+      - name: Install workbench-ui dependencies
+        run: npm --prefix apps/workbench-ui ci
+
+      - name: Run Layer 5 Playwright E2E
+        run: scripts/test/cross_process_e2e.sh
+
   codeql-typescript:
     name: codeql-typescript
     runs-on: ubuntu-latest

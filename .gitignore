@@ -51,6 +51,12 @@ docs_site/src/**/*.d.ts
 apps/workbench-ui/package-lock.json
 docs_site/package-lock.json
 
+# Playwright runtime artifacts (Layer 5 cross-process E2E). Re-created
+# on every run; never check in.
+apps/workbench-ui/test-results/
+apps/workbench-ui/playwright-report/
+apps/workbench-ui/blob-report/
+
 # Local program directories — keep folders, ignore contents
 local_cache/*
 temp_imports/*

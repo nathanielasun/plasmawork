@@ -3905,6 +3905,25 @@ check_file_exists apps/workbench-ui/src/__tests__/viteProxyContract.test.ts \
 # env-gated branch runs the test).
 check_grep_in_file 'cross_process_smoke\.sh' scripts/test/all.sh \
   "scripts/test/all.sh wires the cross-process smoke wrapper"
+check_grep_in_file 'cross_process_e2e\.sh' scripts/test/all.sh \
+  "scripts/test/all.sh wires the cross-process e2e wrapper"
+
+# Layer 5 (Commit C) wiring presence — Playwright spec + stub gateway +
+# config + wrapper script. The env-gated lane is nightly-only in CI.
+check_file_executable scripts/test/cross_process_e2e.sh \
+  "scripts/test/cross_process_e2e.sh present (Layer 5 wrapper)"
+check_file_exists apps/workbench-ui/playwright.config.ts \
+  "Layer 5 Playwright config present"
+check_file_exists apps/workbench-ui/e2e/proxyWiring.spec.ts \
+  "Layer 5 Playwright spec present"
+check_file_exists apps/workbench-ui/e2e/stubGateway.mjs \
+  "Layer 5 stub-gateway helper present"
+check_grep_in_file '"test:e2e": "playwright test"' \
+  apps/workbench-ui/package.json \
+  "workbench-ui has test:e2e script wired"
+check_grep_in_file '"@playwright/test"' \
+  apps/workbench-ui/package.json \
+  "workbench-ui declares @playwright/test devDependency"
 
 # Open-workstream TODO branch. No items currently open — both Phase 0.5
 # audit-fix follow-ups closed 2026-05-09. The branch stays in place so

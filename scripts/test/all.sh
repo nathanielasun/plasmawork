@@ -21,3 +21,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 # message); the env-gated path requires .venv/bin/python with simworkbench
 # installed and a free local port pair.
 "$SCRIPT_DIR/cross_process_smoke.sh"
+
+# Layer 5 Playwright E2E runs only when PLASMAWORK_E2E=1. Default-CI is a
+# no-op; the env-gated path requires the workbench-ui node_modules and
+# the Chromium browser binary (one-time install via npx playwright install).
+"$SCRIPT_DIR/cross_process_e2e.sh"
