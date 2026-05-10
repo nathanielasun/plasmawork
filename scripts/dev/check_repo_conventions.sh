@@ -3888,6 +3888,24 @@ check_grep_fixed_in_file '"csrf_token"' \
   apps/workbench-ui/src/api/csrf.ts \
   "UI api/csrf.ts reads 'csrf_token' cookie"
 
+# Layer 4 (Commit B) + Layer 5 wiring presence — operator-runnable
+# wrappers + supporting helpers must remain executable so the cross-
+# process smoke + E2E lanes stay reproducible.
+check_file_executable scripts/dev/wait_for_http.sh \
+  "scripts/dev/wait_for_http.sh present (Layer 4 helper)"
+check_file_executable scripts/test/cross_process_smoke.sh \
+  "scripts/test/cross_process_smoke.sh present (Layer 4 wrapper)"
+check_file_exists apps/workbench-gateway/test/integration/proxyToFastApi.test.ts \
+  "Layer 4 cross-process HMAC smoke test present"
+check_file_exists apps/workbench-gateway/test/integration/handoffContract.test.ts \
+  "Layer 2 TS↔Python handoff-contract snapshot present"
+check_file_exists apps/workbench-ui/src/__tests__/viteProxyContract.test.ts \
+  "Layer 3 Vite-proxy contract test present"
+# all.sh must invoke the smoke wrapper (it's a no-op in default CI; the
+# env-gated branch runs the test).
+check_grep_in_file 'cross_process_smoke\.sh' scripts/test/all.sh \
+  "scripts/test/all.sh wires the cross-process smoke wrapper"
+
 # Open-workstream TODO branch. No items currently open — both Phase 0.5
 # audit-fix follow-ups closed 2026-05-09. The branch stays in place so
 # a future workstream can add items without re-introducing the

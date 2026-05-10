@@ -182,6 +182,45 @@ jobs:
       - name: Run live WORM Object-Lock probes
         run: scripts/test/security_live_worm.sh
 
+  cross-process-smoke:
+    name: cross-process-smoke
+    runs-on: ubuntu-latest
+    # Layer 4 of the cross-process wiring test strategy (2026-05-10).
+    # Spawns FastAPI as a subprocess and POSTs gateway-signed handoff
+    # headers directly, proving the HMAC byte contract between the TS
+    # signer and the Python verifier. Opt-in via repository variable
+    # so PR runs stay fast.
+    if: github.event_name != 'pull_request' && vars.PLASMAWORK_CROSS_PROCESS_SMOKE == '1'
+    env:
+      PLASMAWORK_CROSS_PROCESS_SMOKE: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install workbench Python package
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e packages/core
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/workbench-gateway/package-lock.json
+
+      - name: Install gateway dependencies
+        run: npm --prefix apps/workbench-gateway ci
+
+      - name: Run Layer 4 cross-process smoke
+        run: scripts/test/cross_process_smoke.sh
+
   codeql-typescript:
     name: codeql-typescript
     runs-on: ubuntu-latest

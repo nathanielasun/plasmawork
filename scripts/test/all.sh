@@ -15,3 +15,9 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 "$SCRIPT_DIR/security.sh"
 "$SCRIPT_DIR/secure_core.sh"
 "$SCRIPT_DIR/workbench_gateway.sh"
+
+# Layer 4 cross-process smoke runs only when PLASMAWORK_CROSS_PROCESS_SMOKE=1.
+# Default-CI invocation is a no-op (the script exits 0 with an informational
+# message); the env-gated path requires .venv/bin/python with simworkbench
+# installed and a free local port pair.
+"$SCRIPT_DIR/cross_process_smoke.sh"
