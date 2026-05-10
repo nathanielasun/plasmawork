@@ -42,9 +42,24 @@ export function ToolPromotionPanel(
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const hasApproverCapability = (
-    session.activeMembership?.capabilities ?? []
-  ).includes("platform:incident_remediate");
+  // Audit fix (2026-05-10): the seeded platform admin holds
+  // ``platform:incident_remediate`` ONLY in the synthetic
+  // ``_platform`` workspace. The WorkspaceSwitcher filters out
+  // ``_platform`` from the dropdown (it's not a real workspace), so
+  // ``activeMembership`` for the platform admin is normally
+  // ``shared-internal-tools`` or ``shared-public-experiments``,
+  // neither of which carries the platform capability. The previous
+  // active-only check made the panel permanently inaccessible to
+  // the very role it was designed for.
+  //
+  // Fix: aggregate platform-tier capabilities across EVERY membership
+  // (the platform-tier is anchored at user-level, not workspace-level
+  // — v4 §13.2). The active workspace continues to scope tool /
+  // capsule / run capabilities, but ``platform:*`` capabilities are
+  // a global property of the user.
+  const hasApproverCapability = session.session.memberships.some((m) =>
+    (m.capabilities ?? []).includes("platform:incident_remediate"),
+  );
 
   async function refresh(): Promise<void> {
     if (!hasApproverCapability) {

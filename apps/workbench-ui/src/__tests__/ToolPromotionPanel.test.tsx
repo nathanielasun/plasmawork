@@ -141,6 +141,48 @@ describe("ToolPromotionPanel", () => {
     expect(api.listToolPromotions).toHaveBeenCalledTimes(2);
   });
 
+  it("renders for the platform admin even when capability lives on a different membership (audit fix 2026-05-10)", async () => {
+    // Mirrors the seeded-bootstrap shape: the platform admin holds
+    // `platform:incident_remediate` ONLY in `_platform`, not in
+    // their active workspace. The previous active-only check made
+    // the panel permanently inaccessible to the very role it was
+    // designed for.
+    const session: CurrentSessionResponse = {
+      user_id: "11111111-1111-4111-8111-111111111111",
+      session_id: "22222222-2222-4222-8222-222222222222",
+      actor_type: "human",
+      assurance_level: "aal2",
+      memberships: [
+        // Active workspace — NO platform capability.
+        {
+          workspace_id: "33333333-3333-4333-8333-333333333333",
+          workspace_name: "shared-public-experiments",
+          role_id: "5b807f69-df63-5054-a96a-490c9668a567",
+          role_name: "WorkspaceAdmin",
+          capabilities: [] as readonly never[],
+        },
+        // Platform anchor workspace — carries the capability.
+        {
+          workspace_id: "44444444-4444-4444-8444-444444444444",
+          workspace_name: "_platform",
+          role_id: "9fd675cb-dbaa-59d3-9f21-3e5ae3bfc4ad",
+          role_name: "IncidentRemediator",
+          capabilities: ["platform:incident_remediate"] as readonly never[],
+        },
+      ],
+    };
+    const api = buildApi({});
+    render(
+      <SessionProvider session={session}>
+        <ToolPromotionPanel api={api} />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("_pytest_promote_demo")).toBeInTheDocument(),
+    );
+    expect(api.listToolPromotions).toHaveBeenCalledTimes(1);
+  });
+
   it("shows empty-state copy when no pending requests", async () => {
     const api = buildApi({ listToolPromotions: vi.fn(async () => []) });
     render(

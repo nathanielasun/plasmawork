@@ -1640,8 +1640,47 @@ def create_app(
     def preview_tool_authoring_draft(
         draft_id: str,
         body: ToolDraftPreviewBody,
+        request: Request,
         slug: str = Depends(workspace_slug_dep),
     ) -> dict[str, Any]:
+        # Audit fix (2026-05-10): the draft preview spawns a Python
+        # subprocess that imports the author's draft module and calls
+        # tool.execute(). The subprocess inherits os.environ and runs
+        # with the repo-root cwd, so authored code can read secrets,
+        # write outside intended roots, or use the network within the
+        # 12-second timeout. In multi-tenant mode this is a critical
+        # backend RCE: any authenticated workspace member could
+        # weaponize the preview path.
+        #
+        # Two-gate fix:
+        #
+        # 1. Gateway-required (production) mode REQUIRES an explicit
+        #    operator opt-in via ``WORKBENCH_PREVIEW_SANDBOX_ENABLED=1``.
+        #    The flag exists so the operator can signal "I've wired
+        #    preview through gVisor / a process-isolated sandbox /
+        #    equivalent". Without it, preview is refused with 503.
+        # 2. Even with the flag set, only callers carrying the
+        #    "WorkspaceAdmin" role can trigger preview. Regular
+        #    workspace members cannot run authored Python.
+        #
+        # Dev mode (no gateway middleware) keeps the legacy permissive
+        # behavior so single-user developer workflows aren't disrupted;
+        # the threat model assumes single-user trust there.
+        if _gateway_required_from_env():
+            sandbox = os.environ.get("WORKBENCH_PREVIEW_SANDBOX_ENABLED", "")
+            if sandbox != "1":
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Tool draft preview is disabled in production mode. "
+                        "Operator MUST set WORKBENCH_PREVIEW_SANDBOX_ENABLED=1 "
+                        "after wiring the preview subprocess through a "
+                        "kernel-isolated sandbox (gVisor / runsc). The "
+                        "default Python subprocess inherits os.environ + "
+                        "the repo-root cwd, which is a multi-tenant RCE."
+                    ),
+                )
+            _require_role(request, "WorkspaceAdmin")
         try:
             return _authoring(slug).preview_draft(
                 draft_id=draft_id,

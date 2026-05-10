@@ -3687,6 +3687,18 @@ check_grep_in_file 'LOGIN_LOCKOUT_DURATION_MS' \
 check_grep_in_file 'account_locked' \
   packages/secure_core/test/auth/loginService.test.ts \
   "loginService test pins the account_locked branch"
+check_grep_in_file 'WORKBENCH_PREVIEW_SANDBOX_ENABLED' \
+  packages/core/src/simworkbench/api/server.py \
+  "preview endpoint refuses without WORKBENCH_PREVIEW_SANDBOX_ENABLED in production (RCE gate)"
+check_grep_in_file 'platformRolesFor' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "proxy plugin accepts platformRolesFor seam (cross-membership platform-role aggregation)"
+check_grep_in_file "platform:%" \
+  apps/workbench-gateway/src/main.ts \
+  "main.ts wires platformRolesFor against the appPool"
+check_grep_in_file 'session\.session\.memberships\.some' \
+  apps/workbench-ui/src/components/tools/ToolPromotionPanel.tsx \
+  "ToolPromotionPanel checks platform capability across all memberships (audit fix 2026-05-10)"
 
 # Phase 0.5 audit-fix follow-ups — closed 2026-05-09. Both items
 # previously lived in the --include-open-workstreams branch; ratcheted

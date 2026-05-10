@@ -81,6 +81,25 @@ export interface WorkbenchProxyOptions {
    * ``req.workspace`` / ``req.membership`` directly.
    */
   readonly authChain: ReadonlyArray<MiddlewareHandler>;
+  /**
+   * Async lookup of platform-tier roles a user holds across ANY
+   * workspace membership. Audit fix (2026-05-10): platform roles
+   * (IncidentRemediator, etc.) are anchored at user-level — v4 §13.2
+   * — but the active workspace might not be where the role lives
+   * (the seeded admin's IncidentRemediator role is in ``_platform``,
+   * which the workspace switcher filters out). Without this seam,
+   * the FastAPI ``_require_role`` checks against
+   * ``req.membership.roleName`` only and refuses the platform admin's
+   * own approval requests.
+   *
+   * The seam returns the union of platform-tier role names across
+   * every membership; the handoff signer appends them to the active
+   * workspace's role list so FastAPI sees both.
+   *
+   * Tests can pass a stub that returns ``[]``; production wires a DB
+   * query against the user's full membership set.
+   */
+  readonly platformRolesFor?: (userId: string) => Promise<readonly string[]>;
   /** Optional clock seam — defaults to `Date.now`. Tests inject a fixed clock. */
   readonly now?: () => number;
 }
@@ -111,6 +130,7 @@ export function stripInboundHandoffHeaders(req: FastifyRequest): void {
 export function buildHandoffPreHandler(opts: {
   readonly handoffSecret: string;
   readonly now: () => number;
+  readonly platformRolesFor?: (userId: string) => Promise<readonly string[]>;
 }): MiddlewareHandler {
   return async (req) => {
     if (req.auth === undefined) {
@@ -131,12 +151,29 @@ export function buildHandoffPreHandler(opts: {
     stripInboundHandoffHeaders(req);
 
     const issuedAtSec = Math.floor(opts.now() / 1000);
-    // The role name (single string) is the canonical role assignment;
-    // capabilities aren't passed in the handoff because they're not
-    // safe to trust on the FastAPI side without a gateway-supplied
-    // signature over each one. The FastAPI side treats roles as
-    // informational; authorization decisions live at the gateway.
-    const roles = [req.membership.roleName];
+    // The active membership's role name is canonical; FastAPI keys
+    // workspace-scoped role checks against this list. Audit fix
+    // (2026-05-10): platform-tier roles (IncidentRemediator, etc.)
+    // are user-level per v4 §13.2 — they live independent of any
+    // active workspace. Aggregate them here so FastAPI's
+    // ``_require_role`` sees the union.
+    const baseRoles = [req.membership.roleName];
+    let platformRoles: readonly string[] = [];
+    if (opts.platformRolesFor !== undefined) {
+      try {
+        platformRoles = await opts.platformRolesFor(req.auth.userId);
+      } catch {
+        // Lookup failure is non-fatal: the workspace-tier role
+        // still rides through, so workspace-scoped operations work.
+        // Platform-tier operations refuse server-side. The DB is
+        // the canonical source; a transient failure shouldn't block
+        // the request entirely.
+        platformRoles = [];
+      }
+    }
+    // Deduplicate; the active workspace's role might also appear in
+    // the platform-roles set if the user holds it in multiple slots.
+    const roles = Array.from(new Set([...baseRoles, ...platformRoles]));
     const payload: HandoffPayload = {
       userId: req.auth.userId,
       workspaceId: req.workspace.id,
@@ -161,6 +198,7 @@ export const workbenchProxyPlugin: FastifyPluginAsync<
   const handoffPreHandler = buildHandoffPreHandler({
     handoffSecret: opts.handoffSecret,
     now,
+    platformRolesFor: opts.platformRolesFor,
   });
 
   // The preHandler argument accepts either a single function or an

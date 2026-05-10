@@ -137,6 +137,73 @@ def test_workspace_slug_dep_rejects_missing_state_in_required_mode(gateway_env):
     assert r.status_code == 401
 
 
+def test_preview_refused_in_production_without_sandbox_flag(
+    gateway_env,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Audit fix (2026-05-10) — Critical: tool draft preview is an
+    unsandboxed Python subprocess that inherits os.environ. In
+    multi-tenant production, ANY authenticated workspace member can
+    weaponize it for RCE.
+
+    The fix gates preview behind ``WORKBENCH_PREVIEW_SANDBOX_ENABLED=1``
+    in production mode. Without the flag, the endpoint refuses with
+    503 — no subprocess, no RCE surface."""
+    monkeypatch.delenv("WORKBENCH_PREVIEW_SANDBOX_ENABLED", raising=False)
+    from simworkbench.api.server import create_app
+
+    client = TestClient(create_app())
+    # Sign a request so we get past the middleware. The preview gate
+    # fires AFTER auth.
+    r = client.post(
+        "/api/tool-authoring/drafts/some-id/preview",
+        headers=_signed_headers(),
+        json={"harness": "python_smoke"},
+    )
+    assert r.status_code == 503, r.text
+    assert "WORKBENCH_PREVIEW_SANDBOX_ENABLED" in r.text
+
+
+def test_preview_refused_in_production_for_non_workspace_admin(
+    gateway_env,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Even with the sandbox flag set, a regular workspace member
+    (no WorkspaceAdmin role) cannot trigger preview."""
+    monkeypatch.setenv("WORKBENCH_PREVIEW_SANDBOX_ENABLED", "1")
+    from simworkbench.api.server import create_app
+
+    client = TestClient(create_app())
+    # Sign with empty roles — non-WorkspaceAdmin member.
+    issued_at_sec = int(time.time())
+    payload = "|".join(
+        (USER_ID, WORKSPACE_ID, WORKSPACE_SLUG, "", REQUEST_ID, str(issued_at_sec))
+    )
+    headers = {
+        HANDOFF_HEADER_USER_ID: USER_ID,
+        HANDOFF_HEADER_WORKSPACE_ID: WORKSPACE_ID,
+        HANDOFF_HEADER_WORKSPACE_SLUG: WORKSPACE_SLUG,
+        HANDOFF_HEADER_REQUEST_ID: REQUEST_ID,
+        HANDOFF_HEADER_ISSUED_AT: str(issued_at_sec),
+        HANDOFF_HEADER_SIGNATURE: _sign(payload),
+    }
+    # Empty roles header is malformed per the middleware (rejected
+    # at handoff layer); use a non-WorkspaceAdmin role instead.
+    canonical_roles = "Researcher"
+    payload2 = "|".join(
+        (USER_ID, WORKSPACE_ID, WORKSPACE_SLUG, canonical_roles, REQUEST_ID, str(issued_at_sec))
+    )
+    headers[HANDOFF_HEADER_ROLES] = canonical_roles
+    headers[HANDOFF_HEADER_SIGNATURE] = _sign(payload2)
+    r = client.post(
+        "/api/tool-authoring/drafts/some-id/preview",
+        headers=headers,
+        json={"harness": "python_smoke"},
+    )
+    # 403 (role refused) — not 200, not 503.
+    assert r.status_code == 403, r.text
+
+
 def test_dev_mode_uses_default_workspace_fallback(gateway_disabled_env):
     """Without the env var set, the fallback is engaged so existing
     TestClient tests + internal-caller scripts keep working."""

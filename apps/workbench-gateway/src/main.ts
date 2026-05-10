@@ -160,6 +160,26 @@ export async function buildGateway(
     upstreamUrl: `http://127.0.0.1:${env.backendPort}`,
     handoffSecret: env.handoffSecret,
     authChain: mw.proxyAuthChain,
+    // Platform-tier role aggregation across the user's full
+    // membership set. Audit fix (2026-05-10): the seeded admin's
+    // ``platform:incident_remediate`` lives in ``_platform``, which
+    // is never the active workspace; without this seam, FastAPI
+    // would refuse the very approvals the admin is supposed to
+    // perform.
+    platformRolesFor: async (userId: string) => {
+      const rows = await services.appPool.sql<
+        Array<{ role_name: string }>
+      >`
+        SELECT DISTINCT r.name AS role_name
+        FROM workspace_memberships wm
+        INNER JOIN roles r ON r.id = wm.role_id
+        INNER JOIN role_permissions rp ON rp.role_id = wm.role_id
+        WHERE wm.user_id = ${userId}::uuid
+          AND wm.removed_at IS NULL
+          AND rp.capability LIKE 'platform:%'
+      `;
+      return rows.map((r) => r.role_name);
+    },
   });
 
   return {
