@@ -3699,6 +3699,19 @@ check_grep_in_file "platform:%" \
 check_grep_in_file 'session\.session\.memberships\.some' \
   apps/workbench-ui/src/components/tools/ToolPromotionPanel.tsx \
   "ToolPromotionPanel checks platform capability across all memberships (audit fix 2026-05-10)"
+check_file_exists apps/workbench-gateway/src/proxy/routeCapabilityMap.ts
+check_grep_in_file 'PROXY_ROUTE_CAPABILITIES' \
+  apps/workbench-gateway/src/proxy/routeCapabilityMap.ts \
+  "proxy plugin pins per-route capability map (audit fix #2)"
+check_grep_in_file 'findRequiredCapability' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "proxy auth chain enforces per-route capabilities BEFORE forwarding"
+check_grep_in_file 'PROMOTION_AUDIT_LOG_NAME' \
+  packages/core/src/simworkbench/tools/promotion.py \
+  "promotion service writes a hash-chained audit log (interim, audit fix #7)"
+check_grep_in_file '_emit_promotion_audit' \
+  packages/core/src/simworkbench/tools/promotion.py \
+  "promotion service calls _emit_promotion_audit on request/approve/deny"
 
 # Phase 0.5 audit-fix follow-ups — closed 2026-05-09. Both items
 # previously lived in the --include-open-workstreams branch; ratcheted

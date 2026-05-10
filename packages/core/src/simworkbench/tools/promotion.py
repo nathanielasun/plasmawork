@@ -44,6 +44,7 @@ simply sets the status; the operator can manually delete the JSON.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import uuid
@@ -56,6 +57,89 @@ from simworkbench.paths import (
     imported_tools_root_for,
     tool_promotions_root,
 )
+
+
+# Tamper-evident audit chain for promotion decisions — Phase α
+# post-audit hardening (2026-05-10).
+#
+# The promotion JSON records under _pending_promotions/{id}.json are
+# mutable (status flips pending → approved | denied; decided_by /
+# decided_at land on the same record). That's fine for the workflow
+# state but it's NOT a tamper-evident audit. The audit caught this:
+# secure_core has a hash-chained audit_events table; our promotion
+# decisions don't reach it.
+#
+# Until a Python-side client to the gateway's audit logger ships,
+# this module writes an append-only jsonl chain to
+# ``_pending_promotions/_audit_chain.jsonl`` that mirrors v4 §19.3's
+# row-hash shape: each line is ``{prev_hash, fields..., row_hash}``
+# where row_hash = SHA-256(canonical(prev_hash + fields)). A single
+# operator inspecting the file can verify integrity by walking the
+# chain. Mismatched hashes are evidence of tampering.
+#
+# This is INTERIM. The follow-on is a Python audit client that POSTs
+# to a new gateway-internal /internal/audit-events endpoint so the
+# events land in the canonical secure_core audit chain.
+PROMOTION_AUDIT_LOG_NAME = "_audit_chain.jsonl"
+
+
+def _canonicalize(payload: dict[str, object]) -> bytes:
+    """JCS-style canonicalization: sorted keys + minimal separators."""
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _emit_promotion_audit(
+    *,
+    action: str,
+    record: PromotionRequest,
+) -> None:
+    """Append a hash-chained event to the promotion audit log.
+
+    The fields land in a stable canonical order; the row_hash chains
+    to the previous line's row_hash so an attacker who edits any
+    record breaks the chain at the next read.
+    """
+    log_path = tool_promotions_root() / PROMOTION_AUDIT_LOG_NAME
+    prev_hash: str | None = None
+    if log_path.is_file():
+        try:
+            last_line = ""
+            with log_path.open("r", encoding="utf-8") as fh:
+                for raw in fh:
+                    raw = raw.strip()
+                    if raw:
+                        last_line = raw
+            if last_line:
+                prev = json.loads(last_line)
+                prev_hash = prev.get("row_hash")
+        except (OSError, ValueError):
+            # Corrupted last line — treat as the chain head. A future
+            # `verify_promotion_audit_chain` helper would surface
+            # this as a tamper finding rather than silently re-chaining.
+            prev_hash = None
+    fields: dict[str, object] = {
+        "action": action,
+        "request_id": record.request_id,
+        "tool_name": record.tool_name,
+        "from_workspace_slug": record.from_workspace_slug,
+        "to_workspace_slug": record.to_workspace_slug,
+        "requested_by": record.requested_by,
+        "requested_at": record.requested_at,
+        "status": record.status,
+        "decided_by": record.decided_by,
+        "decided_at": record.decided_at,
+        "ts": _now_iso(),
+    }
+    payload: dict[str, object] = {"prev_hash": prev_hash, **fields}
+    row_hash = hashlib.sha256(_canonicalize(payload)).hexdigest()
+    line = {**payload, "row_hash": row_hash}
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Append atomically. The promotion path is single-writer per
+    # request_id (FastAPI single process); concurrent writes on
+    # DIFFERENT request_ids could in principle interleave, but each
+    # write is a single line so there's no torn-write hazard.
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(line, sort_keys=True) + "\n")
 
 
 PromotionStatus = Literal["pending", "approved", "denied"]
@@ -206,6 +290,7 @@ class PromotionService:
             json.dumps(record.as_json_dict(), indent=2),
             encoding="utf-8",
         )
+        _emit_promotion_audit(action="tool.promotion_requested", record=record)
         return record
 
     def list_pending(self) -> list[PromotionRequest]:
@@ -329,6 +414,7 @@ class PromotionService:
             json.dumps(approved.as_json_dict(), indent=2),
             encoding="utf-8",
         )
+        _emit_promotion_audit(action="tool.promotion_approved", record=approved)
         return approved
 
     def deny(
@@ -369,4 +455,5 @@ class PromotionService:
             json.dumps(denied.as_json_dict(), indent=2),
             encoding="utf-8",
         )
+        _emit_promotion_audit(action="tool.promotion_denied", record=denied)
         return denied

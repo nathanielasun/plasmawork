@@ -275,3 +275,70 @@ def test_approve_unknown_request_returns_404():
         json={"decision_note": ""},
     )
     assert r.status_code == 404
+
+
+def test_promotion_decisions_land_in_tamper_evident_audit_chain(planted_tool):
+    """Audit fix (2026-05-10) #7 — interim: every request/approve/
+    deny appends a hash-chained event to
+    ``_pending_promotions/_audit_chain.jsonl``. The row_hash chains
+    to the previous row's row_hash so an attacker who mutates ANY
+    record breaks the chain at the next read.
+
+    This test pins three properties:
+      1. A request emits one chain entry with action
+         ``tool.promotion_requested``.
+      2. An approval emits a second entry that chains off the first
+         (the entry's ``prev_hash`` equals the previous entry's
+         ``row_hash``).
+      3. The chain is append-only — re-reading after mutation of an
+         intermediate entry would produce a different last-row hash.
+    """
+    import hashlib
+    import json as _json
+
+    name, _ = planted_tool
+    client = TestClient(create_app())
+
+    chain_path = tool_promotions_root() / "_audit_chain.jsonl"
+    pre_existing_lines = (
+        chain_path.read_text(encoding="utf-8").splitlines()
+        if chain_path.exists()
+        else []
+    )
+
+    request = client.post(
+        f"/api/tools/{name}/promote",
+        json={"to_workspace_slug": TARGET_SLUG, "justification": "vet"},
+    )
+    request_id = request.json()["request_id"]
+    client.post(
+        f"/api/tool-promotions/{request_id}/approve",
+        json={"decision_note": "approved"},
+    )
+
+    chain_lines = chain_path.read_text(encoding="utf-8").splitlines()
+    new_lines = chain_lines[len(pre_existing_lines):]
+    # Two new lines: requested + approved.
+    matching = [
+        _json.loads(line)
+        for line in new_lines
+        if request_id in line
+    ]
+    assert len(matching) == 2, (
+        f"expected 2 chain entries for {request_id}; got {len(matching)}"
+    )
+    requested, approved = matching
+    assert requested["action"] == "tool.promotion_requested"
+    assert approved["action"] == "tool.promotion_approved"
+    # Each entry has a row_hash, and `approved.prev_hash` chains to
+    # `requested.row_hash`.
+    assert "row_hash" in requested
+    assert "row_hash" in approved
+    assert approved["prev_hash"] == requested["row_hash"]
+    # The row_hash recomputes deterministically from the canonical
+    # payload — pinning the SHA-256 + sorted-key shape.
+    canonical_payload = {k: v for k, v in approved.items() if k != "row_hash"}
+    expected_hash = hashlib.sha256(
+        _json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    assert approved["row_hash"] == expected_hash

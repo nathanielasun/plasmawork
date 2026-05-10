@@ -301,6 +301,27 @@ workstreams.
 
 ---
 
+## Tool promotion audit posture (interim, 2026-05-10)
+
+Cross-workspace tool promotions emit a hash-chained event log on
+disk at `local_cache/imported_tools/_pending_promotions/_audit_chain.jsonl`.
+Each line carries `{prev_hash, ...fields, row_hash}` where
+`row_hash = SHA-256(canonical(prev_hash + fields))` so an attacker
+who mutates ANY entry breaks the chain at the next read. Mirrors v4
+§19.3's row-hash shape but is NOT the canonical secure_core
+`audit_events` table.
+
+The interim log lets an operator verify integrity of promotion
+decisions today. The follow-on is a Python audit client that POSTs
+to a new gateway-internal `POST /internal/audit-events` endpoint so
+the events land in the canonical secure_core hash chain alongside
+login + workspace + capsule events. Tracked under the open follow-
+ups; the on-disk log gets deleted in the same commit that ships the
+gateway-internal route (its data carries forward into the canonical
+chain via a one-shot replay).
+
+---
+
 ## Tool registry migration runbook (Phase α, 2026-05-10)
 
 The Phase α refactor moved the imported-tool cache from a flat

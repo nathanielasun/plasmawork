@@ -50,7 +50,9 @@ import {
   signHandoffPayload,
   type HandoffPayload,
 } from "./handoffSigner.js";
+import { findRequiredCapability } from "./routeCapabilityMap.js";
 import type { MiddlewareHandler } from "../../../../packages/secure_core/src/middleware/compose.js";
+import { PermissionDeniedError } from "../../../../packages/secure_core/src/errors/shapes.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -147,6 +149,31 @@ export function buildHandoffPreHandler(opts: {
       throw new Error(
         "workbenchProxyPlugin: req.membership missing — preHandler must run requireWorkspaceMembership first.",
       );
+    }
+    // Audit fix (2026-05-10) #2: enforce per-route capabilities at
+    // the proxy boundary. The previous auth chain only checked
+    // workspace membership; legacy FastAPI routes that lack their
+    // own role check (e.g. /api/tools/import) were therefore
+    // callable by any workspace member. The map below names every
+    // mutating route + the capability it requires; this preHandler
+    // refuses BEFORE the proxy forwards to FastAPI.
+    const required = findRequiredCapability(req.method, req.url);
+    if (required !== undefined) {
+      // Capabilities are typed as ReadonlySet<Capability> in
+      // production (the membership join populates them) but a
+      // stub fixture might pass an array; handle both.
+      const caps: unknown = req.membership.capabilities;
+      const has =
+        caps instanceof Set
+          ? (caps as ReadonlySet<string>).has(required)
+          : Array.isArray(caps)
+            ? (caps as ReadonlyArray<string>).includes(required)
+            : false;
+      if (!has) {
+        throw new PermissionDeniedError(
+          `Caller lacks the '${required}' capability required for ${req.method} ${req.url}.`,
+        );
+      }
     }
     stripInboundHandoffHeaders(req);
 

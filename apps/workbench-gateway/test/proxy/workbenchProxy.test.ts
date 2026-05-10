@@ -394,6 +394,111 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
     await app.close();
   });
 
+  it("refuses /tools/import when caller lacks tool:create capability (audit fix 2026-05-10)", async () => {
+    // Audit fix #2: the proxy auth chain previously checked
+    // workspace membership only — any member could call mutating
+    // legacy /api/* routes. The route capability map closes that
+    // by gating mutations on per-route capabilities BEFORE the
+    // proxy forwards.
+    captures.length = 0;
+    const stubAuthChain: ReadonlyArray<MiddlewareHandler> = [
+      async (req) => {
+        const auth: AuthContext = {
+          userId: USER_ID,
+          sessionId: SESSION_ID,
+          actorType: "human" as ActorType,
+          assuranceLevel: "aal2",
+        };
+        req.auth = auth;
+      },
+      async (req) => {
+        req.workspace = {
+          id: WORKSPACE_ID,
+          name: WORKSPACE_SLUG,
+          createdBy: USER_ID,
+        };
+      },
+      async (req) => {
+        // Member with a Researcher-shape capability set — NO
+        // tool:create. The capability map should refuse import.
+        req.membership = {
+          workspaceId: WORKSPACE_ID,
+          userId: USER_ID,
+          roleId: "5b807f69-df63-5054-a96a-490c9668a567",
+          roleName: "Researcher",
+          capabilities: new Set(["capsule:read", "run:create"]),
+        };
+      },
+    ];
+    const app = await buildProxyOnlyApp({
+      upstreamUrl: upstream.baseUrl,
+      authChain: stubAuthChain,
+    });
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/${WORKSPACE_SLUG}/tools/import`,
+      headers: { "content-type": "application/json" },
+      payload: { source_path: "/tmp/x", target_name: "x" },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(r.json()).toMatchObject({
+      error: { code: "PERMISSION_DENIED" },
+    });
+    // Critically: the upstream NEVER saw the request.
+    expect(captures).toHaveLength(0);
+
+    await app.close();
+  });
+
+  it("allows /tools/import when caller has tool:create capability", async () => {
+    captures.length = 0;
+    const stubAuthChain: ReadonlyArray<MiddlewareHandler> = [
+      async (req) => {
+        const auth: AuthContext = {
+          userId: USER_ID,
+          sessionId: SESSION_ID,
+          actorType: "human" as ActorType,
+          assuranceLevel: "aal2",
+        };
+        req.auth = auth;
+      },
+      async (req) => {
+        req.workspace = {
+          id: WORKSPACE_ID,
+          name: WORKSPACE_SLUG,
+          createdBy: USER_ID,
+        };
+      },
+      async (req) => {
+        req.membership = {
+          workspaceId: WORKSPACE_ID,
+          userId: USER_ID,
+          roleId: "5b807f69-df63-5054-a96a-490c9668a567",
+          roleName: "WorkspaceAdmin",
+          capabilities: new Set([
+            "capsule:read",
+            "tool:create",
+            "tool:request_promotion",
+          ]),
+        };
+      },
+    ];
+    const app = await buildProxyOnlyApp({
+      upstreamUrl: upstream.baseUrl,
+      authChain: stubAuthChain,
+    });
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/${WORKSPACE_SLUG}/tools/import`,
+      headers: { "content-type": "application/json" },
+      payload: { source_path: "/tmp/x", target_name: "x" },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(captures).toHaveLength(1);
+
+    await app.close();
+  });
+
   it("payload canonicalization: same headers → same signature regardless of role insertion order", async () => {
     const a: HandoffPayload = {
       userId: USER_ID,
