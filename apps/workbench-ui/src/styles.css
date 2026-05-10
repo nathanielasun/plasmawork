@@ -2358,3 +2358,67 @@ ol.lifecycle li.lifecycle-active {
 .login-submit:hover:not(:disabled) {
   filter: brightness(0.95);
 }
+
+/* ---- Session guard + workspace switcher + logout (F-rest, 2026-05-09) ---- */
+.session-guard-loading {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--muted);
+}
+.session-guard-error {
+  padding: var(--space-5);
+  margin: var(--space-5);
+  border-left: 3px solid #c0392b;
+  background: #fef0ec;
+  color: #842029;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.workspace-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+.workspace-switcher span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.workspace-switcher select {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  font-size: 0.875rem;
+  color: var(--fg);
+}
+.workspace-switcher-single,
+.workspace-switcher-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.workspace-switcher-single strong {
+  color: var(--fg);
+}
+.logout-button {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.logout-button:hover:not(:disabled) {
+  background: var(--surface-nested);
+  color: var(--fg);
+}
+.logout-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

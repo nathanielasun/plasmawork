@@ -3289,6 +3289,36 @@ check_grep_in_file 'LoginResponseBody' \
   apps/workbench-ui/src/api/secureCoreClient.ts \
   "secureCoreClient exports LoginResponseBody type"
 
+# Phase 0.5 auth gateway / Phase F-rest (session guard + switcher +
+# logout). The four components ship as reusable primitives. The App
+# root wiring (wrapping protected routes in SessionGuard) lands in a
+# follow-up commit so the existing 21 UI test files keep their
+# unauthenticated render path until the test fixtures are updated to
+# inject a SessionProvider.
+section "Phase 0.5 auth gateway / Phase F-rest (session + switcher + logout)"
+check_file_exists apps/workbench-ui/src/components/auth/SessionContext.tsx
+check_grep_in_file 'export function SessionProvider' \
+  apps/workbench-ui/src/components/auth/SessionContext.tsx \
+  "SessionProvider component exported"
+check_grep_in_file 'export function useSession' \
+  apps/workbench-ui/src/components/auth/SessionContext.tsx \
+  "useSession hook exported"
+check_file_exists apps/workbench-ui/src/components/auth/SessionGuard.tsx
+check_grep_in_file 'export function SessionGuard' \
+  apps/workbench-ui/src/components/auth/SessionGuard.tsx \
+  "SessionGuard component exported"
+check_file_exists apps/workbench-ui/src/components/auth/WorkspaceSwitcher.tsx
+check_grep_in_file 'export function WorkspaceSwitcher' \
+  apps/workbench-ui/src/components/auth/WorkspaceSwitcher.tsx \
+  "WorkspaceSwitcher component exported"
+check_file_exists apps/workbench-ui/src/components/auth/LogoutButton.tsx
+check_grep_in_file 'export function LogoutButton' \
+  apps/workbench-ui/src/components/auth/LogoutButton.tsx \
+  "LogoutButton component exported"
+check_file_exists apps/workbench-ui/src/__tests__/SessionGuard.test.tsx
+check_file_exists apps/workbench-ui/src/__tests__/WorkspaceSwitcher.test.tsx
+check_file_exists apps/workbench-ui/src/__tests__/LogoutButton.test.tsx
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard
