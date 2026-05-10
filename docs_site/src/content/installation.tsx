@@ -122,6 +122,57 @@ openssl rand -base64 32   # → WORKBENCH_GATEWAY_HANDOFF_SECRET`}</code>
         <li>Use backend-specific smoke tests when optional accelerated backends are enabled.</li>
         <li>Under the gateway posture, confirm a cold browser load of <code>http://localhost:4000/</code> redirects to <code>/login</code> and that submitting bootstrap-issued credentials lands on the workspace switcher.</li>
       </ul>
+
+      <h2>Operator probes (live deployment validation)</h2>
+      <p>
+        Three probe scripts under <code>scripts/dev/</code> verify the
+        runtime, database, and storage substrates a production
+        workbench deployment depends on. Each script is{" "}
+        <strong>fail-closed</strong>: missing env or a spec violation
+        exits non-zero with a clear diagnostic. They are{" "}
+        <strong>not</strong> wired into <code>scripts/test/all.sh</code>
+        {" "}— the operator runs them after provisioning each substrate
+        (or a CI lane gated on the deployment env's presence dispatches
+        them; that lane is not yet shipped).
+      </p>
+      <ul>
+        <li>
+          <code>scripts/dev/check_gvisor_runtime.sh</code> — verifies{" "}
+          <code>runsc</code> is on PATH, reports a version, and runs a
+          minimal sandboxed container that prints a known marker. Run
+          on every host that will execute worker / capsule code.
+          Override the binary path with{" "}
+          <code>WORKBENCH_RUNSC_BIN</code>.
+        </li>
+        <li>
+          <code>scripts/dev/check_db_role_separation.sh</code> —
+          connects with each of the four{" "}
+          <code>PLASMAWORK_DB_URL_&#123;APP,AUDIT_READ,ANCHOR_WRITER,MIGRATOR&#125;</code>{" "}
+          URLs, asserts each role's identity, then runs the v4 §12
+          negative-grant probes (e.g. <code>secure_core_app</code>{" "}
+          must NOT have <code>SELECT</code> on{" "}
+          <code>audit_events</code>; <code>secure_core_audit_read</code>{" "}
+          must NOT have <code>INSERT</code>). Run after database
+          provisioning and on every grant change.
+        </li>
+        <li>
+          <code>scripts/dev/check_s3_worm_object_lock.sh</code> —
+          verifies the bootstrap WORM bucket has Object Lock enabled
+          in <code>COMPLIANCE</code> mode with a non-zero retention,
+          PUTs a probe object, then asserts that DELETE is rejected.
+          Required env:{" "}
+          <code>WORKBENCH_BOOTSTRAP_WORM_S3_&#123;BUCKET,KEY,REGION&#125;</code>.
+          The probe object stays behind by design — Object Lock
+          prevents cleanup until the retention expires.
+        </li>
+      </ul>
+      <p>
+        The probes embody the boundary between code-side and
+        deployment-side guarantees: the workbench's spec-level checks
+        (<code>scripts/test/security.sh</code>) verify the secure-core
+        contracts hold in source; the live probes verify the
+        deployment substrate enforces them.
+      </p>
     </article>
   );
 }

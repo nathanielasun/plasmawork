@@ -3198,6 +3198,32 @@ check_grep_in_file 'Slug cross-check posture \(resolved 2026-05-10\)' \
 check_grep_in_file 'preRewrite strips the slug for every /api' \
   apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
   "workbenchProxy regression test names the slug-strip contract directly"
+
+# Phase γ (2026-05-10): operator-runnable live probe scripts. Each
+# runs against a configured deployment env (gVisor, four-role
+# Postgres, S3 bucket with Object Lock). Not wired into
+# scripts/test/all.sh — operator dispatches them after provisioning.
+check_file_executable scripts/dev/check_gvisor_runtime.sh \
+  "gVisor runtime live probe script executable"
+check_file_executable scripts/dev/check_db_role_separation.sh \
+  "DB role-segregation live probe script executable"
+check_file_executable scripts/dev/check_s3_worm_object_lock.sh \
+  "S3 WORM Object Lock live probe script executable"
+check_grep_in_file 'WORKBENCH_RUNSC_BIN' \
+  scripts/dev/check_gvisor_runtime.sh \
+  "gVisor probe documents WORKBENCH_RUNSC_BIN override"
+check_grep_in_file 'PLASMAWORK_DB_URL_AUDIT_READ' \
+  scripts/dev/check_db_role_separation.sh \
+  "DB-role probe consumes the four role-segregated URLs"
+check_grep_in_file 'COMPLIANCE' \
+  scripts/dev/check_s3_worm_object_lock.sh \
+  "S3 WORM probe asserts COMPLIANCE Object Lock mode (not Governance)"
+check_grep_in_file 'check_db_role_separation\.sh' \
+  docs_site/src/content/installation.tsx \
+  "installation docs reference the operator probe scripts"
+check_grep_in_file 'Operator probes' \
+  docs_site/src/content/installation.tsx \
+  "installation docs include the 'Operator probes' section"
 check_grep_in_file 'routes: \["/:slug"' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy route shape is /api/:slug (E2-rest workspace authorization)"
