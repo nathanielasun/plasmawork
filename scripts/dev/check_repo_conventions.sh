@@ -3224,6 +3224,43 @@ check_grep_in_file 'check_db_role_separation\.sh' \
 check_grep_in_file 'Operator probes' \
   docs_site/src/content/installation.tsx \
   "installation docs include the 'Operator probes' section"
+
+# Phase α.1-α.3 (2026-05-10): workspace-scoped tool registry.
+# ToolRegistry walks per-workspace + shared-internal-tools; the
+# legacy flat layout is preserved as a back-compat read source until
+# the operator runs migrate_tools_to_workspaces.sh.
+section "Phase 0.5 / Phase α (workspace-scoped tool registry)"
+check_grep_in_file 'def imported_tools_root_for' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "paths.imported_tools_root_for(slug) ships"
+check_grep_in_file 'def tool_drafts_root_for' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "paths.tool_drafts_root_for(slug) ships"
+check_grep_in_file 'workspace_slug: str \| None = None' \
+  packages/core/src/simworkbench/tools/registry.py \
+  "ToolRegistry accepts workspace_slug constructor arg (back-compat None)"
+check_grep_in_file 'SHARED_INTERNAL_TOOLS_SLUG' \
+  packages/core/src/simworkbench/tools/registry.py \
+  "ToolRegistry exports the shared-internal-tools slug constant"
+check_grep_in_file 'RESERVED_QUARANTINE_DIRS' \
+  packages/core/src/simworkbench/tools/registry.py \
+  "ToolRegistry exports the RESERVED_QUARANTINE_DIRS skip-set"
+check_grep_in_file '_pending_migration' \
+  packages/core/src/simworkbench/tools/registry.py \
+  "ToolRegistry skip-set includes _pending_migration (audit-fix invariant)"
+check_file_executable scripts/dev/migrate_tools_to_workspaces.sh \
+  "migrate_tools_to_workspaces.sh executable"
+check_grep_in_file '_migration_log\.json' \
+  scripts/dev/migrate_tools_to_workspaces.sh \
+  "migration script logs every move for rollback"
+check_grep_in_file '\-\-rollback' \
+  scripts/dev/migrate_tools_to_workspaces.sh \
+  "migration script supports --rollback for reversal"
+check_file_exists tests/regression/test_tool_workspace_isolation.py \
+  "workspace-isolation regression test ships"
+check_grep_in_file 'invisible_from_workspace_b' \
+  tests/regression/test_tool_workspace_isolation.py \
+  "isolation test pins workspace A → B invisibility"
 check_grep_in_file 'routes: \["/:slug"' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy route shape is /api/:slug (E2-rest workspace authorization)"

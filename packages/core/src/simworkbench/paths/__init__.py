@@ -133,6 +133,46 @@ def temp_imports_root_for(workspace_slug: str) -> Path:
     return _ensure(temp_imports_root() / _validate_workspace_slug(workspace_slug))
 
 
+def imported_tools_root() -> Path:
+    """Return ``<repo>/local_cache/imported_tools``. The legacy flat
+    cross-tenant cache; preserved as the parent of the per-workspace
+    layout AND as a back-compat read source until the operator runs
+    ``scripts/dev/migrate_tools_to_workspaces.sh``.
+    """
+    return _ensure(local_cache_root() / "imported_tools")
+
+
+def imported_tools_root_for(workspace_slug: str) -> Path:
+    """Return ``<repo>/local_cache/imported_tools/{workspace_slug}``.
+
+    Workspace-scoped imported-tool cache (Phase α, 2026-05-10). The
+    slug MUST come from ``request.state.workspace_slug`` (set by the
+    auth_middleware after HMAC verification) — never from a request
+    body or user input. The convention checker bans bare
+    ``imported_tools_root()`` calls inside FastAPI handlers.
+
+    The pending-migration directory ``imported_tools/_pending_migration/``
+    is reserved by ``scripts/dev/migrate_tools_to_workspaces.sh`` for
+    quarantining the legacy flat layout. Defense in depth: ToolRegistry
+    skips any directory whose name starts with ``_`` regardless of
+    where the name came from, so a hostile request that smuggled
+    ``_pending_migration`` past the slug regex still cannot read the
+    quarantine.
+    """
+    return _ensure(imported_tools_root() / _validate_workspace_slug(workspace_slug))
+
+
+def tool_drafts_root_for(workspace_slug: str) -> Path:
+    """Return ``<repo>/local_cache/workspaces/{workspace_slug}/tool_drafts``.
+
+    Workspace-scoped draft authoring sandbox (Phase α, 2026-05-10).
+    Drafts created in workspace X are only visible to X members; the
+    Tools page authoring panel reads/writes here exclusively.
+    """
+    base = local_cache_root() / "workspaces" / _validate_workspace_slug(workspace_slug) / "tool_drafts"
+    return _ensure(base)
+
+
 def is_under_workbench(path: Path | str) -> bool:
     """Return True iff ``path`` lies inside one of the four allowed roots.
 

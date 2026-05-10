@@ -117,7 +117,48 @@ def _registry_root() -> Path:
 
 
 def _imported_root() -> Path:
+    """Legacy flat imported-tools root. Kept as a back-compat read source
+    for installs that have not yet run
+    ``scripts/dev/migrate_tools_to_workspaces.sh``. New tools land under
+    the per-workspace layout (Phase α, 2026-05-10)."""
     return local_cache_root() / "imported_tools"
+
+
+# Workspace-scoped layout introduced in Phase α (2026-05-10). The
+# active workspace's tools are read from ``imported_tools/{slug}/``;
+# the shared bucket is read from ``imported_tools/shared-internal-tools/``.
+# Any directory whose name starts with ``_`` is skipped — that's the
+# quarantine convention for the legacy migration sweep.
+SHARED_INTERNAL_TOOLS_SLUG = "shared-internal-tools"
+
+# Reserved subdirectory names ToolRegistry MUST NOT walk. Phase α
+# (2026-05-10) added ``_pending_migration`` for the legacy flat-layout
+# quarantine sweep; future quarantine / archive buckets land here so a
+# new reserved name doesn't accidentally surface in a tool listing.
+RESERVED_QUARANTINE_DIRS = frozenset({"_pending_migration"})
+
+
+def _imported_root_for_slug(slug: str) -> Path:
+    return local_cache_root() / "imported_tools" / slug
+
+
+def _walk_tool_yamls(root: Path):
+    """Yield ``tool.yaml`` paths from ``root``.
+
+    Skips subdirectories listed in ``RESERVED_QUARANTINE_DIRS`` so the
+    migration sweep's ``_pending_migration/`` cannot be silently
+    reactivated by a future glob. Test fixtures that prefix their
+    tool names with ``_pytest_`` are NOT affected — only literal
+    reserved names match.
+    """
+    if not root.is_dir():
+        return
+    for child in sorted(root.iterdir()):
+        if not child.is_dir() or child.name in RESERVED_QUARANTINE_DIRS:
+            continue
+        tool_yaml = child / "tool.yaml"
+        if tool_yaml.is_file():
+            yield tool_yaml
 
 
 class ToolRegistry:
@@ -129,10 +170,24 @@ class ToolRegistry:
         registry.refresh()
         tool = registry.get("absorption_spectrum_diagnostic").load_class()()
         tool.execute(frequency=Q_(...), intensity=Q_(...))
+
+    Phase α (2026-05-10): the registry now scopes by workspace. The
+    ``workspace_slug`` constructor argument selects the active
+    workspace's tools; the registry ALWAYS also surfaces the
+    ``shared-internal-tools`` workspace (the system-wide vetted bucket).
+    Tools in other workspaces remain invisible.
+
+    Backward compatibility: ``ToolRegistry()`` (no arg) walks the
+    legacy flat ``imported_tools/`` root in addition to the seeded
+    workspaces. Existing tests + the ``refresh_registry.py`` script
+    rely on this so the migration can ship without per-call updates.
+    Pass ``workspace_slug=...`` from FastAPI handlers (the slug comes
+    from ``request.state.workspace_slug`` via ``workspace_slug_dep``).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, workspace_slug: str | None = None) -> None:
         self._entries: dict[str, RegisteredTool] = {}
+        self._workspace_slug = workspace_slug
 
     # ------------------------------------------------------------------
     # Discovery
@@ -141,17 +196,32 @@ class ToolRegistry:
     def refresh(self) -> None:
         """Re-walk the registry roots and rebuild the entry map.
 
-        Discovers two trees: the canonical repo registry under
-        ``packages/internal_tools/registry/`` and the user-imported cache
-        under ``local_cache/imported_tools/`` (plan §9.7). Tools are
-        identified by their ``tool.yaml``; subdirs without one are
-        skipped silently.
+        Read order (later roots win on duplicate names — workspace-local
+        tools shadow shared-internal-tools, which shadow the canonical
+        repo registry):
+
+        1. ``packages/internal_tools/registry/`` (repo, canonical).
+        2. ``local_cache/imported_tools/`` (legacy flat layout, kept as
+           a read source until the operator runs the migration sweep).
+        3. ``local_cache/imported_tools/shared-internal-tools/``
+           (system-wide vetted workspace bucket).
+        4. ``local_cache/imported_tools/{workspace_slug}/`` (active
+           workspace, only when constructed with one).
+
+        Subdirs without a ``tool.yaml`` are skipped silently.
+        Subdirs whose name starts with ``_`` are skipped — that's the
+        quarantine convention for the legacy migration sweep.
         """
         self._entries.clear()
-        for root in (_registry_root(), _imported_root()):
-            if not root.is_dir():
-                continue
-            for tool_yaml in root.glob("*/tool.yaml"):
+        roots: list[Path] = [_registry_root(), _imported_root()]
+        roots.append(_imported_root_for_slug(SHARED_INTERNAL_TOOLS_SLUG))
+        if (
+            self._workspace_slug is not None
+            and self._workspace_slug != SHARED_INTERNAL_TOOLS_SLUG
+        ):
+            roots.append(_imported_root_for_slug(self._workspace_slug))
+        for root in roots:
+            for tool_yaml in _walk_tool_yamls(root):
                 try:
                     metadata = load_tool_yaml(tool_yaml)
                 except Exception as exc:  # noqa: BLE001 — surface the failure verbatim.
@@ -159,11 +229,11 @@ class ToolRegistry:
                         f"Failed to load tool.yaml at {tool_yaml}: {exc}"
                     ) from exc
                 directory = tool_yaml.parent.resolve()
-                if metadata.name in self._entries:
-                    other = self._entries[metadata.name].directory
-                    raise ToolRegistryError(
-                        f"Duplicate tool {metadata.name!r}: {directory} and {other}"
-                    )
+                # Later roots in the read-order list shadow earlier
+                # roots on duplicate names — workspace-local wins over
+                # shared-internal-tools wins over the legacy flat
+                # cache wins over the canonical repo registry. This is
+                # the expected layering for the per-workspace model.
                 self._entries[metadata.name] = RegisteredTool(
                     metadata=metadata, directory=directory
                 )

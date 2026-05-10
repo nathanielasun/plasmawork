@@ -1342,18 +1342,22 @@ def create_app(
     # Phase 3D — Tool registry endpoints. The UI's Tools tab consumes these.
     # -----------------------------------------------------------------------
 
-    def _registry() -> ToolRegistry:
+    def _registry(slug: str | None = None) -> ToolRegistry:
         # Build a fresh ToolRegistry per request so tool.yaml edits show up
         # without restarting the server. Cheap (just YAML parsing).
-        registry = ToolRegistry()
+        # Phase α (2026-05-10): the workspace slug scopes the registry to
+        # the active workspace + shared-internal-tools. When ``slug`` is
+        # None (legacy callers, refresh_registry.py, batch tools) the
+        # registry walks the legacy flat layout instead.
+        registry = ToolRegistry(workspace_slug=slug)
         registry.refresh()
         return registry
 
     _tool_runs = ToolRunManager()
 
-    def _tool_entry_or_404(name: str):
+    def _tool_entry_or_404(name: str, slug: str | None = None):
         try:
-            return _registry().get(name)
+            return _registry(slug).get(name)
         except Exception as exc:  # noqa: BLE001 — surfaced verbatim.
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -1453,8 +1457,15 @@ def create_app(
     # backend package check passes.
     # -----------------------------------------------------------------------
 
-    def _authoring() -> ToolAuthoringService:
-        return ToolAuthoringService()
+    def _authoring(slug: str | None = None) -> ToolAuthoringService:
+        # Phase α (2026-05-10): drafts are workspace-scoped. Drafts
+        # created in workspace X land under
+        # ``local_cache/workspaces/{X}/tool_drafts/`` and are only
+        # visible to X members. Legacy callers (no slug) keep the
+        # ``local`` workspace prefix for back-compat.
+        if slug is None:
+            return ToolAuthoringService()
+        return ToolAuthoringService(workspace_id=slug)
 
     def _raise_authoring(exc: ToolAuthoringError) -> None:
         status = 404 if isinstance(exc, ToolAuthoringNotFound) else 400
@@ -1611,12 +1622,16 @@ def create_app(
             _raise_authoring(exc)
 
     @app.get("/api/tools")
-    def list_tools() -> list[dict[str, Any]]:
-        return _registry().index()
+    def list_tools(
+        slug: str = Depends(workspace_slug_dep),
+    ) -> list[dict[str, Any]]:
+        return _registry(slug).index()
 
     @app.get("/api/tools/{name}")
-    def get_tool(name: str) -> dict[str, Any]:
-        entry = _tool_entry_or_404(name)
+    def get_tool(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
+        entry = _tool_entry_or_404(name, slug)
         return {
             "name": entry.name,
             "directory": str(entry.directory.relative_to(repo_root())),
@@ -1624,11 +1639,13 @@ def create_app(
         }
 
     @app.get("/api/tools/{name}/docs")
-    def get_tool_docs(name: str) -> dict[str, Any]:
+    def get_tool_docs(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Return the tool's README + tool.yaml text so the UI can render
         documentation without a second fetch round-trip.
         """
-        entry = _tool_entry_or_404(name)
+        entry = _tool_entry_or_404(name, slug)
         readme = entry.directory / "README.md"
         yaml_path = entry.directory / "tool.yaml"
         return {
@@ -1638,15 +1655,21 @@ def create_app(
         }
 
     @app.get("/api/tools/{name}/schema")
-    def get_tool_schema(name: str) -> dict[str, Any]:
+    def get_tool_schema(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Return the normalized UI-safe tool contract."""
-        entry = _tool_entry_or_404(name)
+        entry = _tool_entry_or_404(name, slug)
         return normalize_tool_schema(entry.metadata)
 
     @app.post("/api/tools/{name}/preview")
-    def preview_tool(name: str, body: ToolExecuteBody) -> dict[str, Any]:
+    def preview_tool(
+        name: str,
+        body: ToolExecuteBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         """Validate a tool run request and report planned side effects."""
-        entry = _tool_entry_or_404(name)
+        entry = _tool_entry_or_404(name, slug)
         try:
             preview = _tool_runs.preview(
                 entry,
@@ -1673,9 +1696,13 @@ def create_app(
         return response
 
     @app.post("/api/tools/{name}/runs")
-    def create_tool_run(name: str, body: ToolExecuteBody) -> dict[str, Any]:
+    def create_tool_run(
+        name: str,
+        body: ToolExecuteBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         """Create a local synchronous tool run and persist output artifacts."""
-        entry = _tool_entry_or_404(name)
+        entry = _tool_entry_or_404(name, slug)
         try:
             run = _tool_runs.run(entry, kwargs=body.tool_kwargs(), units=body.units)
         except (ToolSchemaError, ToolArtifactError, ValueError) as exc:
@@ -1718,14 +1745,18 @@ def create_app(
         return artifact.model_dump(mode="json")
 
     @app.post("/api/tools/{name}/status")
-    def set_tool_status(name: str, body: ToolStatusBody) -> dict[str, Any]:
+    def set_tool_status(
+        name: str,
+        body: ToolStatusBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         try:
             new_status = ToolStatus(body.status)
         except ValueError as exc:
             raise HTTPException(
                 status_code=400, detail=f"Unknown status: {body.status!r}"
             ) from exc
-        registry = _registry()
+        registry = _registry(slug)
         try:
             entry = registry.get(name)
         except Exception as exc:  # noqa: BLE001
@@ -1763,7 +1794,9 @@ def create_app(
         }
 
     @app.post("/api/tools/{name}/run-tests")
-    def run_tool_tests(name: str) -> dict[str, Any]:
+    def run_tool_tests(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Run the tool's declared validation tests via pytest.
 
         Phase 3 gate verb: "test it". Returns ``{passed, returncode,
@@ -1774,7 +1807,7 @@ def create_app(
         import sys as _sys
 
         try:
-            entry = _registry().get(name)
+            entry = _registry(slug).get(name)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         tests = list(entry.metadata.validation.tests)
@@ -1815,7 +1848,11 @@ def create_app(
         }
 
     @app.post("/api/tools/{name}/execute")
-    def execute_tool(name: str, body: ToolExecuteBody) -> dict[str, Any]:
+    def execute_tool(
+        name: str,
+        body: ToolExecuteBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         """Run a registered tool with JSON-serializable kwargs.
 
         Phase 3 gate verb: "use it (execute it)". For unit-aware ports,
@@ -1824,7 +1861,7 @@ def create_app(
         ``simworkbench.units.Q``). Output ports declared in tool.yaml
         are validated by ``RegisteredTool.execute``.
         """
-        entry = _tool_entry_or_404(name)
+        entry = _tool_entry_or_404(name, slug)
         try:
             run = _tool_runs.run(entry, kwargs=body.tool_kwargs(), units=body.units)
         except (ToolSchemaError, ToolArtifactError, ValueError) as exc:
@@ -1840,7 +1877,9 @@ def create_app(
         }
 
     @app.post("/api/tools/{name}/export")
-    def export_tool(name: str) -> dict[str, Any]:
+    def export_tool(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Zip the tool's directory under local_cache/exports/.
 
         Phase 3 gate verb: "export it". Returns the archive path relative
@@ -1852,7 +1891,7 @@ def create_app(
         from simworkbench.paths import local_cache_root as _local
 
         try:
-            entry = _registry().get(name)
+            entry = _registry(slug).get(name)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         archive_dir = _local() / "exports"
@@ -1940,15 +1979,27 @@ def create_app(
         return {"capsule": capsule, "ok": True}
 
     @app.post("/api/tools/import")
-    def import_tool(body: ToolImportBody) -> dict[str, Any]:
-        """Copy an external tool tree into ``local_cache/imported_tools/``.
+    def import_tool(
+        body: ToolImportBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
+        """Copy an external tool tree into the active workspace's
+        imported-tool cache.
 
-        Phase 3 gate verb: "import it". The source must be a directory
-        containing a ``tool.yaml``; the target name is sanitized via
+        Phase 3 gate verb: "import it". Phase α (2026-05-10) made the
+        target workspace-scoped: imports land under
+        ``local_cache/imported_tools/{slug}/`` so a tool imported in
+        workspace X is private to X. The ``shared-internal-tools``
+        bucket is reachable only via the promotion flow
+        (``POST /api/tools/{name}/promote``), which requires
+        PlatformAdmin approval.
+
+        The source must be a directory containing a ``tool.yaml``;
+        the target name is sanitized via
         ``ToolRegistry.register_from_template`` (which refuses path-
         escape names).
         """
-        from simworkbench.paths import local_cache_root as _local
+        from simworkbench.paths import imported_tools_root_for as _ws_tools
         from simworkbench.tools import ToolRegistryError
 
         source = Path(body.source_path).expanduser().resolve()
@@ -1957,9 +2008,8 @@ def create_app(
                 status_code=400,
                 detail=f"source_path {body.source_path!r} is not a tool directory.",
             )
-        target_root = _local() / "imported_tools"
-        target_root.mkdir(parents=True, exist_ok=True)
-        registry = _registry()
+        target_root = _ws_tools(slug)
+        registry = _registry(slug)
         try:
             entry = registry.register_from_template(
                 source, body.target_name, target_root=target_root
