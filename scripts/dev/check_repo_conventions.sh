@@ -3874,6 +3874,29 @@ check_grep_fixed_in_file 'WORKBENCH_INTERNAL_AUDIT_SECRET' \
   .env.auth.example \
   ".env.auth.example documents WORKBENCH_INTERNAL_AUDIT_SECRET"
 
+# Dev-stub gateway — Phase 0.5 dev convenience (2026-05-10). The vite
+# proxy targets :4000; without something listening there, the SPA gets
+# 500/502 on every /auth/session call. The zero-config stub gives a
+# developer a working three-process dev model without postgres + a
+# bootstrap admin. Pin its presence + executability so it stays
+# discoverable.
+check_file_exists scripts/dev/dev_stub_gateway.mjs \
+  "dev-stub gateway (scripts/dev/dev_stub_gateway.mjs) present"
+check_file_executable scripts/dev/run_dev_stub_gateway.sh \
+  "run_dev_stub_gateway.sh wrapper present + executable"
+check_grep_fixed_in_file 'dev_stub_gateway.mjs' \
+  scripts/dev/run_dev_stub_gateway.sh \
+  "run_dev_stub_gateway.sh invokes the stub gateway script"
+# The stub MUST never be confused for the real gateway. Pin a clear
+# warning banner in the stub source.
+check_grep_fixed_in_file 'ZERO-AUTH stub for development convenience' \
+  scripts/dev/dev_stub_gateway.mjs \
+  "dev stub emits a clear ZERO-AUTH banner at startup"
+# The stub gateway listens on the same port the vite proxy targets.
+check_grep_fixed_in_file 'WORKBENCH_GATEWAY_PORT ?? 4000' \
+  scripts/dev/dev_stub_gateway.mjs \
+  "dev stub gateway port matches vite proxy target (4000)"
+
 # 1f — Handoff-secret env-var name identical in both languages. The
 # gateway signs with this; FastAPI verifies with it. A typo on either
 # side means every authenticated /api/* call 401s.

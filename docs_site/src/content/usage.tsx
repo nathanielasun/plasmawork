@@ -9,14 +9,46 @@ export default function Usage() {
       </p>
 
       <h2>Starting the workbench</h2>
+      <p>
+        Phase 0.5 introduced an authentication gateway, so the dev model
+        is now three cooperating processes. The Vite dev server proxies
+        every UI-facing path (<code>/auth/*</code>, <code>/api/*</code>,
+        <code>/bootstrap</code>, etc.) to the gateway on
+        <code>:4000</code>; without something listening there, you'll see
+        <em>"Could not load your session"</em> from the SPA. Two choices:
+      </p>
+      <h3>Zero-config dev (stub gateway)</h3>
       <pre>
-        <code>{`# UI
-./scripts/dev/run_ui.sh
-
-# Backend / API server at http://127.0.0.1:8000
+        <code>{`# Terminal 1 — FastAPI on :8000
 ./scripts/dev/run_backend.sh
 
-# Windows PowerShell / cmd.exe
+# Terminal 2 — stub gateway on :4000 (zero auth, NEVER use in prod)
+./scripts/dev/run_dev_stub_gateway.sh
+
+# Terminal 3 — UI on :5173
+./scripts/dev/run_ui.sh`}</code>
+      </pre>
+      <p>
+        The stub gateway (<code>scripts/dev/dev_stub_gateway.mjs</code>)
+        is a 200-line Node script. It accepts ANY <code>/auth/login</code>
+        credentials, mints a stub session, returns the right response
+        shapes for <code>/auth/session</code>, and reverse-proxies
+        <code>/api/*</code> to FastAPI. Use this when you want to dev
+        the UI or backend without setting up Postgres, <code>.env.auth</code>,
+        or a bootstrap admin.
+      </p>
+      <h3>Full auth (real gateway)</h3>
+      <p>
+        For login flows, multi-workspace, capability gating, or anything
+        that touches the canonical audit chain, run the real
+        <code>apps/workbench-gateway</code> in place of the stub. See
+        the Installation page for the <code>.env.auth</code> setup and
+        first-boot bootstrap; the gateway requires Postgres with the
+        secure_core roles + migrations applied.
+      </p>
+      <h3>Windows / shell-neutral entrypoints for FastAPI</h3>
+      <pre>
+        <code>{`# Windows PowerShell / cmd.exe
 .\\scripts\\dev\\run_backend.ps1
 scripts\\dev\\run_backend.cmd
 
@@ -24,7 +56,7 @@ scripts\\dev\\run_backend.cmd
 python scripts/dev/run_backend.py
 
 # Optional server flags
-./scripts/dev/run_backend.sh --host 0.0.0.0 --port 8000 --reload`}</code>
+./scripts/dev/run_backend.sh --port 8000 --reload`}</code>
       </pre>
       <p>
         The backend command starts the FastAPI server consumed by the UI. It
