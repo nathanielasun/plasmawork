@@ -13,8 +13,8 @@ import shutil
 
 import pytest
 from fastapi.testclient import TestClient
-from simworkbench.api.server import create_app
-from simworkbench.paths import temp_runs_root
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG, create_app
+from simworkbench.paths import temp_runs_root_for
 
 
 def _client() -> TestClient:
@@ -29,7 +29,7 @@ def ising_summary_on_disk():
     a real run, and the directory is removed on teardown.
     """
     run_id = "_pytest_ising_b9d3"
-    target = temp_runs_root() / run_id
+    target = temp_runs_root_for(DEFAULT_WORKSPACE_SLUG) / run_id
     target.mkdir(parents=True, exist_ok=True)
     (target / "summary.json").write_text(
         json.dumps(
@@ -57,7 +57,7 @@ def ising_summary_on_disk():
 def python_cpu_summary_on_disk():
     """Write a python_cpu-style summary (species_trajectories + time_seconds)."""
     run_id = "_pytest_pycpu_4a17"
-    target = temp_runs_root() / run_id
+    target = temp_runs_root_for(DEFAULT_WORKSPACE_SLUG) / run_id
     target.mkdir(parents=True, exist_ok=True)
     (target / "summary.json").write_text(
         json.dumps(
@@ -202,7 +202,7 @@ def test_in_memory_run_takes_precedence_over_on_disk():
     Runner)."""
     # Create a fake on-disk summary.
     run_id = "_pytest_collision_e51a"
-    target = temp_runs_root() / run_id
+    target = temp_runs_root_for(DEFAULT_WORKSPACE_SLUG) / run_id
     target.mkdir(parents=True, exist_ok=True)
     (target / "summary.json").write_text(
         json.dumps({"run_id": run_id, "rows": [{"x": 1}, {"x": 2}]}),

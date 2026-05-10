@@ -174,16 +174,19 @@ import uuid  # noqa: E402
 import pytest  # noqa: E402
 from simworkbench.experiment import Experiment, RunConfig  # noqa: E402
 from simworkbench.model_spec import load_yaml  # noqa: E402
-from simworkbench.paths import repo_root, simulation_capsules_root  # noqa: E402
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG  # noqa: E402
+from simworkbench.paths import repo_root, simulation_capsules_root_for  # noqa: E402
 from simworkbench.runtime import Runner  # noqa: E402
 from simworkbench.serialization import save_capsule  # noqa: E402
 
 
 @pytest.fixture
 def real_capsule():
-    """Build a capsule directly under simulation_capsules_root() and yield its
-    name. The API's capsule lookup walks the top level of that directory, so
-    the capsule must land there (not in a nested scratch dir)."""
+    """Build a capsule directly under the API's resolved workspace root
+    and yield its name. Phase 0.5 / Phase E5 (2026-05-09) made the API's
+    capsule lookup workspace-scoped — the fixture saves into the same
+    workspace the API resolves via ``workspace_slug_dep`` (which falls
+    back to ``DEFAULT_WORKSPACE_SLUG`` for direct TestClient use)."""
     spec = load_yaml(repo_root() / "examples" / "simple_rate_equations" / "model.yaml")
     exp = Experiment.from_model_spec(
         spec,
@@ -195,7 +198,7 @@ def real_capsule():
         experiment=exp,
         result=result,
         name=capsule_name,
-        base=simulation_capsules_root(),
+        base=simulation_capsules_root_for(DEFAULT_WORKSPACE_SLUG),
     )
     try:
         yield capsule_dir.name, capsule_dir

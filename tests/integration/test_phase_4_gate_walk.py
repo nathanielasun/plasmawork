@@ -32,7 +32,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 from simworkbench.api import create_app
-from simworkbench.paths import repo_root, simulation_capsules_root
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
+from simworkbench.paths import repo_root, simulation_capsules_root_for as simulation_capsules_root_workspace
 
 FIXTURE_PAPER = repo_root() / "tests" / "fixtures" / "phase_4_paper" / "sample.md"
 
@@ -41,7 +42,7 @@ FIXTURE_PAPER = repo_root() / "tests" / "fixtures" / "phase_4_paper" / "sample.m
 def empty_capsule():
     """A bare .lxp/ directory under simulation_capsules_root() to ingest into."""
     name = f"_pytest_phase4_{uuid.uuid4().hex[:8]}.lxp"
-    capsule_dir = simulation_capsules_root() / name
+    capsule_dir = simulation_capsules_root_workspace(DEFAULT_WORKSPACE_SLUG) / name
     (capsule_dir / "paper_sources").mkdir(parents=True, exist_ok=True)
     (capsule_dir / "model").mkdir(parents=True, exist_ok=True)
     (capsule_dir / "configs").mkdir(parents=True, exist_ok=True)

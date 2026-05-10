@@ -21,14 +21,15 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from simworkbench.api import create_app
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
 from simworkbench.codegen import SandboxViolation, user_edit_write
-from simworkbench.paths import simulation_capsules_root
+from simworkbench.paths import simulation_capsules_root_for
 
 
 @pytest.fixture
 def capsule():
     name = f"_pytest_user_edit_{uuid.uuid4().hex[:8]}.lxp"
-    target = simulation_capsules_root() / name
+    target = simulation_capsules_root_for(DEFAULT_WORKSPACE_SLUG) / name
     (target / "src" / "generated").mkdir(parents=True)
     (target / "src" / "user_edits").mkdir(parents=True)
     (target / "paper_sources").mkdir(parents=True)

@@ -13,7 +13,8 @@ import json
 from pathlib import Path
 
 import pytest
-from simworkbench.paths import simulation_capsules_root
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
+from simworkbench.paths import simulation_capsules_root_for
 from simworkbench.reports import ComparisonReport
 from simworkbench.sweep import (
     AdaptiveSampler,
@@ -291,7 +292,7 @@ def test_audit_comparison_endpoint_reads_lxp_capsule_dir(tmp_path):
     from simworkbench.api.server import create_app
     from simworkbench.sweep.engine import SweepReport, SweepRow
 
-    capsule_root = simulation_capsules_root()
+    capsule_root = simulation_capsules_root_for(DEFAULT_WORKSPACE_SLUG)
     capsule_name = "_pytest_phase9_audit_capsule.lxp"
     capsule_path = capsule_root / capsule_name
     capsule_path.mkdir(exist_ok=True)

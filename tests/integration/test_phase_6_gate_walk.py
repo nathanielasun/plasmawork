@@ -31,7 +31,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 from simworkbench.api import create_app
-from simworkbench.paths import simulation_capsules_root
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
+from simworkbench.paths import simulation_capsules_root_for
 
 # ---------------------------------------------------------------------------
 # Fixture: a capsule with a ModelSpec on disk + the generated/ user_edits/
@@ -42,7 +43,7 @@ from simworkbench.paths import simulation_capsules_root
 @pytest.fixture
 def capsule_with_modelspec():
     name = f"_pytest_phase6_{uuid.uuid4().hex[:8]}.lxp"
-    capsule_dir = simulation_capsules_root() / name
+    capsule_dir = simulation_capsules_root_for(DEFAULT_WORKSPACE_SLUG) / name
     (capsule_dir / "model").mkdir(parents=True)
     (capsule_dir / "configs").mkdir()
     (capsule_dir / "results").mkdir()

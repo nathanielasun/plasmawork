@@ -3224,6 +3224,44 @@ check_grep_in_file 'upstream-side HMAC verification' \
   apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
   "workbenchProxy test pins HMAC round-trip against verifying upstream"
 
+# Phase 0.5 auth gateway / Phase E5 (workspace-slug threading through
+# server.py). Every handler that reads / writes capsule, run, or
+# temp-import paths now resolves the slug from
+# ``request.state.workspace_slug`` (set by the auth_middleware after
+# HMAC verification) via the ``workspace_slug_dep`` FastAPI dependency.
+# No bare ``simulation_capsules_root()`` / ``temp_runs_root()`` /
+# ``temp_imports_root()`` calls remain in server.py — every handler
+# uses the ``_for(slug)`` helpers.
+section "Phase 0.5 auth gateway / Phase E5 (workspace-slug threading)"
+check_grep_in_file 'def workspace_slug_dep' \
+  packages/core/src/simworkbench/api/server.py \
+  "server.py defines workspace_slug_dep FastAPI dependency"
+check_grep_in_file 'DEFAULT_WORKSPACE_SLUG' \
+  packages/core/src/simworkbench/api/server.py \
+  "server.py exposes DEFAULT_WORKSPACE_SLUG fallback (single-tenant + tests)"
+check_grep_in_file 'simulation_capsules_root_for' \
+  packages/core/src/simworkbench/api/server.py \
+  "server.py uses simulation_capsules_root_for(slug) — workspace-scoped"
+check_grep_in_file 'temp_runs_root_for' \
+  packages/core/src/simworkbench/api/server.py \
+  "server.py uses temp_runs_root_for(slug) — workspace-scoped"
+# Bare-helper ban: confirms no handler regressed to a non-workspace
+# call. The grep matches the `(` literal followed immediately by `)`
+# — i.e. the zero-argument bare invocation. The workspace-scoped form
+# `simulation_capsules_root_for(slug)` does NOT match because of the
+# closing-arg.
+if grep -qE '(simulation_capsules_root|temp_runs_root|temp_imports_root)\(\)' \
+     packages/core/src/simworkbench/api/server.py; then
+  FAIL=$((FAIL+1))
+  fail "server.py has bare simulation_capsules_root() / temp_runs_root() / temp_imports_root() — every handler must use the _for(slug) variant (Phase E5)"
+else
+  PASS=$((PASS+1))
+  note "server.py has no bare workspace-root calls (Phase E5 invariant)"
+fi
+check_grep_in_file 'workspace_slug_dep' \
+  packages/core/src/simworkbench/api/server.py \
+  "server.py threads workspace_slug_dep through handlers (Phase E5)"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard

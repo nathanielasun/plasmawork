@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from simworkbench.api.server import create_app
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG, create_app
 from simworkbench.autonomy import (
     ApprovalGate,
     ApprovalRequiredError,
@@ -34,7 +34,7 @@ from simworkbench.model_spec import (
     save_yaml,
 )
 from simworkbench.model_spec.types import SolverRecommendation
-from simworkbench.paths import simulation_capsules_root
+from simworkbench.paths import simulation_capsules_root_for
 from simworkbench.sweep import GridSampler, SweepSpec
 from simworkbench.units import Q
 
@@ -113,7 +113,7 @@ def test_round2_designer_no_false_placeholders_on_clean_spec():
 
 
 def _make_capsule(name: str, spec: ModelSpec) -> Path:
-    capsule_path = simulation_capsules_root() / name
+    capsule_path = simulation_capsules_root_for(DEFAULT_WORKSPACE_SLUG) / name
     (capsule_path / "model").mkdir(parents=True, exist_ok=True)
     save_yaml(spec, capsule_path / "model" / "model_spec.yaml")
     return capsule_path

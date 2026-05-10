@@ -66,6 +66,7 @@ state is handled by the secure-core workspace-scoped run machinery.
 
 from __future__ import annotations
 
+import os
 from datetime import UTC as _UTC
 from datetime import datetime as _datetime
 from pathlib import Path
@@ -74,7 +75,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import Depends, FastAPI, HTTPException, Request
 except ImportError as exc:  # pragma: no cover — fastapi is a hard dep.
     raise RuntimeError(
         "FastAPI is required for the workbench API server. "
@@ -86,7 +87,9 @@ from simworkbench.model_spec import load_yaml as load_modelspec_yaml
 from simworkbench.paths import (
     repo_root,
     simulation_capsules_root,
+    simulation_capsules_root_for,
     temp_runs_root,
+    temp_runs_root_for,
 )
 from simworkbench.runtime import Runner
 from simworkbench.serialization import CapsuleValidator, load_manifest
@@ -362,6 +365,44 @@ class AutonomySweepBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Workspace slug resolution — Phase 0.5 / Phase E5 (2026-05-09).
+#
+# The workbench-gateway proxies requests with the resolved workspace slug
+# attached to ``request.state.workspace_slug`` via the HMAC-verified
+# auth_middleware. Route handlers read it through the
+# ``workspace_slug_dep`` FastAPI dependency below; that dependency falls
+# back to ``DEFAULT_WORKSPACE_SLUG`` when the state attribute is absent
+# (single-tenant dev mode without the gateway, plus existing tests that
+# instantiate ``create_app()`` directly via TestClient). Production with
+# the gateway always populates the state — the fallback is the
+# convenience seam that keeps internal-caller tests + dev-mode workflows
+# working while the gateway slice is in flight.
+#
+# The default slug is overridable via ``SIMWORKBENCH_DEFAULT_WORKSPACE_SLUG``
+# so an operator running a single-tenant install with a renamed workspace
+# can keep the API working without redeploying.
+# ---------------------------------------------------------------------------
+
+
+DEFAULT_WORKSPACE_SLUG = os.environ.get(
+    "SIMWORKBENCH_DEFAULT_WORKSPACE_SLUG", "shared-public-experiments"
+)
+
+
+def workspace_slug_dep(request: Request) -> str:
+    """Return the request's workspace slug, falling back to the default.
+
+    Reads ``request.state.workspace_slug`` (set by
+    ``WorkbenchHandoffMiddleware`` after HMAC verification). When the
+    state attribute is missing — direct TestClient usage, single-tenant
+    dev mode without the gateway — falls back to
+    ``DEFAULT_WORKSPACE_SLUG`` so existing tests and internal callers
+    continue to work.
+    """
+    return getattr(request.state, "workspace_slug", DEFAULT_WORKSPACE_SLUG)
+
+
+# ---------------------------------------------------------------------------
 # App factory — per-app run registry lives in the closure, NOT module-global.
 # Honors agent_error_patterns.md "API factory advertises isolation while
 # sharing module-global state".
@@ -418,29 +459,45 @@ def create_app() -> FastAPI:
     #   - never executes any file.
     # -----------------------------------------------------------------------
 
-    _BROWSE_ROOTS: dict[str, Path] = {
-        "simulation_capsules": simulation_capsules_root(),
-        "temp_runs": temp_runs_root(),
+    # Phase 0.5 / Phase E5: simulation_capsules and temp_runs are
+    # workspace-scoped — each request resolves them under
+    # `<root>/{slug}/`. local_cache, temp_imports, and examples stay
+    # cross-workspace by design (per the auth-gateway plan: examples
+    # are read-only-shared; local_cache holds system-wide caches).
+    _BROWSE_ROOTS_CROSS_WORKSPACE: dict[str, Path] = {
         "local_cache": (repo_root() / "local_cache").resolve(),
         "temp_imports": (repo_root() / "temp_imports").resolve(),
         "examples": (repo_root() / "examples").resolve(),
     }
+    _BROWSE_ROOT_NAMES: tuple[str, ...] = (
+        "simulation_capsules",
+        "temp_runs",
+        *_BROWSE_ROOTS_CROSS_WORKSPACE.keys(),
+    )
     _BROWSE_MAX_ENTRIES = 500
+
+    def _resolve_browse_root(root: str, slug: str) -> Path:
+        if root == "simulation_capsules":
+            return simulation_capsules_root_for(slug).resolve()
+        if root == "temp_runs":
+            return temp_runs_root_for(slug).resolve()
+        return _BROWSE_ROOTS_CROSS_WORKSPACE[root]
 
     @app.get("/api/browse", response_model=BrowseResponse)
     def browse(
         root: str = "simulation_capsules",
         path: str = "",
+        slug: str = Depends(workspace_slug_dep),
     ) -> BrowseResponse:
-        if root not in _BROWSE_ROOTS:
+        if root not in _BROWSE_ROOT_NAMES:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Unknown browse root {root!r}. Allow-listed: "
-                    f"{sorted(_BROWSE_ROOTS)}."
+                    f"{list(_BROWSE_ROOT_NAMES)}."
                 ),
             )
-        root_path = _BROWSE_ROOTS[root].resolve()
+        root_path = _resolve_browse_root(root, slug)
         if not root_path.is_dir():
             # Allowed root that doesn't exist on disk yet (e.g. empty
             # local_cache before first run). Return a real but empty
@@ -727,8 +784,10 @@ def create_app() -> FastAPI:
     # or list[dict] columnar) so the existing /api/runs response
     # contract still holds.
 
-    def _load_temp_run_summary(run_id: str) -> dict[str, Any] | None:
-        """Return the parsed summary.json for a run id under temp_runs/.
+    def _load_temp_run_summary(
+        run_id: str, slug: str = DEFAULT_WORKSPACE_SLUG
+    ) -> dict[str, Any] | None:
+        """Return the parsed summary.json for a run id under temp_runs/{slug}/.
 
         Path-traversal-guarded via name normalisation: the run_id
         cannot contain `/` or start with `.`. Returns None if the
@@ -736,7 +795,7 @@ def create_app() -> FastAPI:
         """
         if not run_id or "/" in run_id or "\\" in run_id or run_id.startswith("."):
             return None
-        target = temp_runs_root() / run_id / "summary.json"
+        target = temp_runs_root_for(slug) / run_id / "summary.json"
         if not target.is_file():
             return None
         try:
@@ -812,16 +871,18 @@ def create_app() -> FastAPI:
             "_source": "temp_run",
         }
 
-    def _discover_temp_runs() -> dict[str, dict[str, Any]]:
-        """Walk temp_runs/ and load every summary.json found."""
-        root = temp_runs_root()
+    def _discover_temp_runs(
+        slug: str = DEFAULT_WORKSPACE_SLUG,
+    ) -> dict[str, dict[str, Any]]:
+        """Walk temp_runs/{slug}/ and load every summary.json found."""
+        root = temp_runs_root_for(slug)
         out: dict[str, dict[str, Any]] = {}
         if not root.is_dir():
             return out
         for child in root.iterdir():
             if not child.is_dir() or child.name.startswith("."):
                 continue
-            summary = _load_temp_run_summary(child.name)
+            summary = _load_temp_run_summary(child.name, slug)
             if summary is None:
                 continue
             run_id = str(summary.get("run_id") or child.name)
@@ -829,20 +890,24 @@ def create_app() -> FastAPI:
         return out
 
     @app.get("/api/runs", response_model=list[RunSummary])
-    def list_runs() -> list[RunSummary]:
+    def list_runs(
+        slug: str = Depends(workspace_slug_dep),
+    ) -> list[RunSummary]:
         # In-memory runs take precedence (they carry the Runner's
         # full diagnostic dict); on-disk summaries fill in everything
         # the user kicked off through Examples gallery / a terminal.
         merged: dict[str, dict[str, Any]] = {}
-        merged.update(_discover_temp_runs())
+        merged.update(_discover_temp_runs(slug))
         merged.update(runs)
         return [_summary(rid, info) for rid, info in merged.items()]
 
     @app.get("/api/runs/{run_id}", response_model=RunSummary)
-    def get_run(run_id: str) -> RunSummary:
+    def get_run(
+        run_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> RunSummary:
         if run_id in runs:
             return _summary(run_id, runs[run_id])
-        summary = _load_temp_run_summary(run_id)
+        summary = _load_temp_run_summary(run_id, slug)
         if summary is None:
             raise HTTPException(
                 status_code=404, detail=f"Run {run_id!r} not found"
@@ -908,7 +973,11 @@ def create_app() -> FastAPI:
         return _summary(runner.run_id, runs[runner.run_id])
 
     @app.get("/api/runs/{run_id}/diagnostics/{name}")
-    def get_diagnostic(run_id: str, name: str) -> dict[str, Any]:
+    def get_diagnostic(
+        run_id: str,
+        name: str,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         # Resolve the run from in-memory first, then fall back to the
         # on-disk summary. This is what unifies the Diagnostics tab
         # across in-process runs and script-driven examples.
@@ -916,7 +985,7 @@ def create_app() -> FastAPI:
         if run_id in runs:
             info = runs[run_id]
         else:
-            summary = _load_temp_run_summary(run_id)
+            summary = _load_temp_run_summary(run_id, slug)
             if summary is not None:
                 info = _temp_run_to_info(summary)
         if info is None:
@@ -954,9 +1023,11 @@ def create_app() -> FastAPI:
         ]
 
     @app.get("/api/capsules")
-    def list_capsules() -> list[dict[str, str]]:
-        """List ``.lxp`` directories under ``simulation_capsules/``."""
-        root = simulation_capsules_root()
+    def list_capsules(
+        slug: str = Depends(workspace_slug_dep),
+    ) -> list[dict[str, str]]:
+        """List ``.lxp`` directories under ``simulation_capsules/{slug}/``."""
+        root = simulation_capsules_root_for(slug)
         return [
             {"name": p.name, "path": str(p.relative_to(repo_root()))}
             for p in sorted(root.iterdir())
@@ -964,9 +1035,11 @@ def create_app() -> FastAPI:
         ]
 
     @app.get("/api/temp_runs")
-    def list_temp_runs() -> list[dict[str, str]]:
-        """List directories under ``temp_runs/`` (in-flight runs)."""
-        root = temp_runs_root()
+    def list_temp_runs(
+        slug: str = Depends(workspace_slug_dep),
+    ) -> list[dict[str, str]]:
+        """List directories under ``temp_runs/{slug}/`` (in-flight runs)."""
+        root = temp_runs_root_for(slug)
         return [
             {"name": p.name, "path": str(p.relative_to(repo_root()))}
             for p in sorted(root.iterdir())
@@ -979,15 +1052,18 @@ def create_app() -> FastAPI:
     # provenance views without learning the on-disk layout itself.
     # -----------------------------------------------------------------------
 
-    def _resolve_capsule(name: str) -> Path:
-        """Look up a capsule by directory name, refusing path-escape inputs.
+    def _resolve_capsule(
+        name: str, slug: str = DEFAULT_WORKSPACE_SLUG
+    ) -> Path:
+        """Look up a capsule by directory name in the workspace's
+        capsule root, refusing path-escape inputs.
 
         Honors agent_error_patterns.md "Side-effecting before validating": we
-        validate the resolved path is inside ``simulation_capsules/`` BEFORE
-        any read. ``..`` segments would otherwise let a caller escape the
-        sandbox.
+        validate the resolved path is inside the workspace-scoped
+        ``simulation_capsules/{slug}/`` BEFORE any read. ``..`` segments
+        would otherwise let a caller escape the sandbox.
         """
-        root = simulation_capsules_root().resolve()
+        root = simulation_capsules_root_for(slug).resolve()
         target = (root / name).resolve()
         try:
             target.relative_to(root)
@@ -998,13 +1074,15 @@ def create_app() -> FastAPI:
         return target
 
     @app.get("/api/capsules/{name}")
-    def get_capsule(name: str) -> dict[str, Any]:
+    def get_capsule(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Manifest + structural summary for a single capsule.
 
         The UI's ManifestView consumes this. We return raw JSON-friendly dicts
         so the frontend doesn't need to parse TOML.
         """
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         manifest_path = capsule_path / "manifest.toml"
         manifest_dump: dict[str, Any] | None = None
         manifest_error: str | None = None
@@ -1038,7 +1116,11 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/capsules/{name}/tree")
-    def list_capsule_tree(name: str, subtree: str = "") -> dict[str, Any]:
+    def list_capsule_tree(
+        name: str,
+        subtree: str = "",
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         """List files (recursively) under a capsule's subtree.
 
         Used by the UI's CapsuleCodeView to enumerate files in
@@ -1046,7 +1128,7 @@ def create_app() -> FastAPI:
         to open via ``/files/{path}``. Without this, the view had no way
         to discover what existed and was effectively dead.
         """
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         base = (capsule_path / subtree).resolve() if subtree else capsule_path
         try:
             base.relative_to(capsule_path)
@@ -1066,14 +1148,18 @@ def create_app() -> FastAPI:
         return {"name": name, "subtree": subtree, "files": files}
 
     @app.get("/api/capsules/{name}/files/{file_path:path}")
-    def get_capsule_file(name: str, file_path: str) -> dict[str, Any]:
+    def get_capsule_file(
+        name: str,
+        file_path: str,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         """Read a single text file from a capsule.
 
         Restricted to the capsule directory subtree. Binary files (HDF5,
         images) are refused with a 415 — the UI uses different surfaces for
         those (diagnostics endpoint, plot images).
         """
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         target = (capsule_path / file_path).resolve()
         try:
             target.relative_to(capsule_path)
@@ -1101,9 +1187,11 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/capsules/{name}/validate")
-    def validate_capsule(name: str) -> dict[str, Any]:
+    def validate_capsule(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Run the canonical CapsuleValidator and return its report."""
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         report = CapsuleValidator().validate(capsule_path)
         return {
             "name": name,
@@ -1122,7 +1210,9 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/capsules/{name}/diagnostics")
-    def get_capsule_diagnostics(name: str) -> dict[str, Any]:
+    def get_capsule_diagnostics(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Read ``results/diagnostics.h5`` (preferred) or ``diagnostics.json``.
 
         Returns ``{"series": {<name>: [floats...]}, "source": "h5"|"json"}``.
@@ -1131,7 +1221,7 @@ def create_app() -> FastAPI:
         """
         import json
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         h5_path = capsule_path / "results" / "diagnostics.h5"
         json_path = capsule_path / "results" / "diagnostics.json"
         if h5_path.is_file():
@@ -1703,7 +1793,9 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
 
     @app.post("/api/papers/import")
-    def import_paper(body: PaperImportBody) -> dict[str, Any]:
+    def import_paper(
+        body: PaperImportBody, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         # Catch BOTH PaperIngestionError (caller-input failures) AND
         # TextExtractionError (extractor / dependency failures) — the
         # post-Phase-4 audit found PDF imports returning HTTP 500 because
@@ -1717,7 +1809,7 @@ def create_app() -> FastAPI:
             TextExtractionError,
         )
 
-        capsule_path = _resolve_capsule(body.capsule)
+        capsule_path = _resolve_capsule(body.capsule, slug)
         try:
             artifacts = PaperImporter().ingest(body.source_path, capsule_path)
         except (PaperIngestionError, TextExtractionError) as exc:
@@ -1735,17 +1827,23 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/papers/{capsule}/extracted")
-    def get_paper_extracted(capsule: str) -> dict[str, Any]:
+    def get_paper_extracted(
+        capsule: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         from simworkbench.ingestion import PaperImporter
 
-        capsule_path = _resolve_capsule(capsule)
+        capsule_path = _resolve_capsule(capsule, slug)
         return PaperImporter().read_extracted(capsule_path)
 
     @app.post("/api/papers/{capsule}/edit")
-    def edit_paper(capsule: str, body: PaperEditBody) -> dict[str, Any]:
+    def edit_paper(
+        capsule: str,
+        body: PaperEditBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         from simworkbench.ingestion import PaperImporter, PaperIngestionError
 
-        capsule_path = _resolve_capsule(capsule)
+        capsule_path = _resolve_capsule(capsule, slug)
         try:
             PaperImporter().apply_edit(
                 capsule_path,
@@ -1798,7 +1896,9 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
 
     @app.post("/api/proposals")
-    def create_proposal(body: ProposalBody) -> dict[str, Any]:
+    def create_proposal(
+        body: ProposalBody, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         from simworkbench.modeling import (
             ExperimentProposer,
             GapAnalyzer,
@@ -1807,7 +1907,7 @@ def create_app() -> FastAPI:
             ModuleMatcher,
         )
 
-        capsule_path = _resolve_capsule(body.capsule)
+        capsule_path = _resolve_capsule(body.capsule, slug)
         try:
             # require_reviewed is hard-coded True at the API boundary.
             # Plan §Phase 4 forbids consuming agent-only interpretation,
@@ -1839,13 +1939,15 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
 
     @app.get("/api/capsules/{name}/codegen")
-    def list_codegen(name: str) -> dict[str, Any]:
+    def list_codegen(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """List the generated tree under ``<capsule>/src/generated/`` plus
         the user_edits/ tree (separately, never co-mingled).
         """
         import json as _json
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         generated_root = capsule_path / "src" / "generated"
         user_edits_root = capsule_path / "src" / "user_edits"
 
@@ -1878,7 +1980,11 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/capsules/{name}/codegen")
-    def run_codegen(name: str, body: CodegenBody | None = None) -> dict[str, Any]:
+    def run_codegen(
+        name: str,
+        body: CodegenBody | None = None,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         """Regenerate the generated tree from the capsule's ModelSpec.
 
         Hard-rule enforcement (13th behavioral check): the body model
@@ -1891,7 +1997,7 @@ def create_app() -> FastAPI:
         from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
 
         _ = body  # silence linter; the field is intentionally unread
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         spec_path = capsule_path / "model" / "model_spec.yaml"
         if not spec_path.is_file():
             raise HTTPException(
@@ -1915,7 +2021,9 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/capsules/{name}/codegen/diff")
-    def codegen_diff(name: str) -> dict[str, Any]:
+    def codegen_diff(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Compute a real diff between the prior-generation manifest
         and what would result from regenerating right now.
 
@@ -1940,7 +2048,7 @@ def create_app() -> FastAPI:
         from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
         from simworkbench.paths import temp_runs_root
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         generated_root = capsule_path / "src" / "generated"
         prior_manifest_path = generated_root / "codegen_manifest.json"
         previous: dict[str, Any] | None = None
@@ -1966,7 +2074,7 @@ def create_app() -> FastAPI:
                 "unchanged": [],
                 "note": "No model_spec.yaml — generate a proposal first.",
             }
-        preview_root = temp_runs_root() / f"_codegen_diff_{_uuid.uuid4().hex[:8]}.lxp"
+        preview_root = temp_runs_root_for(slug) / f"_codegen_diff_{_uuid.uuid4().hex[:8]}.lxp"
         try:
             (preview_root / "model").mkdir(parents=True)
             (preview_root / "src" / "generated").mkdir(parents=True)
@@ -2019,11 +2127,13 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/capsules/{name}/validate-run")
-    def run_validation(name: str) -> dict[str, Any]:
+    def run_validation(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Run the Phase 6E ValidationRunner and return the summary path."""
         from simworkbench.codegen import ValidationRunner
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         try:
             summary_path = ValidationRunner().run(capsule_path)
         except FileNotFoundError as exc:
@@ -2042,11 +2152,14 @@ def create_app() -> FastAPI:
 
     @app.post("/api/capsules/{name}/user_edits/{file_path:path}")
     def write_user_edit(
-        name: str, file_path: str, body: UserEditBody
+        name: str,
+        file_path: str,
+        body: UserEditBody,
+        slug: str = Depends(workspace_slug_dep),
     ) -> dict[str, Any]:
         from simworkbench.codegen import SandboxViolation, user_edit_write
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         if not file_path:
             raise HTTPException(
                 status_code=400,
@@ -2071,10 +2184,12 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
 
     @app.get("/api/comparison/{name}")
-    def get_comparison_report(name: str) -> dict[str, Any]:
+    def get_comparison_report(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         import json as _json
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         manifest_path = capsule_path / "comparison" / "manifest.json"
         if not manifest_path.is_file():
             raise HTTPException(
@@ -2152,7 +2267,9 @@ def create_app() -> FastAPI:
         return default
 
     @app.post("/api/autonomy/design/{name}")
-    def autonomy_design(name: str) -> dict[str, Any]:
+    def autonomy_design(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Run ExperimentDesigner on the capsule's ModelSpec."""
         from simworkbench.autonomy import (
             ExperimentDesigner,
@@ -2160,7 +2277,7 @@ def create_app() -> FastAPI:
         )
         from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         spec_path = capsule_path / "model" / "model_spec.yaml"
         if not spec_path.is_file():
             raise HTTPException(
@@ -2215,7 +2332,9 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/autonomy/smoke/{name}")
-    def autonomy_smoke(name: str) -> dict[str, Any]:
+    def autonomy_smoke(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Run a SmokeRunner pass against the capsule's ModelSpec.
 
         Phase-10 round-2 audit added this endpoint: 10B was implemented
@@ -2231,7 +2350,7 @@ def create_app() -> FastAPI:
         )
         from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         spec_path = capsule_path / "model" / "model_spec.yaml"
         if not spec_path.is_file():
             raise HTTPException(
@@ -2282,11 +2401,13 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/autonomy/review/{name}")
-    def autonomy_review(name: str) -> dict[str, Any]:
+    def autonomy_review(
+        name: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         """Run ScientificReviewer on the capsule and write the markdown."""
         from simworkbench.autonomy import ScientificReviewer
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         try:
             written = ScientificReviewer().write(capsule_path)
         except FileNotFoundError as exc:
@@ -2306,7 +2427,11 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/autonomy/sweep/{name}")
-    def autonomy_sweep(name: str, body: AutonomySweepBody) -> dict[str, Any]:
+    def autonomy_sweep(
+        name: str,
+        body: AutonomySweepBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         """Run a budget-bounded sweep via ControlledSweepAgent.
 
         The objective is a stand-in quadratic on the first declared
@@ -2318,7 +2443,7 @@ def create_app() -> FastAPI:
         from simworkbench.autonomy import ControlledSweepAgent
         from simworkbench.sweep import GridSampler, SweepSpec
 
-        capsule_path = _resolve_capsule(name)
+        capsule_path = _resolve_capsule(name, slug)
         if not body.parameters:
             raise HTTPException(
                 status_code=400,

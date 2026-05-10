@@ -26,7 +26,8 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from simworkbench.api import create_app
-from simworkbench.paths import repo_root, simulation_capsules_root
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
+from simworkbench.paths import repo_root, simulation_capsules_root_for
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def reviewed_capsule():
     contracts.
     """
     name = f"_pytest_phase5_{uuid.uuid4().hex[:8]}.lxp"
-    capsule_dir = simulation_capsules_root() / name
+    capsule_dir = simulation_capsules_root_for(DEFAULT_WORKSPACE_SLUG) / name
     paper_sources = capsule_dir / "paper_sources"
     paper_sources.mkdir(parents=True)
     (capsule_dir / "model").mkdir()
