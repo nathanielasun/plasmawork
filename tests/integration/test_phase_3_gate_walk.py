@@ -164,9 +164,20 @@ def test_phase_3_gate_walk_import_external(tmp_path):
         listing = {row["name"] for row in client.get("/api/tools").json()}
         assert target_name in listing
     finally:
-        target_dir = IMPORTED_ROOT / target_name
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
+        # Phase α (2026-05-10): imports now land under
+        # ``imported_tools/{workspace_slug}/{name}/``. The default
+        # slug for direct TestClient usage is
+        # DEFAULT_WORKSPACE_SLUG; clean both the new layout AND the
+        # legacy flat path so the cleanup is robust against partial
+        # transitions.
+        from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
+
+        for candidate in (
+            IMPORTED_ROOT / DEFAULT_WORKSPACE_SLUG / target_name,
+            IMPORTED_ROOT / target_name,
+        ):
+            if candidate.exists():
+                shutil.rmtree(candidate)
 
 
 def test_phase_3_gate_walk_use_in_experiment(gate_walk_tool):

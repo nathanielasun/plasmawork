@@ -32,6 +32,84 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-10: Tool registry becomes workspace-scoped
+
+### Affected subsystem
+
+- `packages/core/src/simworkbench/tools/registry.py`
+- `packages/core/src/simworkbench/api/server.py` (tool + tool-authoring handlers)
+- `packages/core/src/simworkbench/paths/__init__.py`
+- `local_cache/imported_tools/` (storage layout)
+
+### Symptoms
+
+The flat `local_cache/imported_tools/{tool_name}/` cache was
+visible to every user regardless of their workspace. A tool
+imported in workspace X by user A appeared in user B's workspace Y
+Tools list, and could be executed against B's data. The
+multi-tenant deployment posture introduced by the Phase 0.5 auth
+gateway documented this as a Phase α follow-up; until this commit,
+the gateway authenticated users but the underlying tool registry
+remained cross-tenant.
+
+### Root cause
+
+`ToolRegistry.refresh()` walked one flat root
+(`local_cache/imported_tools/`) without any workspace filter. The
+registry pre-dated the workspace model; the auth gateway shipped
+identity + isolation everywhere except this one cache.
+
+### Fix (Phase α.1-α.3 + authoring slug threading)
+
+- Storage layout migrated from flat to per-workspace:
+  `local_cache/imported_tools/{slug}/{tool_name}/`.
+- `ToolRegistry(workspace_slug=None)` — back-compat default
+  preserves the flat read for legacy callers
+  (`refresh_registry.py`, batch tools); FastAPI handlers thread
+  the gateway-resolved slug.
+- Reserved subdirectory names (`_pending_migration` initially)
+  are skipped by the walker so the migration quarantine is never
+  surfaced.
+- Tool-authoring drafts moved under
+  `local_cache/workspaces/{slug}/tool_drafts/` via the same slug
+  threading.
+- `scripts/dev/migrate_tools_to_workspaces.sh` quarantines the
+  legacy flat tools to `_pending_migration/` for operator review;
+  `--rollback` reverses every still-quarantined move.
+
+### Regression protection
+
+- `tests/regression/test_tool_workspace_isolation.py` — five
+  invariants: A→B invisibility, A→A visibility, shared-internal
+  visible everywhere, `_pending_migration` always invisible,
+  workspace-local shadows shared on name collision.
+- `tests/integration/test_tool_authoring_api.py` — updated
+  fixture path to track the workspace-scoped layout.
+- 11 new convention-checker assertions pinning the path helpers,
+  the `RESERVED_QUARANTINE_DIRS` skip-set, the migration script
+  shape, and the regression test name.
+
+### Agent warning
+
+A registry / cache that walks a flat directory after the rest of
+the system moves to per-workspace isolation is a silent
+multi-tenancy leak. Cross-listed in
+`bugs_and_fixes/agent_error_patterns.md`. Whenever a workspace
+slug threads through the request path, every storage seam the
+handler touches MUST also accept the slug.
+
+### Migration runbook
+
+See `LIMITATIONS.md` "Tool registry migration runbook (Phase α,
+2026-05-10)" for the operator's review-before-promote workflow.
+
+### Not yet shipped (deferred to follow-on commits)
+
+- `POST /api/tools/{name}/promote` endpoint with WorkspaceAdmin
+  request + PlatformAdmin L2.9 approval flow.
+- ToolPromotionPanel UI + Promote button on the tool detail view.
+- `tool:request_promotion` capability + grant migration.
+
 ## 2026-05-09: Workbench authentication gateway lands
 
 ### Affected subsystem

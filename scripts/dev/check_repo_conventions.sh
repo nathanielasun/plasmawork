@@ -3261,6 +3261,21 @@ check_file_exists tests/regression/test_tool_workspace_isolation.py \
 check_grep_in_file 'invisible_from_workspace_b' \
   tests/regression/test_tool_workspace_isolation.py \
   "isolation test pins workspace A → B invisibility"
+check_grep_in_file 'def _authoring\(slug: str' \
+  packages/core/src/simworkbench/api/server.py \
+  "_authoring() factory accepts workspace slug (drafts per-workspace)"
+check_grep_in_file 'Tool registry migration runbook' \
+  LIMITATIONS.md \
+  "LIMITATIONS.md documents the tool-registry migration runbook"
+check_grep_in_file 'Tool registry becomes workspace-scoped' \
+  bugs_and_fixes/bugfixes.md \
+  "bugfixes.md records the workspace-scoped tool registry shipment"
+check_grep_in_file 'Storage seam stays flat after workspace isolation' \
+  bugs_and_fixes/agent_error_patterns.md \
+  "agent_error_patterns documents the workspace-isolation storage-seam pattern"
+check_grep_in_file '2026-05-10 — Tool registry becomes workspace-scoped' \
+  bugs_and_fixes/regression_tests.md \
+  "regression_tests.md indexes the workspace-scoped tool registry tests"
 check_grep_in_file 'routes: \["/:slug"' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy route shape is /api/:slug (E2-rest workspace authorization)"

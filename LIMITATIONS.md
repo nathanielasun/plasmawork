@@ -301,6 +301,85 @@ workstreams.
 
 ---
 
+## Tool registry migration runbook (Phase α, 2026-05-10)
+
+The Phase α refactor moved the imported-tool cache from a flat
+cross-tenant layout to a per-workspace layout:
+
+```
+before: local_cache/imported_tools/{tool_name}/...
+after:  local_cache/imported_tools/{workspace_slug}/{tool_name}/...
+        local_cache/imported_tools/_pending_migration/...   ← legacy quarantine
+```
+
+**Existing tools quarantined, not auto-promoted.** The user's
+plan-time decision was to require operator review before any
+existing import becomes visible in the new model. A flat install
+with sensitive tooling would otherwise expose those tools to every
+user as soon as the workspace-scoped registry rolled out.
+
+### Step 1 — Run the migration sweep
+
+```bash
+bash scripts/dev/migrate_tools_to_workspaces.sh
+```
+
+The script is idempotent and dry-run-supported:
+- `--dry-run` prints what would happen, changes nothing.
+- `--rollback` reverses every still-quarantined move using the JSON
+  log under `_pending_migration/_migration_log.json`.
+
+After this step, the legacy flat tools live under
+`imported_tools/_pending_migration/`. `ToolRegistry` does NOT walk
+this directory (the `RESERVED_QUARANTINE_DIRS` skip-set), so every
+tool under it is invisible until the operator re-promotes it.
+
+### Step 2 — Re-promote each tool to its target workspace
+
+For each `imported_tools/_pending_migration/{tool_name}/` directory,
+the operator decides:
+
+- **Workspace-private**: move to
+  `imported_tools/{user_workspace_slug}/{tool_name}/`. Visible only
+  to that workspace's members.
+- **Shared-internal-tools** (validated/trusted, visible system-wide):
+  move to `imported_tools/shared-internal-tools/{tool_name}/`. The
+  programmatic promotion flow (PlatformAdmin approval via the
+  Tools UI) is the preferred path; manual `mv` is the fallback for
+  scripted migrations.
+- **Discard**: `rm -rf` the directory. The tool is no longer
+  available to any workspace.
+
+The re-promotion flow is additive: a tool can be moved into multiple
+workspaces (one copy per workspace). There is no symlinked
+"shared" form — each workspace owns its own copy of any tool it
+imports.
+
+### Step 3 — Confirm visibility
+
+After re-promotion, every workspace's `Tools` page reflects the new
+layout. The visibility rule is:
+
+- Tools in the active workspace's slug folder.
+- Plus any tools in `shared-internal-tools/`.
+- Workspace-local entries shadow shared-internal-tools entries on
+  name collision.
+
+The `_pending_migration/` directory stays around as long as any
+quarantined tool remains. Once empty, the operator can `rm -rf` it.
+
+### Why re-bootstrap-style runbook, not auto-migration
+
+The same logic that drives the manual re-bootstrap on lost-admin
+applies here: a flat install is implicitly cross-tenant, and any
+tool in it might have been intended for a single user. Auto-promoting
+into `shared-public-experiments` (for example) would silently expose
+those tools to every user, which is exactly the leak the workspace
+refactor is trying to close. The operator's review-before-promote
+step is the gate.
+
+---
+
 ## What you'd need to ship to bridge each gap
 
 This is the order-of-magnitude estimate. The substrate is solid; the rest is real implementation work, not architectural rework.

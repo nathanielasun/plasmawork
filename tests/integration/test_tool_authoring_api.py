@@ -221,8 +221,20 @@ def test_authoring_rejects_symlinked_draft_files() -> None:
         )
         assert created.status_code == 200, created.text
         draft_id = created.json()["draft_id"]
+        # Phase α (2026-05-10): drafts moved under
+        # ``workspaces/{slug}/tool_drafts/`` where the slug now comes
+        # from ``workspace_slug_dep`` (defaults to
+        # ``DEFAULT_WORKSPACE_SLUG="shared-public-experiments"`` in
+        # dev mode / TestClient). Read the slug from the same source
+        # the handler uses.
+        from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
+
         draft_root = (
-            local_cache_root() / "workspaces" / "local" / "tool_drafts" / draft_id
+            local_cache_root()
+            / "workspaces"
+            / DEFAULT_WORKSPACE_SLUG
+            / "tool_drafts"
+            / draft_id
         )
         secret.write_text("must not be packaged\n", encoding="utf-8")
         link = draft_root / "docs" / "leak.txt"

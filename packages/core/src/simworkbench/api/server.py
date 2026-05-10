@@ -1472,19 +1472,24 @@ def create_app(
         raise HTTPException(status_code=status, detail=str(exc)) from exc
 
     @app.get("/api/tool-authoring/templates")
-    def list_tool_authoring_templates() -> list[dict[str, Any]]:
-        return _authoring().list_templates()
+    def list_tool_authoring_templates(
+        slug: str = Depends(workspace_slug_dep),
+    ) -> list[dict[str, Any]]:
+        return _authoring(slug).list_templates()
 
     @app.get("/api/tool-authoring/code-templates")
-    def list_tool_authoring_code_templates() -> list[dict[str, Any]]:
-        return _authoring().list_code_templates()
+    def list_tool_authoring_code_templates(
+        slug: str = Depends(workspace_slug_dep),
+    ) -> list[dict[str, Any]]:
+        return _authoring(slug).list_code_templates()
 
     @app.post("/api/tool-authoring/code-templates")
     def create_tool_authoring_code_template(
         body: ToolCodeTemplateBody,
+        slug: str = Depends(workspace_slug_dep),
     ) -> dict[str, Any]:
         try:
-            return _authoring().create_code_template(
+            return _authoring(slug).create_code_template(
                 title=body.title,
                 description=body.description,
                 category=body.category,
@@ -1498,9 +1503,10 @@ def create_app(
     @app.post("/api/tool-authoring/code-templates/import")
     def import_tool_authoring_code_template(
         body: ToolCodeTemplateBody,
+        slug: str = Depends(workspace_slug_dep),
     ) -> dict[str, Any]:
         try:
-            return _authoring().import_code_template(
+            return _authoring(slug).import_code_template(
                 title=body.title,
                 description=body.description,
                 category=body.category,
@@ -1512,16 +1518,21 @@ def create_app(
             _raise_authoring(exc)
 
     @app.delete("/api/tool-authoring/code-templates/{template_id}")
-    def delete_tool_authoring_code_template(template_id: str) -> dict[str, Any]:
+    def delete_tool_authoring_code_template(
+        template_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         try:
-            return _authoring().delete_code_template(template_id)
+            return _authoring(slug).delete_code_template(template_id)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
     @app.post("/api/tool-authoring/drafts")
-    def create_tool_authoring_draft(body: ToolDraftCreateBody) -> dict[str, Any]:
+    def create_tool_authoring_draft(
+        body: ToolDraftCreateBody,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         try:
-            return _authoring().create_draft(
+            return _authoring(slug).create_draft(
                 template_id=body.template_id,
                 tool_name=body.name,
             )
@@ -1529,27 +1540,37 @@ def create_app(
             _raise_authoring(exc)
 
     @app.get("/api/tool-authoring/drafts")
-    def list_tool_authoring_drafts() -> list[dict[str, Any]]:
-        return _authoring().list_drafts()
+    def list_tool_authoring_drafts(
+        slug: str = Depends(workspace_slug_dep),
+    ) -> list[dict[str, Any]]:
+        return _authoring(slug).list_drafts()
 
     @app.get("/api/tool-authoring/drafts/{draft_id}")
-    def get_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+    def get_tool_authoring_draft(
+        draft_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         try:
-            return _authoring().get_draft(draft_id)
+            return _authoring(slug).get_draft(draft_id)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
     @app.delete("/api/tool-authoring/drafts/{draft_id}")
-    def delete_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+    def delete_tool_authoring_draft(
+        draft_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         try:
-            return _authoring().delete_draft(draft_id)
+            return _authoring(slug).delete_draft(draft_id)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
     @app.get("/api/tool-authoring/drafts/{draft_id}/files/{path:path}")
-    def read_tool_authoring_file(draft_id: str, path: str) -> dict[str, Any]:
+    def read_tool_authoring_file(
+        draft_id: str,
+        path: str,
+        slug: str = Depends(workspace_slug_dep),
+    ) -> dict[str, Any]:
         try:
-            return _authoring().read_file(draft_id, path)
+            return _authoring(slug).read_file(draft_id, path)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
@@ -1558,16 +1579,19 @@ def create_app(
         draft_id: str,
         path: str,
         body: ToolDraftFileBody,
+        slug: str = Depends(workspace_slug_dep),
     ) -> dict[str, Any]:
         try:
-            return _authoring().write_file(draft_id, path, body.content)
+            return _authoring(slug).write_file(draft_id, path, body.content)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
     @app.post("/api/tool-authoring/drafts/{draft_id}/manifest")
-    def validate_tool_authoring_manifest(draft_id: str) -> dict[str, Any]:
+    def validate_tool_authoring_manifest(
+        draft_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         try:
-            return _authoring().validate_manifest(draft_id)
+            return _authoring(slug).validate_manifest(draft_id)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
@@ -1575,9 +1599,10 @@ def create_app(
     def apply_tool_authoring_code_template(
         draft_id: str,
         body: ToolCodeTemplateApplyBody,
+        slug: str = Depends(workspace_slug_dep),
     ) -> dict[str, Any]:
         try:
-            return _authoring().apply_code_template(
+            return _authoring(slug).apply_code_template(
                 draft_id=draft_id,
                 template_id=body.template_id,
                 target_path=body.target_path,
@@ -1589,9 +1614,10 @@ def create_app(
     def preview_tool_authoring_draft(
         draft_id: str,
         body: ToolDraftPreviewBody,
+        slug: str = Depends(workspace_slug_dep),
     ) -> dict[str, Any]:
         try:
-            return _authoring().preview_draft(
+            return _authoring(slug).preview_draft(
                 draft_id=draft_id,
                 harness=body.harness,
             )
@@ -1599,25 +1625,31 @@ def create_app(
             _raise_authoring(exc)
 
     @app.post("/api/tool-authoring/drafts/{draft_id}/check")
-    def check_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+    def check_tool_authoring_draft(
+        draft_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         try:
-            return _authoring().run_check(draft_id)
+            return _authoring(slug).run_check(draft_id)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
     @app.post("/api/tool-authoring/drafts/{draft_id}/register")
-    def register_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+    def register_tool_authoring_draft(
+        draft_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         try:
-            return _authoring().register_draft(draft_id)
+            return _authoring(slug).register_draft(draft_id)
         except (ToolAuthoringError, ToolRegistryError, ValueError) as exc:
             if isinstance(exc, ToolAuthoringError):
                 _raise_authoring(exc)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/tool-authoring/drafts/{draft_id}/export")
-    def export_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+    def export_tool_authoring_draft(
+        draft_id: str, slug: str = Depends(workspace_slug_dep)
+    ) -> dict[str, Any]:
         try:
-            return _authoring().export_draft(draft_id)
+            return _authoring(slug).export_draft(draft_id)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 

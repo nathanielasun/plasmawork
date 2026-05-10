@@ -21,6 +21,51 @@ How to spot the mistake — grep pattern, code review heuristic, or test.
 
 ---
 
+## Error Pattern: Storage seam stays flat after workspace isolation lands elsewhere
+
+### Why it is bad
+When workspace isolation threads through the auth + URL + path
+helpers but ONE storage seam (a registry, a cache, a draft folder)
+keeps a flat layout, the system is silently cross-tenant on that
+seam. Users assume "the workspace is isolated" but the leaked
+seam is visible to everyone. Every "I see another user's X"
+incident in a multi-tenant system traces back to one of these
+forgotten seams.
+
+### Required behavior
+When a request grows a workspace dimension (gateway-resolved slug
+on `request.state`), every storage operation the handler touches
+MUST also accept and apply the slug. That includes:
+- Registry / index walks (`ToolRegistry`, run discovery, capsule
+  index, etc.).
+- Cache lookups (`local_cache/imported_tools/`,
+  `local_cache/workspaces/`, etc.).
+- Draft / scratch folders.
+- Symlink resolution (a symlink that escapes the workspace dir
+  is the same leak in different clothing).
+
+If the underlying primitive isn't workspace-aware, wrap it. The
+back-compat default (slug=None → flat read) is acceptable as a
+TRANSITION mechanism but ONLY if the gateway-driven traffic always
+passes a slug, AND a regression test pins that no flat path ever
+reaches a per-request handler.
+
+### How to detect
+- Convention-checker assertions that `imported_tools_root_for(slug)`
+  / `tool_drafts_root_for(slug)` etc. exist and are referenced by
+  every API handler that registers / lists / runs a tool.
+- A regression test that registers a tool in workspace A and
+  asserts it's NOT visible from workspace B.
+- A grep that the legacy `imported_tools/` flat path is read ONLY
+  by the migration sweep script and the back-compat ToolRegistry
+  default — never by a per-request handler.
+
+### Cross-reference
+See `bugs_and_fixes/bugfixes.md` 2026-05-10 *Tool registry becomes
+workspace-scoped*.
+
+---
+
 ## Error Pattern: Cross-platform path containment by string casing
 
 ### Why it is bad
