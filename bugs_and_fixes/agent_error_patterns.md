@@ -78,6 +78,33 @@ symlinks, or promote content that changed after the last check.
   construction gained controlled draft storage, hash-bound package checks,
   symlink rejection, and backend-owned registration/export.
 
+## Error Pattern: Creator UI without cleanup or bounded preview lifecycle
+
+### Failure mode
+An authoring page lets users create drafts, templates, cached snippets, or
+preview outputs but omits matching delete/archive controls and tests. Users
+then accumulate stale local artifacts, and agents compensate by adding ad-hoc
+execution or file-manager behavior that bypasses the controlled authoring
+service.
+
+### Required behavior
+- Every local create/import path gets a paired safe delete or archive path in
+  the same subsystem.
+- Preview execution uses server-known harness names, saved draft content,
+  managed temp roots, timeouts, and capped stdout/stderr.
+- Preview success never replaces package checks, validation tests, or lifecycle
+  approval.
+
+### Detection
+- Grep for new `create*`, `import*`, or `preview*` authoring APIs and verify a
+  paired deletion/lifecycle test exists.
+- UI tests should cover the management affordance, not just creation.
+
+### Bug log
+- 2026-05-08 *Tool authoring needed bounded preview and cleanup lifecycle*:
+  added workspace-local code-template deletion, unregistered draft deletion,
+  and harnessed preview coverage.
+
 ## Error Pattern: Auth substrate ships without the producer that mints sessions
 
 ### Failure mode

@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 import zipfile
 from collections.abc import Iterable
@@ -24,7 +26,7 @@ from typing import Any
 
 import yaml
 
-from simworkbench.paths import local_cache_root, repo_root
+from simworkbench.paths import local_cache_root, repo_root, temp_runs_root
 
 from .metadata import load_tool_yaml
 from .registry import ToolRegistry
@@ -42,7 +44,11 @@ TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
 DRAFT_ID_RE = re.compile(r"^draft-[a-f0-9]{12}$")
 TEMPLATE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 WORKSPACE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+CODE_TEMPLATE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{2,63}$")
 MAX_EDIT_BYTES = 250_000
+MAX_TEMPLATE_BYTES = 120_000
+MAX_PREVIEW_STDIO_BYTES = 20_000
+PREVIEW_TIMEOUT_SECONDS = 12
 WORKSPACE_ID = "local"
 INTERNAL_DIR = ".simworkbench"
 CHECKER = (
@@ -53,6 +59,22 @@ CHECKER = (
     / "scripts"
     / "check_tool_package.py"
 )
+PREVIEW_RUNNER = "simworkbench.tools.authoring_preview"
+CODE_TEMPLATE_CATEGORIES = {
+    "visualization",
+    "ode_solver",
+    "diagram",
+    "data_importer",
+    "diagnostic",
+    "utility",
+}
+PREVIEW_HARNESSES = {
+    "python_smoke",
+    "ode_solver",
+    "visualization",
+    "diagram",
+    "data_transform",
+}
 
 EDITABLE_TOP_LEVEL = {"tool.yaml", "README.md", "assumptions.md", "changelog.md"}
 EDITABLE_ROOT_SUFFIXES: dict[str, set[str]] = {
@@ -91,6 +113,12 @@ def _validate_template_id(template_id: str) -> str:
     return template_id
 
 
+def _validate_code_template_id(template_id: str) -> str:
+    if not CODE_TEMPLATE_ID_RE.fullmatch(template_id):
+        raise ToolAuthoringError("Invalid code template id.")
+    return template_id
+
+
 def _validate_draft_id(draft_id: str) -> str:
     if not DRAFT_ID_RE.fullmatch(draft_id):
         raise ToolAuthoringError("Invalid draft id.")
@@ -122,6 +150,39 @@ def _safe_relative_path(raw_path: str) -> PurePosixPath:
     if rel.parts[0] in SKIP_NAMES or INTERNAL_DIR in rel.parts:
         raise ToolAuthoringError("Internal files are not editable through authoring.")
     return rel
+
+
+def _validate_code_template_category(category: str) -> str:
+    if category not in CODE_TEMPLATE_CATEGORIES:
+        raise ToolAuthoringError(
+            "Invalid code template category. Expected one of "
+            f"{sorted(CODE_TEMPLATE_CATEGORIES)!r}."
+        )
+    return category
+
+
+def _validate_preview_harness(harness: str) -> str:
+    if harness not in PREVIEW_HARNESSES:
+        raise ToolAuthoringError(
+            f"Invalid preview harness. Expected one of {sorted(PREVIEW_HARNESSES)!r}."
+        )
+    return harness
+
+
+def _validate_text_payload(content: str, *, max_bytes: int, label: str) -> bytes:
+    encoded = content.encode("utf-8")
+    if len(encoded) > max_bytes:
+        raise ToolAuthoringError(f"{label} exceeds {max_bytes} byte authoring limit.")
+    if "\x00" in content:
+        raise ToolAuthoringError(f"NUL bytes are refused in {label}.")
+    return encoded
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    if not slug or not slug[0].isalpha():
+        slug = f"template-{slug}" if slug else "template"
+    return slug[:42]
 
 
 def _is_editable_path(rel: PurePosixPath) -> bool:
@@ -222,6 +283,16 @@ class ToolAuthoringService:
         return root
 
     @property
+    def built_in_code_templates_root(self) -> Path:
+        return repo_root() / "packages" / "internal_tools" / "code_templates"
+
+    @property
+    def workspace_code_templates_root(self) -> Path:
+        root = local_cache_root() / "workspaces" / self.workspace_id / "tool_code_templates"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    @property
     def audit_log(self) -> Path:
         root = local_cache_root() / "workspaces" / self.workspace_id
         root.mkdir(parents=True, exist_ok=True)
@@ -260,6 +331,151 @@ class ToolAuthoringService:
                 }
             )
         return rows
+
+    def list_code_templates(self) -> list[dict[str, Any]]:
+        """Return built-in and workspace-local Python code templates."""
+        rows: list[dict[str, Any]] = []
+        rows.extend(
+            self._code_templates_from_root(
+                self.built_in_code_templates_root,
+                source="built_in",
+            )
+        )
+        rows.extend(
+            self._code_templates_from_root(
+                self.workspace_code_templates_root,
+                source="workspace",
+            )
+        )
+        return sorted(rows, key=lambda row: (row["category"], row["title"]))
+
+    def create_code_template(
+        self,
+        *,
+        title: str,
+        description: str,
+        category: str,
+        target_path: str,
+        content: str,
+        preview_harness: str = "python_smoke",
+        source: str = "workspace",
+    ) -> dict[str, Any]:
+        """Save a workspace-local code template from UI-authored content."""
+        title = title.strip()
+        description = description.strip()
+        if not title:
+            raise ToolAuthoringError("Code template title must not be blank.")
+        category = _validate_code_template_category(category)
+        preview_harness = _validate_preview_harness(preview_harness)
+        target_rel = _safe_relative_path(target_path)
+        if not _is_editable_path(target_rel):
+            raise ToolAuthoringError(
+                f"Code template target is not an editable draft path: {target_path}"
+            )
+        _validate_text_payload(content, max_bytes=MAX_TEMPLATE_BYTES, label="code template")
+
+        template_id = _validate_code_template_id(f"{_slug(title)}-{uuid.uuid4().hex[:8]}")
+        template_dir = (self.workspace_code_templates_root / template_id).resolve()
+        if not _is_relative_to(template_dir, self.workspace_code_templates_root.resolve()):
+            raise ToolAuthoringError("Code template path escapes workspace root.")
+        template_dir.mkdir(parents=True)
+        snippet_name = "snippet.py" if target_rel.suffix == ".py" else "snippet.txt"
+        (template_dir / snippet_name).write_text(content, encoding="utf-8")
+        metadata = {
+            "template_id": template_id,
+            "title": title,
+            "description": description,
+            "category": category,
+            "language": "python" if target_rel.suffix == ".py" else "text",
+            "target_path": target_rel.as_posix(),
+            "preview_harness": preview_harness,
+            "content_file": snippet_name,
+            "source": source,
+            "created_at": _now(),
+            "updated_at": _now(),
+        }
+        (template_dir / "template.yaml").write_text(
+            yaml.safe_dump(metadata, sort_keys=False),
+            encoding="utf-8",
+        )
+        self._audit("code_template.created", template_id=template_id, title=title)
+        return self._load_code_template(template_dir, source="workspace")
+
+    def import_code_template(
+        self,
+        *,
+        title: str,
+        description: str,
+        category: str,
+        target_path: str,
+        content: str,
+        preview_harness: str = "python_smoke",
+    ) -> dict[str, Any]:
+        """Import a workspace-local code template from a validated payload."""
+        template = self.create_code_template(
+            title=title,
+            description=description,
+            category=category,
+            target_path=target_path,
+            content=content,
+            preview_harness=preview_harness,
+            source="imported",
+        )
+        self._audit("code_template.imported", template_id=template["template_id"])
+        return template
+
+    def delete_code_template(self, template_id: str) -> dict[str, Any]:
+        """Delete a workspace-local code template; built-ins are read-only."""
+        template_id = _validate_code_template_id(template_id)
+        built_in = (self.built_in_code_templates_root / template_id).resolve()
+        if built_in.is_dir() and _is_relative_to(
+            built_in,
+            self.built_in_code_templates_root.resolve(),
+        ):
+            raise ToolAuthoringError("Built-in code templates are read-only.")
+
+        target = (self.workspace_code_templates_root / template_id).resolve()
+        if not _is_relative_to(target, self.workspace_code_templates_root.resolve()):
+            raise ToolAuthoringError("Code template path escapes workspace root.")
+        if target.is_symlink():
+            raise ToolAuthoringError("Refusing to delete symlinked code template.")
+        if not target.is_dir():
+            raise ToolAuthoringNotFound(f"Unknown workspace code template: {template_id}")
+        shutil.rmtree(target)
+        self._audit("code_template.deleted", template_id=template_id)
+        return {"template_id": template_id, "deleted": True}
+
+    def apply_code_template(
+        self,
+        *,
+        draft_id: str,
+        template_id: str,
+        target_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply one code template to an editable file in a draft."""
+        root = self._draft_root(draft_id)
+        template = self._get_code_template(template_id)
+        rel = _safe_relative_path(target_path or str(template["target_path"]))
+        if not _is_editable_path(rel):
+            raise ToolAuthoringError(
+                f"Code template target is not an editable draft path: {rel.as_posix()}"
+            )
+        content = self._render_code_template(
+            root=root,
+            content=str(template["content"]),
+        )
+        draft = self.write_file(draft_id, rel.as_posix(), content)
+        self._audit(
+            "code_template.applied",
+            draft_id=draft_id,
+            template_id=template_id,
+            path=rel.as_posix(),
+        )
+        return {
+            "draft": draft,
+            "applied_template": template,
+            "path": rel.as_posix(),
+        }
 
     def create_draft(self, *, template_id: str, tool_name: str) -> dict[str, Any]:
         """Create a new draft from a server-known template."""
@@ -360,13 +576,11 @@ class ToolAuthoringService:
         rel = _safe_relative_path(path)
         if not _is_editable_path(rel):
             raise ToolAuthoringError(f"File is not in the editable manifest: {path}")
-        encoded = content.encode("utf-8")
-        if len(encoded) > MAX_EDIT_BYTES:
-            raise ToolAuthoringError(
-                f"File edit exceeds {MAX_EDIT_BYTES} byte authoring limit."
-            )
-        if "\x00" in content:
-            raise ToolAuthoringError("NUL bytes are refused in editable text files.")
+        _validate_text_payload(
+            content,
+            max_bytes=MAX_EDIT_BYTES,
+            label="editable text files",
+        )
         target = self._resolve(root, rel)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
@@ -524,6 +738,202 @@ class ToolAuthoringService:
             "archive": str(archive.relative_to(repo_root())),
             "size_bytes": archive.stat().st_size,
         }
+
+    def delete_draft(self, draft_id: str) -> dict[str, Any]:
+        """Delete one unregistered local draft from the managed draft root."""
+        root = self._draft_root(draft_id)
+        state = self._read_state(root)
+        if state.get("registered_tool"):
+            raise ToolAuthoringError(
+                "Registered draft records are kept for provenance; export then "
+                "delete the imported registry copy explicitly if needed."
+            )
+        if root.is_symlink():
+            raise ToolAuthoringError("Refusing to delete symlinked tool draft.")
+        shutil.rmtree(root)
+        self._audit("draft.deleted", draft_id=draft_id, tool_name=state["tool_name"])
+        return {"draft_id": draft_id, "deleted": True}
+
+    def preview_draft(self, *, draft_id: str, harness: str) -> dict[str, Any]:
+        """Run a saved draft through a bounded preview harness."""
+        root = self._draft_root(draft_id)
+        harness = _validate_preview_harness(harness)
+        preview_id = f"preview-{uuid.uuid4().hex[:12]}"
+        preview_root = (temp_runs_root() / "tool_authoring_previews" / preview_id).resolve()
+        if not _is_relative_to(preview_root, temp_runs_root().resolve()):
+            raise ToolAuthoringError("Preview root escapes temp_runs.")
+        preview_root.mkdir(parents=True)
+        result_path = preview_root / "result.json"
+        current_hash = _content_hash(root)
+        env = dict(os.environ)
+        core_src = repo_root() / "packages" / "core" / "src"
+        prior_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            str(core_src)
+            if not prior_pythonpath
+            else f"{core_src}{os.pathsep}{prior_pythonpath}"
+        )
+        start = time.monotonic()
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    PREVIEW_RUNNER,
+                    str(root),
+                    harness,
+                    str(result_path),
+                ],
+                cwd=repo_root(),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=PREVIEW_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            shutil.rmtree(preview_root, ignore_errors=True)
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            payload = {
+                "preview_id": preview_id,
+                "draft_id": draft_id,
+                "harness": harness,
+                "passed": False,
+                "returncode": -1,
+                "stdout": stdout[-MAX_PREVIEW_STDIO_BYTES:],
+                "stderr": (
+                    stderr[-MAX_PREVIEW_STDIO_BYTES:]
+                    + f"\nPreview timed out after {PREVIEW_TIMEOUT_SECONDS} seconds."
+                ).strip(),
+                "outputs": [],
+                "artifacts": [],
+                "elapsed_ms": int((time.monotonic() - start) * 1000),
+                "content_hash": current_hash,
+            }
+        else:
+            stdout = completed.stdout[-MAX_PREVIEW_STDIO_BYTES:]
+            stderr = completed.stderr[-MAX_PREVIEW_STDIO_BYTES:]
+            runner_payload: dict[str, Any] = {}
+            if result_path.is_file():
+                loaded = json.loads(result_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    runner_payload = loaded
+            elif completed.returncode == 0:
+                stderr = (stderr + "\nPreview runner did not write result.json.").strip()
+            payload = {
+                "preview_id": preview_id,
+                "draft_id": draft_id,
+                "harness": harness,
+                "passed": completed.returncode == 0 and bool(runner_payload.get("passed", True)),
+                "returncode": completed.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "outputs": runner_payload.get("outputs", []),
+                "artifacts": runner_payload.get("artifacts", []),
+                "elapsed_ms": int((time.monotonic() - start) * 1000),
+                "content_hash": current_hash,
+                "preview_root": str(preview_root.relative_to(repo_root())),
+                "diagnostics": runner_payload.get("diagnostics", []),
+            }
+            if not payload["passed"] and not payload["artifacts"]:
+                shutil.rmtree(preview_root, ignore_errors=True)
+
+        self._audit(
+            "draft.previewed",
+            draft_id=draft_id,
+            harness=harness,
+            passed=payload["passed"],
+            returncode=payload["returncode"],
+        )
+        return payload
+
+    def _code_templates_from_root(self, root: Path, *, source: str) -> list[dict[str, Any]]:
+        if not root.is_dir():
+            return []
+        rows: list[dict[str, Any]] = []
+        for template_dir in sorted(root.iterdir()):
+            if not template_dir.is_dir() or template_dir.is_symlink():
+                continue
+            try:
+                rows.append(self._load_code_template(template_dir, source=source))
+            except ToolAuthoringError:
+                if source == "built_in":
+                    raise
+                continue
+        return rows
+
+    def _get_code_template(self, template_id: str) -> dict[str, Any]:
+        template_id = _validate_code_template_id(template_id)
+        for root, source in (
+            (self.built_in_code_templates_root, "built_in"),
+            (self.workspace_code_templates_root, "workspace"),
+        ):
+            template_dir = (root / template_id).resolve()
+            if template_dir.is_dir() and _is_relative_to(template_dir, root.resolve()):
+                return self._load_code_template(template_dir, source=source)
+        raise ToolAuthoringNotFound(f"Unknown code template: {template_id}")
+
+    def _load_code_template(self, template_dir: Path, *, source: str) -> dict[str, Any]:
+        root = template_dir.resolve()
+        template_id = _validate_code_template_id(root.name)
+        metadata_path = root / "template.yaml"
+        if not metadata_path.is_file():
+            raise ToolAuthoringError(f"Code template metadata missing: {metadata_path}")
+        loaded = yaml.safe_load(metadata_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(loaded, dict):
+            raise ToolAuthoringError("Code template metadata must parse to a mapping.")
+        content_file = str(loaded.get("content_file", "snippet.py"))
+        content_rel = _safe_relative_path(content_file)
+        if len(content_rel.parts) != 1:
+            raise ToolAuthoringError("Code template content_file must be local to its template.")
+        content_path = (root / content_rel.as_posix()).resolve()
+        if not _is_relative_to(content_path, root):
+            raise ToolAuthoringError("Code template content escapes its root.")
+        if content_path.is_symlink():
+            raise ToolAuthoringError("Symlinked code template content is refused.")
+        if not content_path.is_file():
+            raise ToolAuthoringError(f"Code template content missing: {content_file}")
+        content = content_path.read_text(encoding="utf-8")
+        _validate_text_payload(content, max_bytes=MAX_TEMPLATE_BYTES, label="code template")
+
+        title = str(loaded.get("title", template_id.replace("_", " ").title())).strip()
+        if not title:
+            raise ToolAuthoringError("Code template title must not be blank.")
+        target_rel = _safe_relative_path(str(loaded.get("target_path", "src/tool.py")))
+        if not _is_editable_path(target_rel):
+            raise ToolAuthoringError(
+                f"Code template target is not an editable draft path: {target_rel.as_posix()}"
+            )
+        category = _validate_code_template_category(str(loaded.get("category", "utility")))
+        preview_harness = _validate_preview_harness(
+            str(loaded.get("preview_harness", "python_smoke"))
+        )
+        return {
+            "template_id": template_id,
+            "title": title,
+            "description": str(loaded.get("description", "")),
+            "category": category,
+            "language": str(loaded.get("language", "python")),
+            "target_path": target_rel.as_posix(),
+            "preview_harness": preview_harness,
+            "source": "built_in" if source == "built_in" else str(loaded.get("source", source)),
+            "readonly": source == "built_in",
+            "content": content,
+            "size_bytes": len(content.encode("utf-8")),
+            "created_at": str(loaded.get("created_at", "")),
+            "updated_at": str(loaded.get("updated_at", "")),
+        }
+
+    def _render_code_template(self, *, root: Path, content: str) -> str:
+        state = self._read_state(root)
+        metadata = load_tool_yaml(root / "tool.yaml")
+        _, class_name = metadata.entrypoint.split(":", 1)
+        return (
+            content.replace("{{TOOL_NAME}}", str(state["tool_name"]))
+            .replace("{{TOOL_CLASS}}", class_name)
+            .replace("{{TOOL_VERSION}}", metadata.version)
+        )
 
     def _draft_root(self, draft_id: str) -> Path:
         draft_id = _validate_draft_id(draft_id)

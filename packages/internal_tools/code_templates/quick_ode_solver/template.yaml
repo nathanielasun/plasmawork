@@ -1,0 +1,8 @@
+template_id: quick_ode_solver
+title: Quick ODE Solver Routine
+description: Uses scipy.solve_ivp for a small first-order decay model and returns table data for inspection.
+category: ode_solver
+language: python
+target_path: src/tool.py
+preview_harness: ode_solver
+content_file: snippet.py

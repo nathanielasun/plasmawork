@@ -1,0 +1,8 @@
+template_id: quick_visualization
+title: Quick Matplotlib Visualization
+description: Full src/tool.py replacement that plots the first available time-series input.
+category: visualization
+language: python
+target_path: src/tool.py
+preview_harness: visualization
+content_file: snippet.py

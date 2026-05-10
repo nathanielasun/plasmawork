@@ -173,23 +173,42 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
 
       <h2>UI-native draft authoring</h2>
       <p>
-        The Tools page can construct legitimate draft tools from templates.
-        The browser talks to <code>/api/tool-authoring/*</code> endpoints; the
-        backend creates drafts under{" "}
+        The Tools page can construct legitimate draft tools from package
+        templates and Python code templates. The browser talks to{" "}
+        <code>/api/tool-authoring/*</code> endpoints; the backend creates
+        drafts under{" "}
         <code>local_cache/workspaces/local/tool_drafts/</code>, keeps a local
-        authoring audit log, and only exposes an allow-listed text-file editor.
+        authoring audit log, and only exposes allow-listed package files.
       </p>
       <ol>
         <li>Select a server-known template and enter a valid lowercase tool name.</li>
-        <li>Edit the visible package files such as <code>tool.yaml</code>, <code>src/tool.py</code>, tests, docs, and examples.</li>
+        <li>Edit visible package files such as <code>tool.yaml</code>, <code>src/tool.py</code>, tests, docs, and examples in the Monaco-backed code pane.</li>
+        <li>Apply built-in Python templates for diagnostics, visualizations, structured diagrams, or quick ODE routines; save/import workspace-local templates for repeated use.</li>
+        <li>Run a bounded preview harness to exercise saved draft code and inspect stdout, stderr, tables, JSON, diagrams, and image outputs.</li>
         <li>Run the backend package checker. Registration is blocked unless the latest passing check matches the current content hash.</li>
-        <li>Register the checked draft into <code>local_cache/imported_tools/</code> or export a draft archive for review.</li>
+        <li>Register the checked draft into <code>local_cache/imported_tools/</code>, export a draft archive for review, or delete unregistered drafts/templates when they are no longer useful.</li>
       </ol>
       <p>
         Draft authoring is intentionally not a general file manager. Hidden
         files, absolute paths, path traversal, oversized edits, NUL bytes, and
         symlinked draft paths are refused before package hashing, export, or
         registration.
+      </p>
+      <p>
+        Code preview is intentionally harnessed rather than arbitrary shell
+        execution. The backend runs saved draft code in a subprocess with a
+        fixed harness name, timeout, capped stdout/stderr, and server-derived
+        output roots under <code>temp_runs/tool_authoring_previews/</code>.
+        Preview success is a development aid only; it does not replace package
+        checks, validation tests, lifecycle approval, or reviewer promotion.
+      </p>
+      <p>
+        Built-in code templates live in{" "}
+        <code>packages/internal_tools/code_templates/</code>. User-saved and
+        imported templates live under{" "}
+        <code>local_cache/workspaces/local/tool_code_templates/</code> and can
+        be deleted from the Manage tab. This keeps reusable local snippets
+        available without committing personal draft code into the repository.
       </p>
 
       <h2>Validation requirements</h2>

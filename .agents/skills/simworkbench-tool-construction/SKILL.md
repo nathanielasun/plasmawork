@@ -25,11 +25,15 @@ an internal tool under `packages/internal_tools/`.
    unit mistakes, path escapes, and unsupported output shapes.
 7. Run the deterministic checker:
    `.agents/skills/simworkbench-tool-construction/scripts/check_tool_package.py <tool-package>`.
-8. Bind UI from the normalized contract. Do not hard-code raw fetch calls or
+8. When using the Tools page builder, keep drafts under
+   `local_cache/workspaces/<workspace>/tool_drafts/`, use code templates via
+   `/api/tool-authoring/code-templates`, preview only through bounded harnesses,
+   and provide delete/archive paths for every local artifact you create.
+9. Bind UI from the normalized contract. Do not hard-code raw fetch calls or
    privileged behavior in components.
-9. Promote lifecycle state only through the registry/service gate. Agents may
+10. Promote lifecycle state only through the registry/service gate. Agents may
    create `draft` or `candidate`; higher states need human approval evidence.
-10. Update user-facing docs and bug memory when behavior or error patterns
+11. Update user-facing docs and bug memory when behavior or error patterns
     change.
 
 ## References

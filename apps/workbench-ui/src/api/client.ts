@@ -174,6 +174,52 @@ export interface ToolAuthoringTemplate {
   required_files: string[];
 }
 
+export type ToolAuthoringCodeTemplateCategory =
+  | "visualization"
+  | "ode_solver"
+  | "diagram"
+  | "data_importer"
+  | "diagnostic"
+  | "utility";
+
+export type ToolAuthoringPreviewHarness =
+  | "python_smoke"
+  | "ode_solver"
+  | "visualization"
+  | "diagram"
+  | "data_transform";
+
+export interface ToolAuthoringCodeTemplate {
+  template_id: string;
+  title: string;
+  description: string;
+  category: ToolAuthoringCodeTemplateCategory;
+  language: "python" | "text" | string;
+  target_path: string;
+  preview_harness: ToolAuthoringPreviewHarness;
+  source: "built_in" | "workspace" | "imported" | string;
+  readonly: boolean;
+  content: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ToolAuthoringCodeTemplateBody {
+  title: string;
+  description: string;
+  category: ToolAuthoringCodeTemplateCategory;
+  target_path: string;
+  content: string;
+  preview_harness: ToolAuthoringPreviewHarness;
+}
+
+export interface ToolAuthoringTemplateApplication {
+  draft: ToolAuthoringDraft;
+  applied_template: ToolAuthoringCodeTemplate;
+  path: string;
+}
+
 export interface ToolAuthoringDraftFile {
   path: string;
   size_bytes: number;
@@ -238,6 +284,28 @@ export interface ToolAuthoringExport {
   draft_id: string;
   archive: string;
   size_bytes: number;
+}
+
+export interface ToolAuthoringDeleteResult {
+  draft_id?: string;
+  template_id?: string;
+  deleted: boolean;
+}
+
+export interface ToolAuthoringPreviewResult {
+  preview_id: string;
+  draft_id: string;
+  harness: ToolAuthoringPreviewHarness;
+  passed: boolean;
+  returncode: number;
+  stdout: string;
+  stderr: string;
+  outputs: ToolRunOutput[];
+  artifacts: ToolArtifactRef[];
+  diagnostics?: string[];
+  elapsed_ms: number;
+  content_hash: string;
+  preview_root?: string;
 }
 
 export type ToolInputKind =
@@ -719,11 +787,22 @@ export interface ApiClient {
   getTool(name: string): Promise<ToolDetail>;
   getToolDocs(name: string): Promise<ToolDocs>;
   listToolAuthoringTemplates(): Promise<ToolAuthoringTemplate[]>;
+  listToolAuthoringCodeTemplates(): Promise<ToolAuthoringCodeTemplate[]>;
+  createToolAuthoringCodeTemplate(body: ToolAuthoringCodeTemplateBody): Promise<ToolAuthoringCodeTemplate>;
+  importToolAuthoringCodeTemplate(body: ToolAuthoringCodeTemplateBody): Promise<ToolAuthoringCodeTemplate>;
+  deleteToolAuthoringCodeTemplate(templateId: string): Promise<ToolAuthoringDeleteResult>;
   createToolDraft(templateId: string, name: string): Promise<ToolAuthoringDraft>;
   listToolDrafts(): Promise<ToolAuthoringDraft[]>;
   getToolDraft(draftId: string): Promise<ToolAuthoringDraft>;
+  deleteToolDraft(draftId: string): Promise<ToolAuthoringDeleteResult>;
   readToolDraftFile(draftId: string, path: string): Promise<ToolAuthoringFile>;
   writeToolDraftFile(draftId: string, path: string, content: string): Promise<ToolAuthoringDraft>;
+  applyToolAuthoringCodeTemplate(
+    draftId: string,
+    templateId: string,
+    targetPath?: string,
+  ): Promise<ToolAuthoringTemplateApplication>;
+  previewToolDraft(draftId: string, harness: ToolAuthoringPreviewHarness): Promise<ToolAuthoringPreviewResult>;
   validateToolDraftManifest(draftId: string): Promise<ToolAuthoringManifestResult>;
   checkToolDraft(draftId: string): Promise<ToolAuthoringCheckResult>;
   registerToolDraft(draftId: string): Promise<ToolAuthoringRegistration>;
@@ -1173,6 +1252,34 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
       fetchJson(`/tools/${encodeURIComponent(name)}/docs`, undefined, baseUrl),
     listToolAuthoringTemplates: () =>
       fetchJson("/tool-authoring/templates", undefined, baseUrl),
+    listToolAuthoringCodeTemplates: () =>
+      fetchJson("/tool-authoring/code-templates", undefined, baseUrl),
+    createToolAuthoringCodeTemplate: (body) =>
+      fetchJson(
+        "/tool-authoring/code-templates",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        baseUrl,
+      ),
+    importToolAuthoringCodeTemplate: (body) =>
+      fetchJson(
+        "/tool-authoring/code-templates/import",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        baseUrl,
+      ),
+    deleteToolAuthoringCodeTemplate: (templateId) =>
+      fetchJson(
+        `/tool-authoring/code-templates/${encodeURIComponent(templateId)}`,
+        { method: "DELETE" },
+        baseUrl,
+      ),
     createToolDraft: (templateId, name) =>
       fetchJson(
         "/tool-authoring/drafts",
@@ -1190,6 +1297,12 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
         undefined,
         baseUrl,
       ),
+    deleteToolDraft: (draftId) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}`,
+        { method: "DELETE" },
+        baseUrl,
+      ),
     readToolDraftFile: (draftId, path) =>
       fetchJson(
         `/tool-authoring/drafts/${encodeURIComponent(draftId)}/files/${encodePathSegments(path)}`,
@@ -1203,6 +1316,26 @@ export function createApiClient(baseUrl: string = DEFAULT_BASE): ApiClient {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content }),
+        },
+        baseUrl,
+      ),
+    applyToolAuthoringCodeTemplate: (draftId, templateId, targetPath) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/apply-code-template`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ template_id: templateId, target_path: targetPath }),
+        },
+        baseUrl,
+      ),
+    previewToolDraft: (draftId, harness) =>
+      fetchJson(
+        `/tool-authoring/drafts/${encodeURIComponent(draftId)}/preview`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ harness }),
         },
         baseUrl,
       ),

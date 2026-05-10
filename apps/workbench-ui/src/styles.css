@@ -319,6 +319,12 @@ button.primary:hover {
   background: #2d3748;
   border-color: #2d3748;
 }
+button.danger {
+  background: var(--status-deprecated-fill);
+  color: var(--status-deprecated-fg);
+  border-color: var(--status-deprecated-border);
+  font-weight: 700;
+}
 
 /* Phase 2D — capsule explorer detail panel. */
 button.text-button {
@@ -1107,7 +1113,12 @@ ol.lifecycle li.lifecycle-active {
   gap: var(--space-3);
 }
 .tool-authoring-start-pane {
-  max-width: 34rem;
+  max-width: 58rem;
+}
+.tool-authoring-start-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: var(--space-3);
 }
 .tool-authoring-pane h3 {
   margin: 0;
@@ -1125,6 +1136,131 @@ ol.lifecycle li.lifecycle-active {
   grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
   gap: var(--space-3);
   min-width: 0;
+}
+.tool-code-workbench {
+  display: grid;
+  grid-template-columns: minmax(170px, 230px) minmax(0, 1fr) minmax(240px, 320px);
+  gap: var(--space-3);
+  min-width: 0;
+}
+.tool-code-file-list,
+.tool-code-template-drawer {
+  display: flex;
+  min-width: 0;
+  max-height: 39rem;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-nested);
+  padding: var(--space-2);
+}
+.tool-authoring-minihead,
+.tool-code-editor-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.tool-code-editor-shell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tool-monaco-frame {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #1e1e1e;
+}
+.tool-code-template-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tool-code-template-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  padding: 0.65rem;
+  text-align: left;
+}
+.tool-code-template-card:hover,
+.tool-code-template-card-active {
+  border-color: var(--accent);
+  background: var(--surface-emphasis);
+}
+.tool-code-template-card span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.tool-code-template-card strong,
+.tool-code-template-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-code-template-card small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.tool-code-template-preview {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+.tool-code-snippet-preview {
+  max-height: 13rem;
+}
+.tool-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+.tool-preview-results,
+.tool-preview-logs,
+.tool-manage-grid {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+.tool-preview-output-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.tool-preview-stderr {
+  border-color: var(--status-deprecated-border);
+}
+.tool-manage-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  align-items: start;
+}
+.tool-manage-grid textarea {
+  min-height: 14rem;
+  font-family: "SF Mono", "Monaco", "Cascadia Code", monospace;
+  font-size: 0.82rem;
+}
+.tool-authoring-draft-picker {
+  max-width: 34rem;
 }
 .tool-authoring-file-list {
   display: flex;
@@ -1521,6 +1657,10 @@ ol.lifecycle li.lifecycle-active {
   .dashboard-grid-3,
   .tools-layout,
   .tool-workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tool-code-workbench,
+  .tool-authoring-start-grid {
     grid-template-columns: minmax(0, 1fr);
   }
   .tool-authoring-file-grid {

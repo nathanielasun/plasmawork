@@ -38,12 +38,17 @@ Endpoints:
 - ``POST /api/tools/import``                   — copy a tool tree into
   ``local_cache/imported_tools/`` (Phase 3D).
 - ``GET  /api/tool-authoring/templates``       — list server-known tool templates.
+- ``GET  /api/tool-authoring/code-templates``  — list Python code snippets.
+- ``POST /api/tool-authoring/code-templates``  — save a workspace code snippet.
+- ``DELETE /api/tool-authoring/code-templates/{template_id}`` — delete local snippet.
 - ``POST /api/tool-authoring/drafts``          — create a controlled tool draft.
 - ``GET  /api/tool-authoring/drafts``          — list controlled tool drafts.
 - ``GET  /api/tool-authoring/drafts/{draft_id}`` — read draft status/files.
+- ``DELETE /api/tool-authoring/drafts/{draft_id}`` — delete an unregistered draft.
 - ``GET  /api/tool-authoring/drafts/{draft_id}/files/{path}`` — read draft file.
 - ``PUT  /api/tool-authoring/drafts/{draft_id}/files/{path}`` — edit draft file.
 - ``POST /api/tool-authoring/drafts/{draft_id}/manifest`` — parse draft tool.yaml.
+- ``POST /api/tool-authoring/drafts/{draft_id}/preview`` — bounded code preview.
 - ``POST /api/tool-authoring/drafts/{draft_id}/check`` — run package checker.
 - ``POST /api/tool-authoring/drafts/{draft_id}/register`` — register checked draft.
 - ``POST /api/tool-authoring/drafts/{draft_id}/export`` — export draft package.
@@ -194,6 +199,30 @@ class ToolDraftFileBody(BaseModel):
     """PUT /api/tool-authoring/drafts/{draft_id}/files/{path} body."""
 
     content: str
+
+
+class ToolCodeTemplateBody(BaseModel):
+    """POST /api/tool-authoring/code-templates body."""
+
+    title: str
+    description: str = ""
+    category: str
+    target_path: str
+    content: str
+    preview_harness: str = "python_smoke"
+
+
+class ToolCodeTemplateApplyBody(BaseModel):
+    """POST /api/tool-authoring/drafts/{draft_id}/apply-code-template body."""
+
+    template_id: str
+    target_path: str | None = None
+
+
+class ToolDraftPreviewBody(BaseModel):
+    """POST /api/tool-authoring/drafts/{draft_id}/preview body."""
+
+    harness: str = "python_smoke"
 
 
 class PaperImportBody(BaseModel):
@@ -1263,6 +1292,49 @@ def create_app() -> FastAPI:
     def list_tool_authoring_templates() -> list[dict[str, Any]]:
         return _authoring().list_templates()
 
+    @app.get("/api/tool-authoring/code-templates")
+    def list_tool_authoring_code_templates() -> list[dict[str, Any]]:
+        return _authoring().list_code_templates()
+
+    @app.post("/api/tool-authoring/code-templates")
+    def create_tool_authoring_code_template(
+        body: ToolCodeTemplateBody,
+    ) -> dict[str, Any]:
+        try:
+            return _authoring().create_code_template(
+                title=body.title,
+                description=body.description,
+                category=body.category,
+                target_path=body.target_path,
+                content=body.content,
+                preview_harness=body.preview_harness,
+            )
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.post("/api/tool-authoring/code-templates/import")
+    def import_tool_authoring_code_template(
+        body: ToolCodeTemplateBody,
+    ) -> dict[str, Any]:
+        try:
+            return _authoring().import_code_template(
+                title=body.title,
+                description=body.description,
+                category=body.category,
+                target_path=body.target_path,
+                content=body.content,
+                preview_harness=body.preview_harness,
+            )
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.delete("/api/tool-authoring/code-templates/{template_id}")
+    def delete_tool_authoring_code_template(template_id: str) -> dict[str, Any]:
+        try:
+            return _authoring().delete_code_template(template_id)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
     @app.post("/api/tool-authoring/drafts")
     def create_tool_authoring_draft(body: ToolDraftCreateBody) -> dict[str, Any]:
         try:
@@ -1281,6 +1353,13 @@ def create_app() -> FastAPI:
     def get_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
         try:
             return _authoring().get_draft(draft_id)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.delete("/api/tool-authoring/drafts/{draft_id}")
+    def delete_tool_authoring_draft(draft_id: str) -> dict[str, Any]:
+        try:
+            return _authoring().delete_draft(draft_id)
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
@@ -1306,6 +1385,33 @@ def create_app() -> FastAPI:
     def validate_tool_authoring_manifest(draft_id: str) -> dict[str, Any]:
         try:
             return _authoring().validate_manifest(draft_id)
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.post("/api/tool-authoring/drafts/{draft_id}/apply-code-template")
+    def apply_tool_authoring_code_template(
+        draft_id: str,
+        body: ToolCodeTemplateApplyBody,
+    ) -> dict[str, Any]:
+        try:
+            return _authoring().apply_code_template(
+                draft_id=draft_id,
+                template_id=body.template_id,
+                target_path=body.target_path,
+            )
+        except ToolAuthoringError as exc:
+            _raise_authoring(exc)
+
+    @app.post("/api/tool-authoring/drafts/{draft_id}/preview")
+    def preview_tool_authoring_draft(
+        draft_id: str,
+        body: ToolDraftPreviewBody,
+    ) -> dict[str, Any]:
+        try:
+            return _authoring().preview_draft(
+                draft_id=draft_id,
+                harness=body.harness,
+            )
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 

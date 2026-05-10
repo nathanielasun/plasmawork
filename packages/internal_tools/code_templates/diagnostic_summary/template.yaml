@@ -1,0 +1,8 @@
+template_id: diagnostic_summary
+title: Diagnostic Summary Table
+description: Computes min/max/mean for a unit-aware signal and returns a table-ready summary.
+category: diagnostic
+language: python
+target_path: src/tool.py
+preview_harness: python_smoke
+content_file: snippet.py

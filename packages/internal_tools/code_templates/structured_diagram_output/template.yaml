@@ -1,0 +1,8 @@
+template_id: structured_diagram_output
+title: Structured Diagram Output
+description: Returns nodes/edges JSON for the safe diagram renderer; raw HTML and SVG are intentionally avoided.
+category: diagram
+language: python
+target_path: src/tool.py
+preview_harness: diagram
+content_file: snippet.py

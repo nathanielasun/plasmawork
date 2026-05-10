@@ -201,6 +201,44 @@ Do not implement cross-platform path containment by string-lowercasing paths.
 Use lexical containment first, then a filesystem-confirmed `samefile` fallback
 for case-preserving aliases.
 
+## 2026-05-08: Tool authoring needed bounded preview and cleanup lifecycle
+
+### Affected subsystem
+- `packages/core/src/simworkbench/tools/authoring.py`
+- `packages/core/src/simworkbench/tools/authoring_preview.py`
+- `apps/workbench-ui/src/components/tools/ToolAuthoringPanel.tsx`
+
+### Symptoms
+The tool builder could create and edit drafts, but it had no first-class way
+to reuse Python implementation templates, preview saved code safely, or delete
+unneeded drafts/templates. That encouraged one-way accumulation of local
+authoring artifacts and would push users toward ad-hoc execution outside the
+controlled draft workflow.
+
+### Root cause
+The initial UI authoring pass stopped at package-level templates plus a text
+editor. It did not model code snippets as lifecycle-managed local artifacts,
+and it did not provide a harnessed preview path distinct from validation and
+registration.
+
+### Fix
+Added built-in Python code templates, workspace-local save/import/delete
+template APIs, unregistered draft deletion, Monaco-backed authoring UI tabs,
+and subprocess-backed preview harnesses for smoke, visualization, ODE,
+diagram, and data-transform checks. Preview runs execute saved draft content
+only, under server-derived roots with timeout and stdout/stderr caps.
+
+### Regression protection
+- `tests/integration/test_tool_authoring_api.py`
+- `apps/workbench-ui/src/__tests__/ToolAuthoringPanel.test.tsx`
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Any UI that creates local workspace artifacts must also expose the matching
+safe delete/archive lifecycle and regression coverage. Do not add arbitrary
+snippet execution to compensate for missing preview harnesses.
+
 ## 2026-05-08: Tool authoring needed a controlled draft substrate
 
 ### Affected subsystem

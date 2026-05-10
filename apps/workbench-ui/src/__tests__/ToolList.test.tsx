@@ -60,9 +60,9 @@ describe("ToolList", () => {
       expect(screen.getAllByText("diagnostic · 0.1.0").length).toBeGreaterThan(0);
       expect(screen.getAllByText("candidate").length).toBeGreaterThan(0);
     });
-    expect(screen.queryByText("Build tool from template")).not.toBeInTheDocument();
+    expect(screen.queryByText("Python tool builder")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Build" }));
-    expect(await screen.findByText("Build tool from template")).toBeInTheDocument();
+    expect(await screen.findByText("Python tool builder")).toBeInTheDocument();
   });
 
   it("keeps the library curated and reveals hidden tools through search", async () => {

@@ -236,10 +236,12 @@ Dense operational pages use a stronger layout scaffold:
 - `.tools-overview-collapse` and `.tool-collapse-card` are for secondary
   metrics and less-common actions such as external imports. They should keep
   summary text visible while moving full controls behind native disclosure.
-- `.tool-authoring-*` classes define the controlled tool-draft builder:
-  Start/Edit/Check tabs, bounded file list/editor, and checker/register
-  controls. This panel is a package authoring workflow, not a general
-  filesystem browser.
+- `.tool-authoring-*` and `.tool-code-*` classes define the controlled
+  tool-draft builder: Start/Code/Preview/Check/Manage tabs, a bounded
+  draft-file list, Monaco-backed Python editor, reusable code-template
+  drawer, preview output grid, and checker/register controls. This panel
+  is a package authoring workflow, not a general filesystem browser or
+  arbitrary snippet runner.
 - `.list-row` is the full-width selectable row pattern for registry
   objects; it keeps status pills visible while truncating long names.
 - `.detail-grid` is the label/value contract view for server-derived

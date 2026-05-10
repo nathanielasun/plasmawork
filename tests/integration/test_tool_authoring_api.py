@@ -136,6 +136,78 @@ def test_authoring_draft_check_stale_guard_and_registration() -> None:
         _cleanup(tool_name, draft_id)
 
 
+def test_authoring_code_templates_apply_preview_and_delete() -> None:
+    client = _client()
+    tool_name = _new_tool_name("ui_author_preview")
+    draft_id: str | None = None
+    user_template_id: str | None = None
+    _cleanup(tool_name)
+    try:
+        listed = client.get("/api/tool-authoring/code-templates")
+        assert listed.status_code == 200, listed.text
+        built_ins = listed.json()
+        assert "quick_ode_solver" in {row["template_id"] for row in built_ins}
+
+        created = client.post(
+            "/api/tool-authoring/drafts",
+            json={"template_id": "diagnostic", "name": tool_name},
+        )
+        assert created.status_code == 200, created.text
+        draft_id = created.json()["draft_id"]
+
+        applied = client.post(
+            f"/api/tool-authoring/drafts/{draft_id}/apply-code-template",
+            json={"template_id": "diagnostic_summary"},
+        )
+        assert applied.status_code == 200, applied.text
+        assert applied.json()["path"] == "src/tool.py"
+
+        preview = client.post(
+            f"/api/tool-authoring/drafts/{draft_id}/preview",
+            json={"harness": "python_smoke"},
+        )
+        assert preview.status_code == 200, preview.text
+        preview_body = preview.json()
+        assert preview_body["passed"] is True
+        assert preview_body["outputs"]
+        assert preview_body["content_hash"]
+
+        saved = client.post(
+            "/api/tool-authoring/code-templates",
+            json={
+                "title": "Pytest Saved Diagnostic",
+                "description": "saved during regression test",
+                "category": "diagnostic",
+                "target_path": "src/tool.py",
+                "preview_harness": "python_smoke",
+                "content": "print('template body')\n",
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        user_template_id = saved.json()["template_id"]
+
+        delete_builtin = client.delete(
+            "/api/tool-authoring/code-templates/diagnostic_summary"
+        )
+        assert delete_builtin.status_code == 400
+
+        deleted = client.delete(f"/api/tool-authoring/code-templates/{user_template_id}")
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["deleted"] is True
+        user_template_id = None
+
+        deleted_draft = client.delete(f"/api/tool-authoring/drafts/{draft_id}")
+        assert deleted_draft.status_code == 200, deleted_draft.text
+        assert deleted_draft.json()["deleted"] is True
+        missing = client.get(f"/api/tool-authoring/drafts/{draft_id}")
+        assert missing.status_code == 404
+        draft_id = None
+    finally:
+        if user_template_id is not None:
+            client.delete(f"/api/tool-authoring/code-templates/{user_template_id}")
+        _cleanup(tool_name, draft_id)
+
+
 def test_authoring_rejects_symlinked_draft_files() -> None:
     client = _client()
     tool_name = _new_tool_name("ui_author_link")

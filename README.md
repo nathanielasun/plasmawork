@@ -267,12 +267,15 @@ See [`CLAUDE.md → How to Add a Simulation Module`](./CLAUDE.md#how-to-add-a-si
 See [`CLAUDE.md → How to Add an Internal Tool`](./CLAUDE.md#how-to-add-an-internal-tool) and [`docs_site/src/content/internal_tools.tsx`](./docs_site/src/content/internal_tools.tsx).
 
 The Tools page also supports UI-native draft authoring from server-known
-templates. Drafts are stored under
-`local_cache/workspaces/local/tool_drafts/`, editable files are allow-listed,
-the backend package checker must pass against the current content hash, and
-registration copies the checked package into `local_cache/imported_tools/`.
-This is the preferred path for interactive tool construction; direct registry
-edits remain available for code review and built-in tools.
+package templates plus reusable Python code templates. Drafts are stored under
+`local_cache/workspaces/local/tool_drafts/`, workspace-local code templates are
+stored under `local_cache/workspaces/local/tool_code_templates/`, editable files
+are allow-listed, and previews run saved draft code through fixed backend
+harnesses with time/output limits. The backend package checker must still pass
+against the current content hash before registration copies the package into
+`local_cache/imported_tools/`. This is the preferred path for interactive tool
+construction; direct registry edits remain available for code review and
+built-in tools.
 
 ---
 
