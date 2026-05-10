@@ -33,6 +33,22 @@ import type { FastifyInstance } from "fastify";
 
 import { workbenchProxyPlugin } from "./proxy/workbenchProxy.js";
 import { loadGatewayEnv, type GatewayEnv } from "./env.js";
+
+/**
+ * Map ``WORKBENCH_GATEWAY_TRUST_PROXY`` env-var strings to Fastify's
+ * ``trustProxy`` shapes. Falls back to ``false`` (no XFF trust) when
+ * the var is unset / empty — the safe default for a public-facing
+ * gateway.
+ */
+function parseTrustProxyEnv(
+  value: string | undefined,
+): boolean | string | string[] {
+  if (value === undefined || value.length === 0) return false;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value.includes(",")) return value.split(",").map((s) => s.trim());
+  return value;
+}
 import {
   buildGatewayServices,
   type GatewayServices,
@@ -93,6 +109,13 @@ export async function buildGateway(
     appSql: services.appPool.sql,
     cookieSecret: env.cookieSecret,
     errorMapping: { dev: false },
+    // Audit fix (2026-05-09): the gateway is the public entry, so
+    // it CANNOT trust X-Forwarded-For from clients. The
+    // ``WORKBENCH_GATEWAY_TRUST_PROXY`` env var lets a deployment
+    // behind a trusted reverse proxy opt back in. Empty / unset =
+    // false; "true" = unconditional trust; comma-separated list =
+    // CIDR allowlist (Fastify forwards to ``proxy-addr``).
+    trustProxy: parseTrustProxyEnv(env.trustProxy),
   });
 
   const mw = buildGatewayMiddleware({

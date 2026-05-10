@@ -365,22 +365,35 @@ class AutonomySweepBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Workspace slug resolution — Phase 0.5 / Phase E5 (2026-05-09).
+# Workspace slug resolution — Phase 0.5 / Phase E5 + post-audit hardening
+# (2026-05-09).
 #
 # The workbench-gateway proxies requests with the resolved workspace slug
 # attached to ``request.state.workspace_slug`` via the HMAC-verified
 # auth_middleware. Route handlers read it through the
-# ``workspace_slug_dep`` FastAPI dependency below; that dependency falls
-# back to ``DEFAULT_WORKSPACE_SLUG`` when the state attribute is absent
-# (single-tenant dev mode without the gateway, plus existing tests that
-# instantiate ``create_app()`` directly via TestClient). Production with
-# the gateway always populates the state — the fallback is the
-# convenience seam that keeps internal-caller tests + dev-mode workflows
-# working while the gateway slice is in flight.
+# ``workspace_slug_dep`` FastAPI dependency below.
 #
-# The default slug is overridable via ``SIMWORKBENCH_DEFAULT_WORKSPACE_SLUG``
-# so an operator running a single-tenant install with a renamed workspace
-# can keep the API working without redeploying.
+# Two modes:
+#   - **gateway-required (production)**: ``WORKBENCH_GATEWAY_HANDOFF_SECRET``
+#     is set in the env. ``create_app`` mounts ``WorkbenchHandoffMiddleware``
+#     and ``workspace_slug_dep`` FAILS-CLOSED with 401 when
+#     ``request.state.workspace_slug`` is absent. Defense in depth against
+#     a same-host process that bypasses the gateway: even on loopback,
+#     unsigned requests are rejected.
+#   - **dev / single-tenant (no gateway)**: env var unset.
+#     ``create_app`` does NOT mount the middleware; ``workspace_slug_dep``
+#     falls back to ``DEFAULT_WORKSPACE_SLUG`` so direct TestClient usage
+#     and internal-caller scripts keep working. The audit fix on
+#     2026-05-09 closed the previous "fallback always engaged" gap which
+#     allowed any colocated process to call the API as the default
+#     workspace.
+#
+# Override knobs:
+#   - ``SIMWORKBENCH_DEFAULT_WORKSPACE_SLUG``: default slug used in dev
+#     mode (defaults to ``shared-public-experiments``).
+#   - ``SIMWORKBENCH_REQUIRE_GATEWAY``: set to ``1`` to force gateway-
+#     required mode without setting the secret env var (used by tests
+#     that inject the middleware manually).
 # ---------------------------------------------------------------------------
 
 
@@ -389,17 +402,44 @@ DEFAULT_WORKSPACE_SLUG = os.environ.get(
 )
 
 
+def _gateway_required_from_env() -> bool:
+    """Return True iff the env declares gateway-required mode.
+
+    Gateway-required mode is implied either by the explicit
+    ``SIMWORKBENCH_REQUIRE_GATEWAY=1`` opt-in OR by the presence of a
+    non-empty ``WORKBENCH_GATEWAY_HANDOFF_SECRET`` (any production
+    deployment that runs the gateway will have set this for the
+    FastAPI process to read).
+    """
+    if os.environ.get("SIMWORKBENCH_REQUIRE_GATEWAY", "") == "1":
+        return True
+    secret = os.environ.get("WORKBENCH_GATEWAY_HANDOFF_SECRET", "")
+    return len(secret) > 0
+
+
 def workspace_slug_dep(request: Request) -> str:
-    """Return the request's workspace slug, falling back to the default.
+    """Return the request's workspace slug.
 
     Reads ``request.state.workspace_slug`` (set by
     ``WorkbenchHandoffMiddleware`` after HMAC verification). When the
-    state attribute is missing — direct TestClient usage, single-tenant
-    dev mode without the gateway — falls back to
-    ``DEFAULT_WORKSPACE_SLUG`` so existing tests and internal callers
-    continue to work.
+    state attribute is missing:
+
+    - In gateway-required mode → raises 401. This branch fires when a
+      same-host process bypasses the gateway and hits the API
+      directly. Without this fail-closed, the previous fallback
+      behavior let any colocated caller run as ``DEFAULT_WORKSPACE_SLUG``.
+    - In dev mode → falls back to ``DEFAULT_WORKSPACE_SLUG`` so direct
+      TestClient usage and internal-caller scripts keep working.
     """
-    return getattr(request.state, "workspace_slug", DEFAULT_WORKSPACE_SLUG)
+    slug = getattr(request.state, "workspace_slug", None)
+    if slug is None:
+        if _gateway_required_from_env():
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required (missing workspace context).",
+            )
+        return DEFAULT_WORKSPACE_SLUG
+    return slug
 
 
 # ---------------------------------------------------------------------------
@@ -409,13 +449,34 @@ def workspace_slug_dep(request: Request) -> str:
 # ---------------------------------------------------------------------------
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *,
+    mount_handoff_middleware: bool | None = None,
+) -> FastAPI:
     """Build a fresh FastAPI app with its own in-memory run registry.
 
     Tests use this so each test starts with a clean state. The registry
     lives in the closure, NOT at module scope — see
     `agent_error_patterns.md` "API factory advertises isolation while
     sharing module-global state".
+
+    Phase 0.5 post-audit (2026-05-09): when
+    ``WORKBENCH_GATEWAY_HANDOFF_SECRET`` is set in the env (or the
+    explicit ``mount_handoff_middleware=True`` override is passed),
+    the app mounts ``WorkbenchHandoffMiddleware`` so any direct same-
+    host request that lacks valid handoff headers is rejected at the
+    edge. The dependency layer (``workspace_slug_dep``) ALSO fails
+    closed in that mode — defense in depth against a future refactor
+    that accidentally drops the middleware mount.
+
+    ``mount_handoff_middleware``:
+        - ``None`` (default): derive from env. Production sets the
+          secret in ``.env.auth``; dev / TestClient leave it unset.
+        - ``True``: mount unconditionally (used by integration tests
+          that exercise the gateway → FastAPI path with signed
+          headers).
+        - ``False``: skip the mount (used by tests that exercise the
+          API surface directly without the middleware).
     """
     from simworkbench import __version__
 
@@ -438,6 +499,27 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Phase 1F backend for the local workbench UI.",
     )
+
+    # Phase 0.5 post-audit (2026-05-09) — mount the gateway HMAC
+    # middleware when the env declares gateway-required mode. The mount
+    # has to happen BEFORE any route registration so the middleware
+    # wraps every request.
+    should_mount = (
+        mount_handoff_middleware
+        if mount_handoff_middleware is not None
+        else _gateway_required_from_env()
+    )
+    if should_mount:
+        from simworkbench.api.auth_middleware import (
+            WorkbenchHandoffMiddleware,
+            load_handoff_secret_from_env,
+        )
+
+        handoff_secret = load_handoff_secret_from_env()
+        app.add_middleware(
+            WorkbenchHandoffMiddleware,
+            handoff_secret=handoff_secret,
+        )
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

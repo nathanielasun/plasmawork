@@ -47,16 +47,22 @@ import {
 import type { SecureCorePool } from "../../../../packages/secure_core/src/db/pool.js";
 
 /**
- * Per-IP key extractor. Identical to the secure_core
- * `enforceRateLimit` default; we re-declare here so the gateway can
- * pass it to `bootstrapRoutes` (which takes the extractor explicitly
- * so the limiter and the lockout move in lockstep).
+ * Per-IP key extractor. Returns Fastify's resolved ``req.ip`` which
+ * is the socket peer by default. Audit fix (2026-05-09): the previous
+ * implementation read ``X-Forwarded-For`` directly from the request
+ * headers — but the gateway is the **public** entry point, so a
+ * direct client could rotate XFF on every request and bypass the
+ * per-IP login / bootstrap rate limits.
+ *
+ * Deployments behind a trusted reverse proxy (NGINX, an ALB, etc.)
+ * MUST configure Fastify's ``trustProxy`` option in
+ * ``apps/workbench-gateway/src/main.ts`` (driven by the
+ * ``WORKBENCH_GATEWAY_TRUST_PROXY`` env var). When ``trustProxy`` is
+ * set, Fastify parses XFF safely and ``req.ip`` reflects the
+ * upstream client; when unset (the default), ``req.ip`` is the
+ * socket peer and XFF is ignored.
  */
 export const ipKeyExtractor = (req: FastifyRequest): string => {
-  const fwd = req.headers["x-forwarded-for"];
-  if (typeof fwd === "string" && fwd.length > 0) {
-    return fwd.split(",")[0]!.trim();
-  }
   return req.ip;
 };
 

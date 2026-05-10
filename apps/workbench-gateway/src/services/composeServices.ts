@@ -30,12 +30,76 @@ import {
 import { BootstrapService } from "../../../../packages/secure_core/src/bootstrap/service.js";
 import {
   FakeWormMarkerProvider,
+  S3WormMarkerProvider,
   type BootstrapWormMarkerProvider,
 } from "../../../../packages/secure_core/src/bootstrap/wormMarker.js";
 
 import type { GatewayEnv } from "../env.js";
-import { createArgon2Adapter } from "../auth/argon2Adapter.js";
+import {
+  createArgon2Adapter,
+  recordVerificationOutcome,
+} from "../auth/argon2Adapter.js";
 import { createBootstrapDbAdapter } from "../bootstrap/dbAdapter.js";
+
+/**
+ * Resolve the bootstrap WORM marker provider from the env. Audit fix
+ * (2026-05-09): the previous default was a process-local
+ * ``FakeWormMarkerProvider``, which means a DB restore alone could
+ * re-enable bootstrap (the "true" WORM contract per ADR-0010 says
+ * the marker MUST survive DB restore). Production deployments now
+ * configure ``WORKBENCH_BOOTSTRAP_WORM_PROVIDER=s3`` and provide the
+ * S3 bucket / key vars; bootstrap-allowed deployments without an
+ * explicit WORM provider fail closed at boot.
+ *
+ * Modes:
+ *   - ``s3`` → ``S3WormMarkerProvider`` (production).
+ *   - ``fake`` → ``FakeWormMarkerProvider`` (single-node dev).
+ *     Bootstrap-allowed dev installs MUST opt into this explicitly
+ *     so a production env that forgets to set the provider fails
+ *     instead of silently using the in-memory marker.
+ *   - unset → falls back to ``fake`` ONLY when bootstrap is also
+ *     disabled (``BOOTSTRAP_ALLOWED`` not ``"1"``); otherwise
+ *     throws.
+ */
+function resolveWormMarkerFromEnv(env: GatewayEnv): BootstrapWormMarkerProvider {
+  const provider = (env.bootstrapWormProvider ?? "").toLowerCase();
+  if (provider === "s3") {
+    if (
+      env.bootstrapWormS3Bucket === undefined ||
+      env.bootstrapWormS3Key === undefined ||
+      env.bootstrapWormS3Region === undefined
+    ) {
+      throw new Error(
+        "composeServices: WORKBENCH_BOOTSTRAP_WORM_PROVIDER=s3 but " +
+          "WORKBENCH_BOOTSTRAP_WORM_S3_BUCKET, WORKBENCH_BOOTSTRAP_WORM_S3_KEY, " +
+          "or WORKBENCH_BOOTSTRAP_WORM_S3_REGION is missing in .env.auth.",
+      );
+    }
+    return new S3WormMarkerProvider({
+      bucket: env.bootstrapWormS3Bucket,
+      key: env.bootstrapWormS3Key,
+      region: env.bootstrapWormS3Region,
+    });
+  }
+  if (provider === "fake") {
+    return new FakeWormMarkerProvider();
+  }
+  if (env.bootstrapAllowed === "1") {
+    throw new Error(
+      "composeServices: BOOTSTRAP_ALLOWED=1 but " +
+        "WORKBENCH_BOOTSTRAP_WORM_PROVIDER is unset. Refusing to start " +
+        "with the in-memory fake provider — a DB restore would silently " +
+        "re-enable bootstrap. Set " +
+        'WORKBENCH_BOOTSTRAP_WORM_PROVIDER="s3" + the S3 bucket/key/region ' +
+        'vars (production), or "fake" + accept the dev-only durability ' +
+        "limitation.",
+    );
+  }
+  // Bootstrap is closed AND no provider configured. The route is
+  // unreachable in this case, so the marker provider is never queried;
+  // a fake instance is fine.
+  return new FakeWormMarkerProvider();
+}
 
 /**
  * Wrap a raw postgres-js client + an explicit role label as the
@@ -117,12 +181,19 @@ export function buildGatewayServices(
     auditLogger,
     verifyPasswordHash: argon2.verifyPasswordHash,
     fetchPasswordHash: argon2.fetchPasswordHash,
+    // Audit fix (2026-05-09): wire the per-account counter so
+    // ``user_credentials.failed_attempts`` increments on every wrong
+    // password and resets on success. Combined with the now-trustable
+    // per-IP rate limit (XFF spoofing closed), this gives the
+    // documented per-IP + per-account guessing posture.
+    recordVerificationOutcome: (userId, success) =>
+      recordVerificationOutcome(appPool, userId, success),
   });
 
   const sessionReader = new SqlCurrentSessionReader({ appPool });
 
   const bootstrapDb = createBootstrapDbAdapter({ pool: appPool });
-  const wormMarker = opts.wormMarker ?? new FakeWormMarkerProvider();
+  const wormMarker = opts.wormMarker ?? resolveWormMarkerFromEnv(opts.env);
   const bootstrapService = new BootstrapService({
     db: bootstrapDb,
     wormMarker,

@@ -34,6 +34,33 @@ export interface GatewayEnv {
   readonly frontendOrigin: string;
   readonly dbUrl: string;
   readonly dbAuditUrl: string;
+  /**
+   * Trust-proxy configuration for Fastify's ``req.ip`` resolver.
+   * Audit fix (2026-05-09): the previous rate-limit key extractor
+   * read ``X-Forwarded-For`` unconditionally, which let a direct
+   * client rotate XFF on every request and bypass per-IP login /
+   * bootstrap throttles. The new extractor uses ``req.ip`` and
+   * delegates XFF parsing to Fastify.
+   *
+   * Values:
+   *   - unset / empty: do NOT trust XFF; ``req.ip`` is the socket
+   *     peer. Safe for direct deployments.
+   *   - ``"true"``: trust the proxy chain unconditionally (only for
+   *     test deployments where every hop is in-cluster).
+   *   - comma-separated CIDR list: trust only those upstreams.
+   */
+  readonly trustProxy: string | undefined;
+  /**
+   * Bootstrap WORM marker provider configuration. Audit fix
+   * (2026-05-09): the previous default was an in-memory ``Fake``
+   * provider, which means a DB restore would re-enable bootstrap.
+   * Production deployments MUST set this to ``"s3"`` and provide the
+   * S3 bucket / object-key vars below.
+   */
+  readonly bootstrapWormProvider: string | undefined;
+  readonly bootstrapWormS3Bucket: string | undefined;
+  readonly bootstrapWormS3Key: string | undefined;
+  readonly bootstrapWormS3Region: string | undefined;
 }
 
 /**
@@ -183,5 +210,10 @@ export function loadGatewayEnv(opts?: {
       "PLASMAWORK_DB_AUDIT_URL",
       source.PLASMAWORK_DB_AUDIT_URL,
     ),
+    trustProxy: source.WORKBENCH_GATEWAY_TRUST_PROXY,
+    bootstrapWormProvider: source.WORKBENCH_BOOTSTRAP_WORM_PROVIDER,
+    bootstrapWormS3Bucket: source.WORKBENCH_BOOTSTRAP_WORM_S3_BUCKET,
+    bootstrapWormS3Key: source.WORKBENCH_BOOTSTRAP_WORM_S3_KEY,
+    bootstrapWormS3Region: source.WORKBENCH_BOOTSTRAP_WORM_S3_REGION,
   };
 }

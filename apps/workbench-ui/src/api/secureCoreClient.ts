@@ -207,6 +207,45 @@ function isErrorEnvelope(value: unknown): value is SecureCoreErrorEnvelope {
   );
 }
 
+/**
+ * Cookie name for the CSRF synchronizer token. Must match
+ * ``CSRF_COOKIE_NAME`` in ``packages/secure_core/src/routes/login.ts``.
+ */
+const CSRF_COOKIE_NAME = "csrf_token";
+
+/**
+ * HTTP methods that the gateway treats as state-changing — every
+ * one of them flows through ``enforceCsrfForStateChange`` and
+ * requires the synchronizer token echoed in ``X-CSRF-Token``.
+ *
+ * GET / HEAD / OPTIONS are exempt at the gateway middleware layer
+ * (v4 §6 idempotent set), so they do NOT need the header.
+ */
+const STATE_CHANGING_METHODS: ReadonlySet<string> = new Set([
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]);
+
+/**
+ * Read the CSRF cookie value via ``document.cookie``. Returns the
+ * empty string when running outside a browser (e.g. SSR / Node tests).
+ * The gateway sets ``csrf_token`` as a non-HttpOnly cookie precisely
+ * so the SPA can read it here and echo it (v4 §7.2 double-submit).
+ */
+function readCsrfCookieValue(): string {
+  if (typeof document === "undefined") return "";
+  const raw = document.cookie ?? "";
+  for (const part of raw.split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === CSRF_COOKIE_NAME) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+  return "";
+}
+
 async function readJson<T>(
   baseUrl: string,
   path: string,
@@ -217,6 +256,19 @@ async function readJson<T>(
     Accept: "application/json",
     ...((init?.headers as Record<string, string> | undefined) ?? {}),
   };
+  // Echo the CSRF token on every state-changing request. Audit fix
+  // (2026-05-09): the original logout/login implementation did NOT
+  // echo the token, so the gateway's CSRF middleware refused logout
+  // calls and the UI's redirect-after-logout left the cookies + the
+  // server session intact. Adding it here covers every state-
+  // changing call this client makes — current + future.
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (STATE_CHANGING_METHODS.has(method)) {
+    const csrfToken = readCsrfCookieValue();
+    if (csrfToken.length > 0 && !("X-CSRF-Token" in headers)) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+  }
   const response = await fetch(joinUrl(baseUrl, path), {
     credentials: "include",
     ...(init ?? {}),

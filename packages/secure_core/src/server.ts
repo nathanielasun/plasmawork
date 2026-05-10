@@ -50,6 +50,17 @@ export interface BuildAppDeps {
    * larger payloads (worker uploads in L4.11) override per-route.
    */
   bodyLimitBytes?: number;
+  /**
+   * Fastify ``trustProxy`` setting. Audit fix (2026-05-09):
+   * deployments behind a trusted reverse proxy must opt into XFF
+   * parsing here so ``req.ip`` reflects the upstream client.
+   * Default ``false`` — XFF is NOT trusted, ``req.ip`` is the
+   * socket peer. Direct deployments leave this unset.
+   *
+   * Accepts the same shapes Fastify accepts: ``true`` /
+   * comma-separated CIDR list / single IP / function.
+   */
+  trustProxy?: boolean | string | string[];
 }
 
 const MIN_COOKIE_SECRET_BYTES = 32;
@@ -74,6 +85,9 @@ export function buildApp(deps: BuildAppDeps): FastifyInstance {
     genReqId: () => "pending",
     requestIdHeader: false,
     requestIdLogLabel: "requestId",
+    // Audit fix (2026-05-09): only trust X-Forwarded-For when the
+    // deployment opts in. Default false → req.ip is the socket peer.
+    trustProxy: deps.trustProxy ?? false,
   });
 
   app.decorate("appSql", deps.appSql);

@@ -32,12 +32,27 @@ export function LogoutButton(props: LogoutButtonProps = {}): JSX.Element {
 
   async function handleClick(): Promise<void> {
     setPending(true);
+    let serverFailed = false;
     try {
       await fn();
     } catch {
-      // The gateway clears cookies even on revocation failure; even
-      // if our network call dies we still want the user redirected
-      // to the login page. Swallow the error and proceed.
+      // Audit fix (2026-05-09): the gateway needs an authenticated +
+      // CSRF-echoing logout to revoke the session row and clear the
+      // cookies. The previous implementation swallowed the error and
+      // navigated away, leaving a stale server session. We still
+      // navigate (defense in depth — the user almost certainly wants
+      // off this page), but record the failure on the next render so
+      // the user can decide whether to clear cookies manually.
+      serverFailed = true;
+    }
+    setPending(false);
+    if (serverFailed) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "Logout request failed; the server-side session may still be active. " +
+          "Cookies will be cleared if this is the gateway's expected behavior, but " +
+          "consider closing the browser tab to be safe.",
+      );
     }
     navigate(loginPath, { replace: true });
   }

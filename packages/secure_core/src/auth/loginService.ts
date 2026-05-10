@@ -102,6 +102,21 @@ export interface LoginServiceOptions {
   readonly fetchPasswordHash: (
     userId: string,
   ) => Promise<string | null>;
+  /**
+   * Per-account verification outcome accountant. Audit fix
+   * (2026-05-09): the previous implementation only emitted an audit
+   * row for failed login and trusted the IP-keyed rate limiter to
+   * stop password guessing. With XFF spoofable (closed in the same
+   * audit), per-IP throttling alone was inadequate; this seam wires
+   * a per-account counter (``user_credentials.failed_attempts``)
+   * that the operator dashboard reads. Optional — when omitted, the
+   * service skips the counter update (back-compat with tests that
+   * only stub the verify/fetch pair).
+   */
+  readonly recordVerificationOutcome?: (
+    userId: string,
+    success: boolean,
+  ) => Promise<void>;
   readonly now?: () => number;
   readonly sessionTtlMs?: number;
 }
@@ -156,6 +171,9 @@ export class LoginService {
   readonly #auditLogger: AuditLogger;
   readonly #verifyPasswordHash: LoginServiceOptions["verifyPasswordHash"];
   readonly #fetchPasswordHash: LoginServiceOptions["fetchPasswordHash"];
+  readonly #recordVerificationOutcome: NonNullable<
+    LoginServiceOptions["recordVerificationOutcome"]
+  > | null;
   readonly #now: () => number;
   readonly #sessionTtlMs: number;
 
@@ -164,6 +182,7 @@ export class LoginService {
     this.#auditLogger = opts.auditLogger;
     this.#verifyPasswordHash = opts.verifyPasswordHash;
     this.#fetchPasswordHash = opts.fetchPasswordHash;
+    this.#recordVerificationOutcome = opts.recordVerificationOutcome ?? null;
     this.#now = opts.now ?? Date.now;
     this.#sessionTtlMs = opts.sessionTtlMs ?? SESSION_TTL_MS;
   }
@@ -218,6 +237,24 @@ export class LoginService {
     else if (!passwordOk) deniedReason = "password_invalid";
 
     if (deniedReason !== null || user === null) {
+      // Audit fix (2026-05-09): per-account counter increments on
+      // every wrong-password failure for a real user. Counter is
+      // skipped on user_not_found (no row to update) and on
+      // user_disabled (already-locked-out signal lives in
+      // ``disabled_at``, not the failure counter).
+      if (
+        user !== null &&
+        deniedReason === "password_invalid" &&
+        this.#recordVerificationOutcome !== null
+      ) {
+        try {
+          await this.#recordVerificationOutcome(user.id, false);
+        } catch {
+          // Counter update failures must NOT block the audit row /
+          // 401 response — the counter is operational telemetry,
+          // not a security gate.
+        }
+      }
       await this.#auditLogger.write({
         workspaceId: null,
         actorUserId: user?.id ?? null,
@@ -234,6 +271,14 @@ export class LoginService {
 
     // Happy path — mint session + CSRF tokens, INSERT the row, audit
     // login.succeeded with the resolved actor user id.
+    if (this.#recordVerificationOutcome !== null) {
+      try {
+        await this.#recordVerificationOutcome(user.id, true);
+      } catch {
+        // Counter reset failure on success — same posture as the
+        // failure branch: skip silently, keep the login flow.
+      }
+    }
     return await this.mintSessionForUser({
       userId: user.id,
       authMethod: input.authMethod ?? "password",

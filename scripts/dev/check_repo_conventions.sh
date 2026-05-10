@@ -3319,6 +3319,54 @@ check_file_exists apps/workbench-ui/src/__tests__/SessionGuard.test.tsx
 check_file_exists apps/workbench-ui/src/__tests__/WorkspaceSwitcher.test.tsx
 check_file_exists apps/workbench-ui/src/__tests__/LogoutButton.test.tsx
 
+# Phase 0.5 post-audit hardening (2026-05-09).
+# Five security-side fixes from the post-F-rest audit:
+#   1. FastAPI mounts WorkbenchHandoffMiddleware in gateway-required mode.
+#   2. UI state-changing requests echo X-CSRF-Token (double-submit).
+#   3. Gateway rate limits stop trusting client X-Forwarded-For.
+#   4. Bootstrap WORM provider must be explicitly configured (no fake default).
+#   5. LoginService wires per-account failed-attempt counter.
+section "Phase 0.5 post-audit hardening"
+check_grep_in_file 'app\.add_middleware\(' \
+  packages/core/src/simworkbench/api/server.py \
+  "create_app() mounts WorkbenchHandoffMiddleware in gateway-required mode"
+check_grep_in_file 'def _gateway_required_from_env' \
+  packages/core/src/simworkbench/api/server.py \
+  "create_app() reads WORKBENCH_GATEWAY_HANDOFF_SECRET to detect production mode"
+check_file_exists tests/regression/test_api_gateway_required_mode.py
+check_grep_in_file 'X-CSRF-Token' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "secureCoreClient echoes X-CSRF-Token on state-changing requests"
+check_grep_in_file 'STATE_CHANGING_METHODS' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "secureCoreClient gates the CSRF echo on the state-changing method set"
+check_file_exists apps/workbench-ui/src/__tests__/secureCoreClient.test.ts
+check_grep_in_file 'return req\.ip;' \
+  apps/workbench-ui/../workbench-gateway/src/middleware/bundles.ts \
+  "ipKeyExtractor uses req.ip directly (audit fix — XFF spoofing closed)"
+check_grep_in_file 'trustProxy:' \
+  apps/workbench-gateway/src/main.ts \
+  "main.ts forwards env.trustProxy into Fastify"
+check_grep_in_file 'trustProxy' \
+  packages/secure_core/src/server.ts \
+  "secure_core buildApp accepts trustProxy"
+check_grep_in_file 'WORKBENCH_GATEWAY_TRUST_PROXY' \
+  .env.auth.example \
+  ".env.auth.example documents WORKBENCH_GATEWAY_TRUST_PROXY"
+check_grep_in_file 'function resolveWormMarkerFromEnv' \
+  apps/workbench-gateway/src/services/composeServices.ts \
+  "composeServices resolves WORM provider from env (no fake default)"
+check_grep_in_file 'WORKBENCH_BOOTSTRAP_WORM_PROVIDER' \
+  .env.auth.example \
+  ".env.auth.example documents WORKBENCH_BOOTSTRAP_WORM_PROVIDER"
+check_file_exists apps/workbench-gateway/test/services/composeServices.test.ts
+check_grep_in_file 'recordVerificationOutcome' \
+  packages/secure_core/src/auth/loginService.ts \
+  "LoginService accepts recordVerificationOutcome seam (per-account counter)"
+check_grep_in_file 'recordVerificationOutcome:' \
+  apps/workbench-gateway/src/services/composeServices.ts \
+  "composeServices wires recordVerificationOutcome into LoginService"
+
 # Phase 0.5 Layer-0 gate enforcement. All five Layer-0 ADRs flipped
 # to Accepted on 2026-05-06; staying Accepted is now an invariant.
 # Backsliding to Proposed (or any non-Accepted state) is a hard

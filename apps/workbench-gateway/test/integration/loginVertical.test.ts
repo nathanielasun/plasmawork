@@ -284,6 +284,11 @@ async function buildFixture(opts: {
     frontendOrigin: FRONTEND_ORIGIN,
     dbUrl: "postgres://stub",
     dbAuditUrl: "postgres://stub",
+    trustProxy: undefined,
+    bootstrapWormProvider: "fake",
+    bootstrapWormS3Bucket: undefined,
+    bootstrapWormS3Key: undefined,
+    bootstrapWormS3Region: undefined,
   };
 
   const gateway = await buildGateway({
