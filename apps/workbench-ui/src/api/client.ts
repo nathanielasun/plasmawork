@@ -3,7 +3,19 @@
  *
  * Single source of API types. Components import the request/response shapes
  * from here so that the API contract is enforced at the type level.
+ *
+ * Phase 0.5 / Phase F-rest-final (2026-05-09): every request flows
+ * through the auth gateway. ``fetchJson`` therefore:
+ *   1. sets ``credentials: "include"`` so the session + CSRF cookies
+ *      ride along on every call;
+ *   2. echoes the ``X-CSRF-Token`` header on state-changing methods
+ *      using the shared CSRF helper;
+ *   3. prefixes the active workspace slug
+ *      (``/api/:slug/...``) when one is set on the workspace context.
  */
+
+import { methodRequiresCsrf, readCsrfCookieValue } from "./csrf.js";
+import { getCurrentWorkspaceSlug } from "./workspaceContext.js";
 
 export interface RunSummary {
   run_id: string;
@@ -466,12 +478,50 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Build the URL for a request. When a workspace slug is active,
+ * paths under the ``baseUrl`` of ``/api`` are routed through
+ * ``/api/:slug/...`` so the gateway can authorize the call against
+ * the user's membership. When no slug is set (boot, raw-component
+ * tests), the URL falls back to the unprefixed shape so the small
+ * set of non-workspace endpoints keeps working.
+ *
+ * Note: prefixing only applies when ``baseUrl`` matches the default
+ * ``/api`` mount. Callers that pass an absolute or alternate base
+ * (e.g. a stub server) bypass the prefix entirely.
+ */
+function buildRequestUrl(path: string, baseUrl: string): string {
+  if (baseUrl !== DEFAULT_BASE) return baseUrl + path;
+  const slug = getCurrentWorkspaceSlug();
+  if (slug === null) return baseUrl + path;
+  // Path always begins with "/" by convention; defensively normalize.
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${baseUrl}/${slug}${normalizedPath}`;
+}
+
 async function fetchJson<T>(
   path: string,
   init?: RequestInit,
   baseUrl: string = DEFAULT_BASE,
 ): Promise<T> {
-  const r = await fetch(baseUrl + path, init);
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string> | undefined) ?? {}),
+  };
+  // Echo the CSRF synchronizer cookie on state-changing requests.
+  // Same shape as secureCoreClient.ts so a single audit covers both
+  // clients (v4 §7.2 double-submit).
+  if (methodRequiresCsrf(init?.method)) {
+    const token = readCsrfCookieValue();
+    if (token.length > 0 && !("X-CSRF-Token" in headers)) {
+      headers["X-CSRF-Token"] = token;
+    }
+  }
+  const url = buildRequestUrl(path, baseUrl);
+  const r = await fetch(url, {
+    credentials: "include",
+    ...(init ?? {}),
+    headers,
+  });
   if (!r.ok) {
     const text = await r.text();
     throw new ApiError(path, r.status, text);

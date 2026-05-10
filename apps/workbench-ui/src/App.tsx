@@ -3,6 +3,12 @@
  * content area. The sidebar links use React Router's NavLink so the
  * active panel is highlighted; collapsed state persists across reloads
  * via localStorage.
+ *
+ * Phase 0.5 / Phase F-rest-final (2026-05-09): the protected app shell
+ * is wrapped in SessionGuard so unauthenticated users are redirected
+ * to /login. The /login route is registered OUTSIDE the guard so it
+ * can render for unauthenticated users without an infinite redirect
+ * loop.
  */
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
@@ -21,6 +27,10 @@ import ComparisonReportPanel from "./components/reports/ComparisonReport";
 import AutonomyPanel from "./components/autonomy/AutonomyPanel";
 import ExamplesGallery from "./components/examples/ExamplesGallery";
 import SecurityOperationsPanel from "./components/security/SecurityOperationsPanel";
+import LoginPage from "./app/login/page";
+import { SessionGuard } from "./components/auth/SessionGuard";
+import { WorkspaceSwitcher } from "./components/auth/WorkspaceSwitcher";
+import { LogoutButton } from "./components/auth/LogoutButton";
 
 interface NavEntry {
   readonly to: string;
@@ -57,7 +67,14 @@ function readInitialCollapsed(): boolean {
   }
 }
 
-export default function App(): JSX.Element {
+/**
+ * The authenticated app shell — sidebar with workspace switcher and
+ * sign-out button, plus the main content area with the protected
+ * routes. Rendered inside SessionGuard so useSession() resolves and
+ * the workspace context is populated before any /api/:slug/... call
+ * fires.
+ */
+function AppShell(): JSX.Element {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
   const isDocsRoute =
@@ -89,6 +106,11 @@ export default function App(): JSX.Element {
             {collapsed ? "›" : "‹"}
           </button>
         </div>
+        {!collapsed && (
+          <div className="sidebar-workspace">
+            <WorkspaceSwitcher />
+          </div>
+        )}
         <nav>
           <ul>
             {NAV.map((entry) => (
@@ -112,6 +134,11 @@ export default function App(): JSX.Element {
           </ul>
         </nav>
         {!collapsed && <p className="phase-tag">Phase 10</p>}
+        {!collapsed && (
+          <div className="sidebar-footer">
+            <LogoutButton />
+          </div>
+        )}
       </aside>
       <main className={isDocsRoute ? "main-docs" : undefined}>
         <Routes>
@@ -136,5 +163,21 @@ export default function App(): JSX.Element {
         </Routes>
       </main>
     </div>
+  );
+}
+
+export default function App(): JSX.Element {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="*"
+        element={
+          <SessionGuard>
+            <AppShell />
+          </SessionGuard>
+        }
+      />
+    </Routes>
   );
 }

@@ -6,6 +6,13 @@
  * the UI can present affordances without inventing authority locally.
  */
 
+import {
+  CSRF_COOKIE_NAME,
+  STATE_CHANGING_METHODS,
+  methodRequiresCsrf,
+  readCsrfCookieValue,
+} from "./csrf.js";
+
 export type SecureActorType = "human" | "ai_agent" | "worker" | "operator";
 export type AssuranceLevel = "aal1" | "aal2" | "aal3";
 export type SecurityDashboardStatus = "healthy" | "warning" | "critical";
@@ -207,44 +214,13 @@ function isErrorEnvelope(value: unknown): value is SecureCoreErrorEnvelope {
   );
 }
 
-/**
- * Cookie name for the CSRF synchronizer token. Must match
- * ``CSRF_COOKIE_NAME`` in ``packages/secure_core/src/routes/login.ts``.
- */
-const CSRF_COOKIE_NAME = "csrf_token";
-
-/**
- * HTTP methods that the gateway treats as state-changing — every
- * one of them flows through ``enforceCsrfForStateChange`` and
- * requires the synchronizer token echoed in ``X-CSRF-Token``.
- *
- * GET / HEAD / OPTIONS are exempt at the gateway middleware layer
- * (v4 §6 idempotent set), so they do NOT need the header.
- */
-const STATE_CHANGING_METHODS: ReadonlySet<string> = new Set([
-  "POST",
-  "PUT",
-  "PATCH",
-  "DELETE",
-]);
-
-/**
- * Read the CSRF cookie value via ``document.cookie``. Returns the
- * empty string when running outside a browser (e.g. SSR / Node tests).
- * The gateway sets ``csrf_token`` as a non-HttpOnly cookie precisely
- * so the SPA can read it here and echo it (v4 §7.2 double-submit).
- */
-function readCsrfCookieValue(): string {
-  if (typeof document === "undefined") return "";
-  const raw = document.cookie ?? "";
-  for (const part of raw.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === CSRF_COOKIE_NAME) {
-      return decodeURIComponent(rest.join("="));
-    }
-  }
-  return "";
-}
+// CSRF helpers (CSRF_COOKIE_NAME, STATE_CHANGING_METHODS, methodRequiresCsrf,
+// readCsrfCookieValue) are imported from ``./csrf.js`` so client.ts and
+// secureCoreClient.ts share a single source of truth for the v4 §7.2
+// double-submit defense. The names are kept available locally as
+// references for the convention checker and for callers that still
+// import them by name.
+export { CSRF_COOKIE_NAME, STATE_CHANGING_METHODS };
 
 async function readJson<T>(
   baseUrl: string,
@@ -262,8 +238,7 @@ async function readJson<T>(
   // calls and the UI's redirect-after-logout left the cookies + the
   // server session intact. Adding it here covers every state-
   // changing call this client makes — current + future.
-  const method = (init?.method ?? "GET").toUpperCase();
-  if (STATE_CHANGING_METHODS.has(method)) {
+  if (methodRequiresCsrf(init?.method)) {
     const csrfToken = readCsrfCookieValue();
     if (csrfToken.length > 0 && !("X-CSRF-Token" in headers)) {
       headers["X-CSRF-Token"] = csrfToken;

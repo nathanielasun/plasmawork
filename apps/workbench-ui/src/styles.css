@@ -2377,6 +2377,24 @@ ol.lifecycle li.lifecycle-active {
   gap: var(--space-3);
   align-items: flex-start;
 }
+/* Sidebar regions injected by SessionGuard's AppShell. The workspace
+   switcher sits between the title row and the nav; the sidebar footer
+   sits below the phase tag and houses the sign-out button. Both are
+   hidden when the sidebar is collapsed (the AppShell renders neither
+   region in that mode), so these classes intentionally do not need
+   collapsed-state overrides. */
+.sidebar-workspace {
+  padding: 0 var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-2);
+}
+
+.sidebar-footer {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
 .workspace-switcher {
   display: flex;
   flex-direction: column;

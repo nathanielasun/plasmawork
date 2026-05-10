@@ -15,6 +15,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -24,6 +25,7 @@ import type {
   CurrentSessionMembership,
   CurrentSessionResponse,
 } from "../../api/secureCoreClient.js";
+import { setCurrentWorkspaceSlug } from "../../api/workspaceContext.js";
 
 export interface SessionContextValue {
   readonly session: CurrentSessionResponse;
@@ -62,6 +64,20 @@ export function SessionProvider(props: SessionProviderProps): JSX.Element {
   const initial =
     props.initialActiveWorkspaceSlug ?? pickDefaultSlug(props.session);
   const [activeWorkspaceSlug, setActiveWorkspaceSlug] = useState(initial);
+
+  // Mirror the active slug into the API client's workspace context so
+  // every fetchJson() call from client.ts gets prefixed with
+  // /api/:slug/... automatically. Phase F-rest-final (2026-05-09).
+  // The teardown path resets to null so a subsequent unauthenticated
+  // mount does not leak a stale slug into client.ts. Tests that mount
+  // SessionProvider directly therefore also need to reset the slug
+  // between tests; setup.ts has an afterEach that does this.
+  useEffect(() => {
+    setCurrentWorkspaceSlug(activeWorkspaceSlug);
+    return () => {
+      setCurrentWorkspaceSlug(null);
+    };
+  }, [activeWorkspaceSlug]);
 
   const value = useMemo<SessionContextValue>(() => {
     const activeMembership =

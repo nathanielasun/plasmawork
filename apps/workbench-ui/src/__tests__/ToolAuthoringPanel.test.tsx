@@ -106,7 +106,7 @@ describe("ToolAuthoringPanel", () => {
       if (url.endsWith("/api/tool-authoring/code-templates")) {
         return jsonResponse([codeTemplate]);
       }
-      if (url.endsWith("/api/tool-authoring/drafts") && !init) {
+      if (url.endsWith("/api/tool-authoring/drafts") && (init?.method ?? "GET") === "GET") {
         return jsonResponse([]);
       }
       if (url.endsWith("/api/tool-authoring/drafts") && init?.method === "POST") {

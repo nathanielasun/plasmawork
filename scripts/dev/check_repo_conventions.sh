@@ -3319,6 +3319,58 @@ check_file_exists apps/workbench-ui/src/__tests__/SessionGuard.test.tsx
 check_file_exists apps/workbench-ui/src/__tests__/WorkspaceSwitcher.test.tsx
 check_file_exists apps/workbench-ui/src/__tests__/LogoutButton.test.tsx
 
+# Phase 0.5 auth gateway / Phase F-rest-final (2026-05-09).
+# F-rest-final wires SessionGuard at the App root, registers the
+# /login route OUTSIDE the guard (no redirect loop), and pipes every
+# legacy fetchJson() call through credentials/CSRF/workspace-prefix
+# logic shared with secureCoreClient.ts. The CSRF + workspace
+# context helpers live in apps/workbench-ui/src/api/ so client.ts
+# and secureCoreClient.ts share one source of truth.
+section "Phase 0.5 auth gateway / Phase F-rest-final (App wiring + workspace prefix)"
+check_file_exists apps/workbench-ui/src/api/csrf.ts
+check_grep_in_file 'export const CSRF_COOKIE_NAME' \
+  apps/workbench-ui/src/api/csrf.ts \
+  "csrf.ts exports CSRF_COOKIE_NAME"
+check_grep_in_file 'export const STATE_CHANGING_METHODS' \
+  apps/workbench-ui/src/api/csrf.ts \
+  "csrf.ts exports STATE_CHANGING_METHODS"
+check_grep_in_file 'export function readCsrfCookieValue' \
+  apps/workbench-ui/src/api/csrf.ts \
+  "csrf.ts exports readCsrfCookieValue helper"
+check_file_exists apps/workbench-ui/src/api/workspaceContext.ts
+check_grep_in_file 'export function setCurrentWorkspaceSlug' \
+  apps/workbench-ui/src/api/workspaceContext.ts \
+  "workspaceContext exports setCurrentWorkspaceSlug setter"
+check_grep_in_file 'export function getCurrentWorkspaceSlug' \
+  apps/workbench-ui/src/api/workspaceContext.ts \
+  "workspaceContext exports getCurrentWorkspaceSlug getter"
+check_grep_in_file 'getCurrentWorkspaceSlug' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts reads the active workspace slug for URL prefixing"
+check_grep_in_file 'credentials: "include"' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts fetchJson sends credentials so cookies ride along"
+check_grep_in_file 'X-CSRF-Token' \
+  apps/workbench-ui/src/api/client.ts \
+  "client.ts fetchJson echoes X-CSRF-Token on state-changing methods"
+check_grep_in_file 'setCurrentWorkspaceSlug' \
+  apps/workbench-ui/src/components/auth/SessionContext.tsx \
+  "SessionProvider mirrors active slug into the API client workspace context"
+check_grep_in_file 'SessionGuard' \
+  apps/workbench-ui/src/App.tsx \
+  "App.tsx wraps protected routes in SessionGuard"
+check_grep_in_file '"/login"' \
+  apps/workbench-ui/src/App.tsx \
+  "App.tsx registers a /login route OUTSIDE SessionGuard"
+check_grep_in_file 'WorkspaceSwitcher' \
+  apps/workbench-ui/src/App.tsx \
+  "App.tsx mounts WorkspaceSwitcher in the sidebar"
+check_grep_in_file 'LogoutButton' \
+  apps/workbench-ui/src/App.tsx \
+  "App.tsx mounts LogoutButton in the sidebar"
+check_file_exists apps/workbench-ui/src/__tests__/clientWorkspacePrefix.test.ts
+check_file_exists apps/workbench-ui/src/__tests__/helpers/renderWithSession.tsx
+
 # Phase 0.5 post-audit hardening (2026-05-09).
 # Five security-side fixes from the post-F-rest audit:
 #   1. FastAPI mounts WorkbenchHandoffMiddleware in gateway-required mode.
