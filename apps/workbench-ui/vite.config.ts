@@ -15,8 +15,21 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    // Phase 0.5 auth gateway: every UI-facing path goes through the
+    // Fastify gateway on :4000. The gateway terminates the cookie
+    // session, runs the auth chain, and forwards `/api/:slug/*` to
+    // FastAPI on :8000 with the HMAC-signed handoff. Proxying `/api`
+    // straight to FastAPI here would bypass the gateway entirely —
+    // and `/auth/*`, `/bootstrap`, `/operator/*` only exist on the
+    // gateway, so without these entries `/auth/session` 404s against
+    // the Vite dev server itself.
     proxy: {
-      "/api": "http://localhost:8000",
+      "/api": "http://localhost:4000",
+      "/auth": "http://localhost:4000",
+      "/bootstrap": "http://localhost:4000",
+      "/operator": "http://localhost:4000",
+      "/workspaces": "http://localhost:4000",
+      "/approvals": "http://localhost:4000",
     },
   },
   build: {

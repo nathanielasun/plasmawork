@@ -145,6 +145,27 @@ check_grep_absent_in_file() {
   fi
 }
 
+check_grep_fixed_in_file() {
+  # Like check_grep_in_file but uses fixed-string search (grep -F) so
+  # patterns containing regex metacharacters (e.g. ``[A-Za-z0-9_-]{3,64}``)
+  # can be matched verbatim without escape-juggling.
+  local pattern="$1"
+  local file="$2"
+  local label="$3"
+  if [[ ! -f "$file" ]]; then
+    FAIL=$((FAIL+1))
+    fail "$label: file missing ($file)"
+    return
+  fi
+  if grep -qF -- "$pattern" "$file"; then
+    PASS=$((PASS+1))
+    note "$label"
+  else
+    FAIL=$((FAIL+1))
+    fail "$label: pattern not found in $file ($pattern)"
+  fi
+}
+
 check_path_is_ignored() {
   # Asserts a probe path IS matched by a .gitignore rule. Used to verify build-
   # output ignore tiers (root, per-app, per-package) per the
@@ -3754,6 +3775,118 @@ else
   FAIL=$((FAIL+1))
   fail "requireAuth hardcodes 'const actorType: ActorType = \"human\"' without naming the design decision (regression vs. v4 §6.2 close)"
 fi
+
+# ---------------------------------------------------------------------------
+# Cross-process wiring (Vite ↔ Fastify gateway ↔ FastAPI workbench) — 2026-05-10.
+#
+# Three cooperating processes in development:
+#   - vite-dev on :5173 (UI)
+#   - workbench-gateway on :4000 (Fastify)
+#   - FastAPI workbench on :8000 (loopback)
+# They must agree on ports, hosts, secret names, cookie/CSRF names, and
+# the seven X-Workbench-* HMAC handoff header constants. The Vite-proxy
+# regression (vite forwarded /api → :8000 directly, skipping the
+# gateway; /auth/session 404'd from vite-dev itself) shipped because
+# no test pinned the cross-process agreement. This section is the
+# static defense; Layers 2-5 (gateway TS contract, UI vitest, in-process
+# subprocess smoke, Playwright E2E) compose with this for the dynamic
+# defenses.
+section "Cross-process wiring (Vite ↔ gateway ↔ FastAPI)"
+
+# 1a — Every prefix the UI client calls is in the vite proxy table AND
+# every proxy value targets the gateway port (NOT FastAPI directly).
+# Catches the original bug: a missing entry meant /auth/session 404'd
+# from the Vite dev server.
+for prefix in '/auth' '/api' '/bootstrap' '/operator' '/workspaces' '/approvals'; do
+  check_grep_fixed_in_file "\"${prefix}\": \"http://localhost:4000\"" \
+    apps/workbench-ui/vite.config.ts \
+    "vite proxies ${prefix} → gateway:4000"
+done
+
+# 1b — Vite proxy NEVER targets the FastAPI port directly (which would
+# bypass gateway auth + HMAC handoff). The original regression was a
+# single ``"/api": "http://localhost:8000"`` entry.
+check_grep_absent_in_file 'localhost:8000' apps/workbench-ui/vite.config.ts \
+  "vite proxy does not bypass gateway to FastAPI:8000"
+
+# 1c — Gateway WORKBENCH_BACKEND_PORT default matches FastAPI DEFAULT_PORT.
+# Port drift means the gateway proxies to a dead port at runtime.
+check_grep_fixed_in_file 'source.WORKBENCH_BACKEND_PORT ?? "8000"' \
+  apps/workbench-gateway/src/env.ts \
+  "gateway WORKBENCH_BACKEND_PORT default is 8000"
+check_grep_in_file '^DEFAULT_PORT = 8000$' \
+  scripts/dev/run_backend.py \
+  "FastAPI DEFAULT_PORT literal is 8000 (matches gateway upstream default)"
+
+# 1d — FastAPI default host pinned to loopback; gateway upstream is
+# loopback. A 0.0.0.0 bind on FastAPI would expose /api with zero
+# auth to any LAN host.
+check_grep_in_file '^DEFAULT_HOST = "127.0.0.1"$' \
+  scripts/dev/run_backend.py \
+  "FastAPI DEFAULT_HOST pinned to 127.0.0.1"
+check_grep_fixed_in_file 'http://127.0.0.1:${env.backendPort}' \
+  apps/workbench-gateway/src/main.ts \
+  "gateway proxy upstream uses 127.0.0.1 (loopback)"
+
+# 1f — Handoff-secret env-var name identical in both languages. The
+# gateway signs with this; FastAPI verifies with it. A typo on either
+# side means every authenticated /api/* call 401s.
+check_grep_in_file 'WORKBENCH_GATEWAY_HANDOFF_SECRET' \
+  apps/workbench-gateway/src/env.ts \
+  "gateway env.ts reads WORKBENCH_GATEWAY_HANDOFF_SECRET"
+check_grep_in_file 'WORKBENCH_GATEWAY_HANDOFF_SECRET' \
+  packages/core/src/simworkbench/api/auth_middleware.py \
+  "FastAPI middleware reads WORKBENCH_GATEWAY_HANDOFF_SECRET"
+
+# 1g — All 7 X-Workbench-* handoff headers appear in BOTH the TS
+# signer and the Python verifier. A name drift on either side means
+# the HMAC payload disagrees and every request 401s.
+for hdr in 'x-workbench-user-id' \
+           'x-workbench-workspace-id' \
+           'x-workbench-workspace-slug' \
+           'x-workbench-roles' \
+           'x-workbench-request-id' \
+           'x-workbench-issued-at' \
+           'x-workbench-signature'; do
+  check_grep_fixed_in_file "\"${hdr}\"" \
+    apps/workbench-gateway/src/proxy/handoffSigner.ts \
+    "TS signer declares ${hdr}"
+  check_grep_fixed_in_file "\"${hdr}\"" \
+    packages/core/src/simworkbench/api/auth_middleware.py \
+    "Python verifier declares ${hdr}"
+done
+
+# 1h — Workspace-slug regex literal is identical in every place that
+# parses or validates a slug. A drift here means the gateway accepts
+# a slug the FastAPI handlers reject (or vice-versa).
+check_grep_fixed_in_file '[A-Za-z0-9_-]{3,64}' \
+  packages/core/src/simworkbench/paths/__init__.py \
+  "Python paths slug regex literal: [A-Za-z0-9_-]{3,64}"
+check_grep_fixed_in_file '[A-Za-z0-9_-]{3,64}' \
+  packages/core/src/simworkbench/api/auth_middleware.py \
+  "Python middleware slug regex literal: [A-Za-z0-9_-]{3,64}"
+check_grep_fixed_in_file '[A-Za-z0-9_-]{3,64}' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "TS proxy slug regex literal: [A-Za-z0-9_-]{3,64}"
+
+# 1i — Cookie + CSRF constants identical across gateway, UI, secure_core.
+# A drift here means the SPA echoes a CSRF token under a name the
+# gateway can't read, and every state-change 403s.
+check_grep_fixed_in_file '"secure_session"' \
+  packages/secure_core/src/routes/login.ts \
+  "secure_core defines SESSION_COOKIE_NAME = 'secure_session'"
+check_grep_fixed_in_file '"secure_session"' \
+  packages/secure_core/src/middleware/requireAuth.ts \
+  "secure_core requireAuth reads 'secure_session'"
+check_grep_fixed_in_file '"csrf_token"' \
+  packages/secure_core/src/routes/login.ts \
+  "secure_core defines CSRF_COOKIE_NAME = 'csrf_token'"
+check_grep_fixed_in_file '"csrf_token"' \
+  packages/secure_core/src/middleware/enforceCsrfForStateChange.ts \
+  "secure_core CSRF middleware reads 'csrf_token'"
+check_grep_fixed_in_file '"csrf_token"' \
+  apps/workbench-ui/src/api/csrf.ts \
+  "UI api/csrf.ts reads 'csrf_token' cookie"
 
 # Open-workstream TODO branch. No items currently open — both Phase 0.5
 # audit-fix follow-ups closed 2026-05-09. The branch stays in place so
