@@ -3325,6 +3325,17 @@ check_grep_in_file 'requestToolPromotion' \
 check_grep_in_file '"/tool-promotions"' \
   apps/workbench-ui/src/App.tsx \
   "App.tsx registers /tool-promotions route"
+check_file_exists apps/workbench-ui/src/components/tools/ToolPromoteButton.tsx
+check_grep_in_file 'export function ToolPromoteButton' \
+  apps/workbench-ui/src/components/tools/ToolPromoteButton.tsx \
+  "ToolPromoteButton component exported"
+check_grep_in_file 'tool:request_promotion' \
+  apps/workbench-ui/src/components/tools/ToolPromoteButton.tsx \
+  "ToolPromoteButton hides without tool:request_promotion capability"
+check_file_exists apps/workbench-ui/src/__tests__/ToolPromoteButton.test.tsx
+check_grep_in_file 'ToolPromoteButton' \
+  apps/workbench-ui/src/components/tools/ToolDetail.tsx \
+  "ToolDetail wires the ToolPromoteButton into the actions row"
 check_grep_in_file 'routes: \["/:slug"' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "workbenchProxy route shape is /api/:slug (E2-rest workspace authorization)"

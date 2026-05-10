@@ -7,6 +7,7 @@ import { apiClient, type ToolDetail as Detail, type ToolStatus as Status } from 
 import { Card, Kpi, Pill, type PillKind } from "../ui";
 import ToolStatus from "./ToolStatus";
 import ToolDocs from "./ToolDocs";
+import { ToolPromoteButton } from "./ToolPromoteButton";
 
 interface Props {
   toolName: string;
@@ -186,6 +187,7 @@ export default function ToolDetail({ toolName, onStatusChanged }: Props) {
           <button type="button" onClick={exportTool} disabled={exportBusy}>
             {exportBusy ? "Exporting…" : "Export .zip"}
           </button>
+          <ToolPromoteButton toolName={toolName} />
         </div>
       </Card>
 
