@@ -373,6 +373,47 @@ Hard security rules:
 - L2.9 high-risk approval middleware rejects non-human actors before token consumption.
 - Branch-protection or emergency-operator override paths emit `branch_protection.bypass`.
 
+### Authentication-gateway invariants (Phase 0.5 / 2026-05-09)
+
+ADR-0014 records the full decision; these rules apply when editing the
+auth gateway, the FastAPI handoff middleware, the workspace-scoped path
+helpers, or any wrapper script that starts either process.
+
+- `.env.auth` at the repo root is the canonical authentication config.
+  Any security-side modification REQUIRES `.env.auth` to be present and
+  valid before the gateway starts; the loader at
+  `apps/workbench-gateway/src/env.ts` fails closed on missing or
+  short-secret variables. `.env.auth` is gitignored;
+  `.env.auth.example` is committed.
+- The FastAPI workbench MUST bind `127.0.0.1` only when fronted by the
+  gateway. `scripts/dev/run_backend.py`'s `DEFAULT_HOST = "127.0.0.1"`
+  literal is pinned by the convention checker; an override must be a
+  deliberate operator decision documented in the same change.
+- Every FastAPI handler that touches a capsule / run / temp path MUST
+  resolve workspace via `request.state.workspace_slug` through the
+  workspace-scoped helpers in `simworkbench.paths`
+  (`simulation_capsules_root_for(slug)`, `temp_runs_root_for(slug)`,
+  `temp_imports_root_for(slug)`). A bare `simulation_capsules_root()`
+  call inside an HTTP handler is a regression.
+- The gateway MUST NOT trust `X-Forwarded-For` from clients. Fastify's
+  trust-proxy posture is configured by `WORKBENCH_GATEWAY_TRUST_PROXY`
+  in `.env.auth`; the unset default uses the socket peer for `req.ip`,
+  so per-IP rate limits cannot be bypassed by a client rotating XFF.
+- The bootstrap WORM provider MUST be explicitly set when
+  `BOOTSTRAP_ALLOWED=1`. The compose layer at
+  `apps/workbench-gateway/src/services/composeServices.ts` refuses to
+  start with the in-memory `FakeWormMarkerProvider` unless bootstrap is
+  also disabled — a DB restore alone CANNOT re-enable bootstrap on a
+  production deployment.
+- The seven `X-Workbench-*` handoff headers are HMAC-signed by the
+  gateway and verified by `auth_middleware.py` with
+  `hmac.compare_digest`. Trusting any header without HMAC verification
+  (or skipping the constant-time compare) is the same-host process
+  spoofing failure mode tracked in `agent_error_patterns.md`.
+- Recovery from a lost admin is the manual operator runbook in
+  `LIMITATIONS.md`. There is no `BOOTSTRAP_FORCE`, `SKIP_WORM`, or
+  equivalent break-glass env var; do not introduce one.
+
 Current security status as of 2026-05-07:
 
 - Phase 0.5 Layer-0 ADRs are accepted.
@@ -741,7 +782,7 @@ A Claude task is done only when all applicable items are true:
 
 ## 18. Current Phase Snapshot
 
-As of 2026-05-07:
+As of 2026-05-09:
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -757,6 +798,7 @@ As of 2026-05-07:
 | 9 | Complete | Sweeps, optimization, uncertainty, comparison reports. |
 | 10 | Complete | Autonomous bounded experiment design; design/smoke/sweep/review helpers, UI route, approval gates, and gate-walk tests. |
 | 0.5 Security | Implemented through Layer 5 | Secure-core identity, workspace isolation, approvals, audit/provenance chains, dashboard, rate limits, CI gates, and frontend readiness are wired; target-runtime live probes remain deployment-gated. |
+| 0.5 Auth Gateway | Phases A–F-rest landed; F-rest-final + Phase G in progress | Fastify gateway at `apps/workbench-gateway/` composes secure-core; FastAPI is loopback-bound behind HMAC-signed handoff; username-primary identity with `user_credentials` sidecar; three seeded workspaces (`_platform`, `shared-internal-tools`, `shared-public-experiments`); login/SessionGuard/WorkspaceSwitcher/Logout in the UI; 5 audit fixes from the F-rest audit landed (FastAPI middleware mount, CSRF echo on logout, XFF spoofing closed, WORM marker fail-closed, per-account counter wired). ADR-0014 records the decision. |
 
 Current convention-checker state:
 

@@ -32,6 +32,123 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-09: Workbench authentication gateway lands
+
+### Affected subsystem
+- `apps/workbench-gateway/` (new package; gateway host)
+- `packages/core/src/simworkbench/api/auth_middleware.py` (new; FastAPI HMAC verifier)
+- `packages/core/src/simworkbench/api/server.py` (workspace-scoped path resolution)
+- `packages/core/src/simworkbench/paths/__init__.py` (new `_for(slug)` helpers)
+- `packages/secure_core/src/auth/loginService.ts` (username-keyed)
+- `packages/secure_core/src/routes/login.ts` (LOGIN_SCHEMA: username regex)
+- `packages/secure_core/src/auth/recoveryService.ts` (username + optional email)
+- `packages/secure_core/src/db/schema.ts` (username + user_credentials)
+- `packages/secure_core/src/db/migrations/0004_username_and_user_credentials.sql` (new)
+- `packages/secure_core/src/bootstrap/service.ts` (admin_username body field)
+- `apps/workbench-ui/src/api/client.ts` (cookie-aware fetch + CSRF echo)
+- `apps/workbench-ui/src/components/auth/{LoginForm,SessionGuard,WorkspaceSwitcher,LogoutButton,SessionContext}.tsx` (new)
+- `scripts/dev/run_backend.{sh,ps1,cmd,py}` (loopback `127.0.0.1` default)
+- `.env.auth.example` (committed env-var inventory; `.env.auth` gitignored)
+
+### Symptoms
+The Phase 0.5 secure-core stack shipped a complete identity, session,
+CSRF, audit, approval, and capability library, but no host composed it.
+The FastAPI workbench in front of `/api` had zero auth, no workspace
+isolation, no per-user state, and bound `0.0.0.0` by default. Operators
+who wanted multi-tenant deployment had no path: porting secure-core to
+Python would re-translate the §6.2 middleware contract on every PR
+review, and retrofitting auth into every FastAPI handler in lockstep
+was the partially-applied-invariant failure mode the implementation
+plan explicitly warned against.
+
+A targeted post-implementation audit on 2026-05-09 also found five
+security-side gaps in the F-rest cut:
+
+- The FastAPI middleware was registered after the body parser, so a
+  large-body request could bypass the HMAC check.
+- The logout route revoked the session without clearing the
+  `csrf_token` cookie, leaving a stale double-submit pair behind.
+- The rate-limit key extractor read `X-Forwarded-For` directly, so a
+  client could rotate the header to bypass per-IP limits.
+- The compose layer defaulted to an in-memory WORM marker, so a DB
+  restore alone could re-enable bootstrap.
+- Login wrote `audit_events` for failures but never decremented or
+  reset `user_credentials.failed_attempts`; the per-account
+  password-guessing counter was a comment, not a real defense.
+
+### Root cause
+The Phase 0.5 secure-core scaffold was deliberately library-shaped
+(ADR-0008): every concrete deployment has its own pool / audit /
+argon2 deps, and the substrate cannot pre-decide the host. ADR-0014
+records the decision to ship a Fastify gateway as the canonical host,
+move the FastAPI workbench to a loopback-only port, and forward
+HMAC-signed handoff headers — three defenses (HMAC + loopback +
+opt-in URL slug cross-check) that compose without a single
+tampering-resistant boundary doing all the work.
+
+The five audit findings were classic ordering / default-value
+mistakes: middleware mount order, missing cookie clear on logout,
+trusting client-supplied `X-Forwarded-For`, an unsafe in-memory
+default for the bootstrap WORM provider, and a security-relevant
+counter wired into the audit writer but not the verification path.
+
+### Fix
+- New `apps/workbench-gateway/` Fastify host composes secure-core's
+  exported route plugins (login, auth, bootstrap, workspaces,
+  capsules, runs, tools, operator, security-dashboard) and proxies
+  authorized `/api/{workspace_slug}/*` requests through the new HMAC
+  signer in `proxy/handoffSigner.ts`.
+- New `packages/core/src/simworkbench/api/auth_middleware.py`
+  recomputes the HMAC, constant-time-compares it via
+  `hmac.compare_digest`, checks a 30-second replay window, validates
+  field shapes, and stashes the resolved actor on `request.state`.
+- `simworkbench.paths` grows `simulation_capsules_root_for(slug)` /
+  `temp_runs_root_for(slug)` / `temp_imports_root_for(slug)` helpers;
+  every FastAPI handler that touches capsules, runs, or imports
+  consumes `request.state.workspace_slug` and uses the `_for` family.
+- `users.username` (case-insensitive unique index) plus the new
+  `user_credentials` sidecar table become the username-primary
+  identity model. Email becomes optional metadata; the seeded admin
+  has no email of record by design.
+- The bootstrap route accepts `admin_username` / `admin_password` /
+  `oob_credential` (snake_case body fields), seeds three workspaces
+  (`_platform`, `shared-internal-tools`,
+  `shared-public-experiments`) inside one transaction, then disappears
+  after the WORM marker writes.
+- Audit fix bundle (commit 25cc64b): the FastAPI handoff middleware
+  mounts before the body parser; logout clears both cookies
+  idempotently; the rate-limit key uses `req.ip` with a typed
+  `trustProxy` posture; the compose layer refuses to start with the
+  in-memory fake WORM provider when `BOOTSTRAP_ALLOWED=1`; the
+  per-account counter increments on failure and resets on success.
+
+### Regression protection
+Test paths added or updated:
+- `packages/secure_core/test/auth/loginService.test.ts` — username-keyed lookups
+- `packages/secure_core/test/routes/login.test.ts` — LOGIN_SCHEMA accepts username
+- `packages/secure_core/test/routes/bootstrap.test.ts` — admin_username body field
+- `apps/workbench-gateway/test/proxy/handoffSigner.test.ts` — HMAC + replay window
+- `apps/workbench-gateway/test/auth/argon2Adapter.test.ts` — Argon2id verify + counter
+- `apps/workbench-gateway/test/integration/bootstrap.test.ts` — WORM seal one-shot
+- `apps/workbench-gateway/test/integration/loginToProxy.test.ts` — full round-trip
+- `tests/integration/test_api_auth_middleware.py` — HMAC verification, replay refusal
+- `tests/integration/test_api_workspace_path_isolation.py` — slug isolation
+- `apps/workbench-ui/src/__tests__/SessionGuard.test.tsx` — redirect on 401
+- `apps/workbench-ui/src/__tests__/LoginPage.test.tsx` — anti-enumeration
+- `scripts/dev/check_repo_conventions.sh` — new gateway / `.env.auth` / loopback / handoff middleware assertions
+
+Cross-listed in `bugs_and_fixes/regression_tests.md`.
+
+### Agent warning
+Future agents working in the secure surface area must observe:
+- `.env.auth` at repo root is the canonical config — any security-side modification REQUIRES it before tests pass.
+- Do NOT trust `X-Workbench-*` headers without HMAC verification (see `agent_error_patterns.md` entry).
+- Do NOT call `simulation_capsules_root()` (without `_for`) inside FastAPI handlers (see `agent_error_patterns.md` entry).
+- Do NOT add break-glass env vars for re-bootstrap. Lost-admin recovery is the manual operator runbook in `LIMITATIONS.md`.
+- The slug cross-check on `auth_middleware.py` is opt-in via `slug_prefixed_paths`; today's gateway strips the slug before proxying, so the cross-check is a no-op until FastAPI adopts `/api/{slug}/{rest}` routes.
+
+---
+
 ## 2026-05-09: Phase 0.5 audit fixes F1+F2+F3+F4+F5
 
 ### Affected subsystem

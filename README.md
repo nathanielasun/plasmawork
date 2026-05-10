@@ -318,6 +318,84 @@ python examples/krf_excimer/run.py
 
 ---
 
+## Authentication
+
+The workbench ships a two-process deployment posture (Phase 0.5 auth
+gateway, 2026-05-09): a Fastify gateway at
+[`apps/workbench-gateway/`](./apps/workbench-gateway/) is the public
+entry, and the existing FastAPI workbench at
+[`packages/core/src/simworkbench/api/server.py`](./packages/core/src/simworkbench/api/server.py)
+binds to `127.0.0.1` only and trusts HMAC-signed `X-Workbench-*` headers
+from the gateway. ADR-0014 records the full decision.
+
+### `.env.auth`
+
+`/.env.auth` at the repo root is the canonical authentication config.
+The committed [`.env.auth.example`](./.env.auth.example) lists every
+variable the gateway loader requires; the real `.env.auth` is
+gitignored. Copy and fill it once before the gateway starts:
+
+```bash
+cp .env.auth.example .env.auth
+# Generate the cookie + handoff secrets (32+ bytes each, base64).
+openssl rand -base64 32   # paste into WORKBENCH_GATEWAY_COOKIE_SECRET
+openssl rand -base64 32   # paste into WORKBENCH_GATEWAY_HANDOFF_SECRET
+```
+
+The gateway's [`src/env.ts`](./apps/workbench-gateway/src/env.ts)
+fails closed at startup if any required variable is missing or shorter
+than its security floor.
+
+### First-boot bootstrap
+
+Bootstrap creates the seeded root admin once and then seals itself with
+a write-once WORM marker. Re-bootstrap is intentionally hard; lost-admin
+recovery is the manual runbook in [`LIMITATIONS.md`](./LIMITATIONS.md).
+
+1. Choose the operator-side username (alphanumeric + `_-`, 3–64 chars)
+   and a one-time out-of-band credential string.
+2. Hash the OOB credential and seed `.env.auth`:
+   ```bash
+   # Linux: sha256sum. macOS: shasum -a 256.
+   printf '%s' '<your-oob-credential>' | shasum -a 256
+   # Paste the 64-hex digest into BOOTSTRAP_CREDENTIAL_HASH,
+   # set ROOT_ADMIN_USER_ID, set BOOTSTRAP_ALLOWED=1.
+   ```
+3. Set the WORM provider — `WORKBENCH_BOOTSTRAP_WORM_PROVIDER=s3` plus
+   the S3 bucket / key / region in production, or `fake` for a
+   single-node dev box. The gateway refuses to start with the in-memory
+   fake when `BOOTSTRAP_ALLOWED=1`.
+4. Start the gateway. POST the OOB credential and a chosen password:
+   ```bash
+   curl -X POST http://localhost:4000/bootstrap \
+     -H 'Content-Type: application/json' \
+     -d '{"admin_username":"<ROOT_ADMIN_USER_ID>",
+          "admin_password":"<chosen-password>",
+          "oob_credential":"<plaintext-OOB>"}'
+   ```
+5. The route writes the WORM marker, then disappears. Subsequent
+   requests return 404 even with the same credential.
+
+### Login flow
+
+Browsers point at `https://<gateway-host>/login`. The form posts
+username + password to `/auth/login`; on 200 the gateway sets
+`secure_session` (HttpOnly) and `csrf_token` (non-HttpOnly) cookies and
+the SPA redirects to `/`. The header `WorkspaceSwitcher` reads live
+memberships from `GET /auth/session` and lets the user move between
+`shared-internal-tools`, `shared-public-experiments`, and their
+private workspace.
+
+### Where to read more
+
+- Operator runbook (re-bootstrap, MFA limits): [`LIMITATIONS.md`](./LIMITATIONS.md).
+- User/operator walkthrough: docs page **Authentication** under
+  *Security and Operations* (`docs_site/src/content/authentication.tsx`,
+  also bundled into the workbench Documentation panel).
+- Decision record: [`program_development/architectural_decisions/ADR-0014-auth-gateway.md`](./program_development/architectural_decisions/ADR-0014-auth-gateway.md).
+
+---
+
 ## Agent Development Instructions
 
 Coding agents working in this repository **must** read [`AGENTS.md`](./AGENTS.md) first. Claude Code agents must additionally read [`CLAUDE.md`](./CLAUDE.md). The shorthand:

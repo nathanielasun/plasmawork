@@ -184,8 +184,93 @@ A short, brutal list of cases where you'd hit a wall. Each is a real consequence
 4. **"Have the agent critique my spec and fix the issues."** The reviewer flags absolutist phrasing and missing-physics categories. It does not propose code changes, and does not have any model of *what physics is missing for your specific problem*.
 5. **"Submit to a real Slurm cluster from the workbench."** `SlurmJob.write` writes a real bundle. The remote node needs `simworkbench-core` installed and `PYTHONPATH` configured; the bundle is "self-contained" only for the workbench's own payload + entrypoint, not for the runtime. ADR documents this.
 6. **"Run the full `examples/autonomous_experiment_kr` pipeline against a real paper."** The example uses a stand-in quadratic objective. The four-stage pipeline runs end-to-end, but the objective it sweeps is `(x - 0.7)^2`, not anything tied to the spec.
-7. **"Have multiple researchers share a production workspace."** Not yet. `packages/secure_core` has the multi-user scaffold, route tests, and Security Ops UI binding, but the default local FastAPI workbench remains a single-user scientific API. Production rollout requires mounting/cut-over to the secure-core server composition and passing the target-runtime live probes.
+7. **"Have multiple researchers share a production workspace."** Partial. The Phase 0.5 auth gateway at `apps/workbench-gateway/` is the new public entry; secure-core's login, session, CSRF, audit, approval, and capability stack now run against real HTTP traffic, and the FastAPI workbench is loopback-bound behind it. What's *not* yet done: WebAuthn / TOTP enrollment for the platform admin (password-only at aal2 in this cut), workspace-scoped imported-tool registries (the `local_cache/imported_tools/` cache stays cross-tenant), and the deployment cut-over to a target-runtime CI lane that exercises the live probes. The browser flow (login → workspace switcher → `/api/{slug}/*` proxied to FastAPI) works end-to-end on a developer machine; production multi-user operation still requires the live-probe lanes to pass.
 8. **"Run this on a production sandboxed worker."** Not from the default local scientific runtime. Secure-core has worker-token/upload paths and sandbox launch-spec guards; `simworkbench.runtime.python_cpu` still runs in-process for local examples. Production worker execution requires a `runsc`-capable target runtime and green live probes.
+
+---
+
+## Authentication gateway: no break-glass, manual re-bootstrap
+
+The Phase 0.5 auth gateway (ADR-0014, 2026-05-09) ships with a deliberately
+hard recovery story. There is **no code-level break-glass env var**. A
+break-glass would be the most-stolen string in the deployment and would
+make the WORM seal a lie. The trade-off is that a lost admin is an
+operator outage, not a self-service recovery.
+
+### What "sealed" means
+
+Successful first-boot bootstrap writes a write-once marker via the
+configured `WORKBENCH_BOOTSTRAP_WORM_PROVIDER`:
+
+- **Production** (`s3`): the marker lives at
+  `s3://<bucket>/<key>` with `ObjectLockMode=COMPLIANCE` and a 10-year
+  default retention. Even the AWS root account cannot shorten the
+  retention or delete the version before the retain-until date. A
+  database restore alone CANNOT re-enable bootstrap.
+- **Single-node dev** (`fake`): the marker lives in process memory.
+  Durable enough for first-boot bootstrap on a developer machine; a
+  process restart wipes it. The gateway refuses to start with the
+  in-memory fake when `BOOTSTRAP_ALLOWED=1` AND no provider is
+  configured, so a production env that forgets to set the provider
+  fails loudly instead.
+
+After the seal, `POST /bootstrap` returns 404 — the route is unregistered
+on the next process start because `WormMarkerProvider.isBootstrapped()`
+returns true.
+
+### Manual re-bootstrap runbook
+
+This is intentionally a human operator workflow, with audit-visible
+steps:
+
+1. **Confirm the admin is genuinely lost.** Password reset and recovery
+   flows go through the normal `RecoveryService`; only attempt
+   re-bootstrap when those are unavailable (the platform admin has no
+   email of record by design).
+2. **Disable the existing admin row.** Connect to the application
+   database with an operator credential (NOT the app role) and set the
+   admin user's `disabled_at`. Audit + provenance rows for the lost
+   admin remain — the platform record is append-only.
+3. **Invalidate the WORM marker.**
+   - Production (S3 Object Lock COMPLIANCE): you cannot delete the
+     locked object before its retain-until date. Operator options are
+     to wait out retention, or to point the gateway at a NEW bucket /
+     key combination via `WORKBENCH_BOOTSTRAP_WORM_S3_BUCKET` /
+     `_KEY`. The old anchor remains a permanent record.
+   - Dev (`fake`): a process restart already wipes it.
+4. **Re-run bootstrap.** Set a fresh `BOOTSTRAP_CREDENTIAL_HASH`,
+   restart the gateway with `BOOTSTRAP_ALLOWED=1`, POST the new OOB
+   credential as in the README's bootstrap walkthrough.
+5. **Audit cleanup.** The original admin's audit chain is intact;
+   re-bootstrap creates a separate `bootstrap.completed` row tied to a
+   new `admin_user_id`. There is no merging of identities.
+
+If you find yourself looking for a flag named `BOOTSTRAP_FORCE`,
+`SKIP_WORM`, or equivalent — that's the seal working as designed. The
+runbook above is the only authorized path.
+
+### Deferred admin authentication factors
+
+The Phase 0.5 auth gateway is **password-only at aal2** for the platform
+admin. WebAuthn (passkey) and TOTP enrollment endpoints are deferred and
+tracked under `--include-open-workstreams`. Until then, the platform
+admin's defenses are the per-account counter on
+`user_credentials.failed_attempts`, the per-IP login rate limit (now
+trustworthy because the trust-proxy posture ignores client-supplied
+`X-Forwarded-For` by default), and the operator runbook above for true
+loss.
+
+### Slug cross-check posture
+
+`packages/core/src/simworkbench/api/auth_middleware.py` accepts a
+`slug_prefixed_paths` constructor argument that turns the URL workspace
+slug into a third defense against path tampering. It defaults to
+empty: today's gateway strips the slug from the URL via `preRewrite`
+before proxying to FastAPI, so there is no slug in the FastAPI URL to
+cross-check. The defense relies on HMAC + loopback bind. The flag
+becomes load-bearing only when FastAPI adopts `/api/{slug}/{rest}`
+routes; planning for that is tracked under the secure-core open
+workstreams.
 
 ---
 

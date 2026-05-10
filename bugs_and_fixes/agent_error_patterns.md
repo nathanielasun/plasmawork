@@ -2574,3 +2574,123 @@ context that should be used for the current task.
 - 2026-05-07 *Current-contract scanner and context-hygiene policy*: added the
   current-contract docs page, stable lookup tags, and scanner wiring after a
   stale phase-state sweep exposed how duplicated phase/status text drifted.
+
+---
+
+## Error Pattern: Trusting `X-Workbench-*` headers without HMAC verification
+
+### Why it is bad
+The Phase 0.5 auth gateway forwards the seven
+`X-Workbench-User-Id`, `X-Workbench-Workspace-Id`,
+`X-Workbench-Workspace-Slug`, `X-Workbench-Roles`,
+`X-Workbench-Request-Id`, `X-Workbench-Issued-At`,
+`X-Workbench-Signature` headers to the FastAPI workbench bound at
+`127.0.0.1`. Loopback bind defends against the network but not against
+a colocated process. If the FastAPI middleware reads any of those
+headers without recomputing the HMAC and constant-time-comparing it to
+`X-Workbench-Signature`, any process on the same host can forge an
+identity, a workspace assignment, and a role list — and the FastAPI
+handler will treat the forged identity as the authenticated actor.
+
+### Required behavior
+- Every non-bypass request runs HMAC verification with
+  `WORKBENCH_GATEWAY_HANDOFF_SECRET` and `hmac.compare_digest`.
+- The replay window is checked (default 30s) so a replayed handoff
+  cannot ride a stale signature.
+- Required-header presence, field-shape regexes, and the canonical role
+  ordering are all checked before HMAC compare, so a tampered field
+  cannot smuggle delimiter characters into the payload.
+- Routes that should bypass (health checks, OpenAPI JSON) are
+  configured via `bypass_paths`; nothing else is exempt.
+
+### Detection
+- Grep the FastAPI app factory for
+  `WorkbenchHandoffMiddleware`. Confirm it is mounted on the
+  outermost ASGI stack and not behind any other middleware that
+  consumes the request body.
+- Negative tests should drop, mutate, or replay
+  `X-Workbench-Signature` and assert 401, with no
+  `request.state.workspace_slug` set.
+
+### Bug log
+- 2026-05-09 *Workbench authentication gateway lands*: the FastAPI
+  middleware mount in `server.py`, the constant-time-compare in
+  `auth_middleware.py`, and the convention-checker assertion that
+  pins both went in together.
+
+---
+
+## Error Pattern: Calling `simulation_capsules_root()` without a workspace prefix in route handlers
+
+### Why it is bad
+Workspace isolation is enforced at the FastAPI handler boundary by the
+`simulation_capsules_root_for(slug)` family in `simworkbench.paths`.
+The bare `simulation_capsules_root()` (and the matching
+`temp_runs_root()` / `temp_imports_root()`) returns the root of the
+managed tree, not the workspace-scoped subdirectory. A handler that
+calls the bare function and then writes a capsule there leaks artifacts
+across tenants — every workspace sees every other workspace's capsules
+the moment a single handler regresses.
+
+### Required behavior
+- Every FastAPI handler that writes, lists, reads, or deletes a capsule,
+  run, or import resolves the workspace via
+  `request.state.workspace_slug` (set by
+  `WorkbenchHandoffMiddleware`) and uses
+  `simulation_capsules_root_for(slug)` /
+  `temp_runs_root_for(slug)` / `temp_imports_root_for(slug)`.
+- The bare `*_root()` helpers stay reserved for tooling and tests
+  that have no workspace context.
+
+### Detection
+- Grep `packages/core/src/simworkbench/api/server.py` for
+  `simulation_capsules_root\(\)`, `temp_runs_root\(\)`,
+  `temp_imports_root\(\)` (no `_for`). The convention checker should
+  fail closed on any match inside `api/`.
+- Negative tests should issue a request from one workspace and assert a
+  capsule under a different workspace's directory is never visible
+  through the proxied endpoint.
+
+### Bug log
+- 2026-05-09 *Workbench authentication gateway lands*: server.py's
+  capsule, run, and temp paths were refactored to consume
+  `request.state.workspace_slug` via the `_for` helpers. The
+  convention-checker assertion bans the bare calls inside the API
+  module.
+
+---
+
+## Error Pattern: Reading `X-Forwarded-For` for rate-limit keys at the public entry point
+
+### Why it is bad
+Direct clients can rotate `X-Forwarded-For` on every request. If the
+gateway extracts `req.ip` from XFF without first vetting the proxy
+chain, a per-IP rate limit on login or bootstrap becomes a
+per-fictional-IP rate limit — the attacker rotates the header, the
+limiter sees a fresh subject every time, and the per-IP throttle
+disappears. The same hole bypasses the per-IP login lockout that the
+LoginService uses to throttle password guessing.
+
+### Required behavior
+- The gateway uses Fastify's typed `trustProxy` configuration and
+  reads `req.ip` (which respects the trusted-proxy chain) — never
+  `req.headers["x-forwarded-for"]` directly.
+- The trust-proxy posture is configured by
+  `WORKBENCH_GATEWAY_TRUST_PROXY` in `.env.auth`; the unset default
+  is "do NOT trust XFF" so a direct deployment is safe by default.
+- Rate-limit keys, lockout buckets, and audit `actor_ip` rows all flow
+  through the same `req.ip` field; tests reject any direct XFF read.
+
+### Detection
+- Grep the gateway source tree for
+  `req.headers["x-forwarded-for"]` or `request.headers.get("x-forwarded-for")`.
+  Any direct read in a key extractor or audit writer is the bug.
+- Regression tests run the gateway with the default trust-proxy posture
+  and a fixed XFF header, confirming the per-IP limiter sees the socket
+  peer rather than the forged value.
+
+### Bug log
+- 2026-05-09 *Workbench authentication gateway lands*: the rate-limit
+  key extractor was switched from a direct XFF read to `req.ip`, and
+  `.env.auth.example` documents the trust-proxy posture as part of
+  the F1–F5 audit-fix bundle.
