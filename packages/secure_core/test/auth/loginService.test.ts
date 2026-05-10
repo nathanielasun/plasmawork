@@ -268,14 +268,14 @@ describe("LoginService.authenticatePassword — F1+F2", () => {
     expect(out.userId).toBe(ACTOR);
   });
 
-  it("locked account is refused without running the verifier (audit fix 2026-05-10)", async () => {
+  it("locked account is refused after running the verifier (timing parity)", async () => {
     // Audit fix: the previous LoginService incremented
     // `user_credentials.failed_attempts` but NEVER read
     // `locked_until`, so a documented lockout was a dead column.
     // This test pins the read side: a user whose `locked_until` is
     // in the future cannot authenticate, even with the right
-    // password, and the verifier is NOT called (so a server-side
-    // timing channel can't reveal the lockout state).
+    // password. The verifier still runs so a server-side timing
+    // channel cannot distinguish locked accounts from other failures.
     //
     // Service uses a fixed clock at 2026-05-09T12:00:00Z; lockout
     // is set 5 minutes ahead of that.
@@ -302,7 +302,7 @@ describe("LoginService.authenticatePassword — F1+F2", () => {
     await expect(
       svc.authenticatePassword(DEFAULT_INPUT),
     ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
-    expect(verifierCalls).toBe(0);
+    expect(verifierCalls).toBe(1);
     // Audit row carries the discriminated reason.
     expect(audit.calls).toHaveLength(1);
     expect(audit.calls[0]!.metadata).toMatchObject({

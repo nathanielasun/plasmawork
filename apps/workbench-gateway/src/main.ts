@@ -26,12 +26,17 @@
 import postgres from "postgres";
 
 import { buildApp } from "../../../packages/secure_core/src/server.js";
+import {
+  isCapability,
+  type Capability,
+} from "../../../packages/secure_core/src/config/capabilities.js";
 import { loginRoutes } from "../../../packages/secure_core/src/routes/login.js";
 import { sessionRoutes } from "../../../packages/secure_core/src/routes/session.js";
 import { bootstrapRoutes } from "../../../packages/secure_core/src/routes/bootstrap.js";
 import type { FastifyInstance } from "fastify";
 
 import { workbenchProxyPlugin } from "./proxy/workbenchProxy.js";
+import { promotionAuditRoutes } from "./internal/promotionAuditRoutes.js";
 import { loadGatewayEnv, type GatewayEnv } from "./env.js";
 
 /**
@@ -147,6 +152,11 @@ export async function buildGateway(
     rateLimitKeyExtractor: ipKeyExtractor,
   });
 
+  await app.register(promotionAuditRoutes, {
+    auditLogger: services.auditLogger,
+    internalSecret: env.handoffSecret,
+  });
+
   // Phase E2-rest: workbench proxy. Registered LAST because it
   // mounts at `/api/:slug/*`; the secure_core routes above
   // (`/auth/*` + `/bootstrap`) live on different prefixes so there
@@ -179,6 +189,23 @@ export async function buildGateway(
           AND rp.capability LIKE 'platform:%'
       `;
       return rows.map((r) => r.role_name);
+    },
+    platformCapabilitiesFor: async (userId: string) => {
+      const rows = await services.appPool.sql<
+        Array<{ capability: string }>
+      >`
+        SELECT DISTINCT rp.capability AS capability
+        FROM workspace_memberships wm
+        INNER JOIN role_permissions rp ON rp.role_id = wm.role_id
+        WHERE wm.user_id = ${userId}::uuid
+          AND wm.removed_at IS NULL
+          AND rp.capability LIKE 'platform:%'
+      `;
+      return rows
+        .map((r) => r.capability)
+        .filter((capability): capability is Capability =>
+          isCapability(capability),
+        );
     },
   });
 

@@ -32,6 +32,70 @@ What future agents must not repeat.
 
 <!-- Append entries below this line, most recent first. -->
 
+## 2026-05-10: Auth-gateway post-audit hardening
+
+### Affected subsystem
+
+- `apps/workbench-gateway/src/proxy/`
+- `apps/workbench-gateway/src/internal/promotionAuditRoutes.ts`
+- `packages/core/src/simworkbench/api/server.py`
+- `packages/core/src/simworkbench/tools/{authoring,promotion,preview_sandbox}.py`
+- `packages/secure_core/src/auth/loginService.ts`
+- `apps/workbench-ui/src/__tests__/ToolPromotionPanel.test.tsx`
+
+### Symptoms
+
+The Phase 0.5 gateway was operational but still had several security
+drift risks: proxied FastAPI mutations relied on a partial capability
+map, platform promotion decisions were tied to the active workspace's
+capability list, draft preview treated configuration as if it were
+isolation, locked accounts skipped the password verifier path, and
+cross-language tool-promotion audit stayed outside the canonical
+secure-core audit chain.
+
+### Root cause
+
+The gateway, Python FastAPI tool services, and UI landed in separate
+slices. Each slice was locally coherent, but cross-boundary invariants
+were incomplete: "has session" was mistaken for "has route
+capability", "selected workspace" was mistaken for "platform scope",
+"sandbox enabled" was mistaken for "sandbox exists", and local JSONL
+audit was mistaken for production audit.
+
+### Fix
+
+- Gateway proxy authorization now uses an explicit workspace/platform
+  capability map and refuses unmapped state-changing FastAPI routes
+  before forwarding.
+- Platform promotion approval/denial derives platform capabilities from
+  server-side platform membership, not from the active workspace role.
+- Tool-draft preview in gateway-required mode refuses to execute unless
+  a configured sandbox launcher or `runsc` runtime is present.
+- Login lockout preserves password-verifier timing parity and keeps the
+  response generic.
+- Tool promotion events bridge into the canonical secure-core audit
+  logger in gateway-required mode and roll back local side effects when
+  audit emission fails. Dev mode retains a hash-chained local verifier.
+- UI promotion tests now use real `Capability` typing instead of
+  type-erasing the role/capability shape.
+
+### Regression protection
+
+- `apps/workbench-gateway/test/proxy/workbenchProxy.test.ts`
+- `apps/workbench-gateway/test/internal/promotionAuditRoutes.test.ts`
+- `packages/secure_core/test/auth/loginService.test.ts`
+- `tests/regression/test_api_gateway_required_mode.py`
+- `tests/integration/test_tool_promotion_flow.py`
+- `apps/workbench-ui/src/__tests__/ToolPromotionPanel.test.tsx`
+- `scripts/dev/check_repo_conventions.sh`
+
+### Agent warning
+
+Security invariants that cross language/process boundaries need a
+regression at the boundary. Do not rely on UI capability gating,
+selected workspace state, boolean sandbox flags, or local dev audit logs
+as production controls.
+
 ## 2026-05-10: Tool registry becomes workspace-scoped
 
 ### Affected subsystem

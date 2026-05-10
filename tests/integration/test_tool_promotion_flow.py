@@ -28,14 +28,12 @@ from pathlib import Path
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-
 from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG, create_app
 from simworkbench.paths import (
     imported_tools_root_for,
     tool_promotions_root,
 )
 from simworkbench.tools.registry import ToolRegistry
-
 
 # DEFAULT_WORKSPACE_SLUG is "shared-public-experiments" — the dev-mode
 # default. We promote OUT of it (TO shared-internal-tools) so the
@@ -299,6 +297,8 @@ def test_promotion_decisions_land_in_tamper_evident_audit_chain(planted_tool):
     name, _ = planted_tool
     client = TestClient(create_app())
 
+    from simworkbench.tools.promotion import verify_promotion_audit_chain
+
     chain_path = tool_promotions_root() / "_audit_chain.jsonl"
     pre_existing_lines = (
         chain_path.read_text(encoding="utf-8").splitlines()
@@ -329,7 +329,7 @@ def test_promotion_decisions_land_in_tamper_evident_audit_chain(planted_tool):
     )
     requested, approved = matching
     assert requested["action"] == "tool.promotion_requested"
-    assert approved["action"] == "tool.promotion_approved"
+    assert approved["action"] == "tool.promoted"
     # Each entry has a row_hash, and `approved.prev_hash` chains to
     # `requested.row_hash`.
     assert "row_hash" in requested
@@ -342,3 +342,5 @@ def test_promotion_decisions_land_in_tamper_evident_audit_chain(planted_tool):
         _json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     assert approved["row_hash"] == expected_hash
+    ok, reason = verify_promotion_audit_chain()
+    assert ok, reason

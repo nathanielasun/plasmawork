@@ -41,6 +41,17 @@ export default function SecurityAuditProvenance() {
         <li>Operator reads are reason-bound and session-limited.</li>
         <li>Read paths are themselves audited to preserve accountability.</li>
       </ul>
+
+      <h2>Cross-language events</h2>
+      <p>
+        Some workbench mutations still originate in the Python FastAPI
+        service while the canonical audit logger lives in the TypeScript
+        gateway. In gateway-required mode, these paths use internal,
+        authenticated bridge routes and fail closed if canonical audit emission
+        is unavailable. Cross-workspace tool promotion request and decision
+        events follow this path; local single-user development keeps a
+        hash-chained JSONL fallback only for inspectability.
+      </p>
     </article>
   );
 }

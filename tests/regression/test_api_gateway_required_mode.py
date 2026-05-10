@@ -26,12 +26,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
+import sys
 import time
 
 import pytest
 from fastapi.testclient import TestClient
-
 from simworkbench.api.auth_middleware import (
     HANDOFF_HEADER_ISSUED_AT,
     HANDOFF_HEADER_REQUEST_ID,
@@ -41,7 +40,6 @@ from simworkbench.api.auth_middleware import (
     HANDOFF_HEADER_WORKSPACE_ID,
     HANDOFF_HEADER_WORKSPACE_SLUG,
 )
-
 
 SECRET = "Aa!23456789012345678901234567890123456"  # 38 bytes
 USER_ID = "11111111-1111-4111-8111-111111111111"
@@ -137,7 +135,7 @@ def test_workspace_slug_dep_rejects_missing_state_in_required_mode(gateway_env):
     assert r.status_code == 401
 
 
-def test_preview_refused_in_production_without_sandbox_flag(
+def test_preview_refused_in_production_without_configured_sandbox(
     gateway_env,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -146,10 +144,11 @@ def test_preview_refused_in_production_without_sandbox_flag(
     multi-tenant production, ANY authenticated workspace member can
     weaponize it for RCE.
 
-    The fix gates preview behind ``WORKBENCH_PREVIEW_SANDBOX_ENABLED=1``
-    in production mode. Without the flag, the endpoint refuses with
-    503 — no subprocess, no RCE surface."""
-    monkeypatch.delenv("WORKBENCH_PREVIEW_SANDBOX_ENABLED", raising=False)
+    The fix requires a configured sandbox launcher in production mode.
+    Without one, the endpoint refuses with 503 — no subprocess, no RCE
+    surface."""
+    monkeypatch.delenv("WORKBENCH_PREVIEW_SANDBOX_COMMAND", raising=False)
+    monkeypatch.delenv("WORKBENCH_PREVIEW_SANDBOX_RUNTIME", raising=False)
     from simworkbench.api.server import create_app
 
     client = TestClient(create_app())
@@ -161,16 +160,76 @@ def test_preview_refused_in_production_without_sandbox_flag(
         json={"harness": "python_smoke"},
     )
     assert r.status_code == 503, r.text
-    assert "WORKBENCH_PREVIEW_SANDBOX_ENABLED" in r.text
+    assert "WORKBENCH_PREVIEW_SANDBOX_COMMAND" in r.text
+
+
+def test_preview_uses_configured_sandbox_launcher(
+    gateway_env,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+):
+    """Gateway-required preview uses the configured sandbox launcher and
+    does not require the old boolean bypass flag."""
+    launcher = tmp_path / "fake_preview_sandbox.py"
+    launcher.write_text(
+        """
+from __future__ import annotations
+import argparse
+import json
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--draft-root")
+parser.add_argument("--harness")
+parser.add_argument("--result-path")
+parser.add_argument("--core-src")
+parser.add_argument("--runner-module")
+args = parser.parse_args()
+with open(args.result_path, "w", encoding="utf-8") as fh:
+    json.dump(
+        {
+            "passed": True,
+            "outputs": [{"name": "sandbox", "kind": "scalar", "preview": 1}],
+            "diagnostics": [],
+        },
+        fh,
+    )
+print("sandbox launcher used")
+""".lstrip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "WORKBENCH_PREVIEW_SANDBOX_COMMAND",
+        f"{sys.executable} {launcher}",
+    )
+    monkeypatch.delenv("WORKBENCH_PREVIEW_SANDBOX_RUNTIME", raising=False)
+    from simworkbench.api.server import create_app
+
+    client = TestClient(create_app())
+    created = client.post(
+        "/api/tool-authoring/drafts",
+        headers=_signed_headers(),
+        json={"template_id": "diagnostic", "name": "sandbox_preview_test"},
+    )
+    assert created.status_code == 200, created.text
+    draft_id = created.json()["draft_id"]
+    r = client.post(
+        f"/api/tool-authoring/drafts/{draft_id}/preview",
+        headers=_signed_headers(),
+        json={"harness": "python_smoke"},
+    )
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["passed"] is True
+    assert "sandbox launcher used" in payload["stdout"]
 
 
 def test_preview_refused_in_production_for_non_workspace_admin(
     gateway_env,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Even with the sandbox flag set, a regular workspace member
+    """Even with a sandbox configured, a regular workspace member
     (no WorkspaceAdmin role) cannot trigger preview."""
-    monkeypatch.setenv("WORKBENCH_PREVIEW_SANDBOX_ENABLED", "1")
+    monkeypatch.setenv("WORKBENCH_PREVIEW_SANDBOX_COMMAND", sys.executable)
     from simworkbench.api.server import create_app
 
     client = TestClient(create_app())

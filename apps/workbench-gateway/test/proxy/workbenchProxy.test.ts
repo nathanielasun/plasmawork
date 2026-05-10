@@ -1,21 +1,22 @@
 /**
  * Proxy plugin integration test — Phase 0.5 / Phase E2-rest (2026-05-09).
  *
- * Pins the workbench proxy's wiring against a STUB upstream Fastify
- * server. The test:
+ * Pins the workbench proxy's wiring against an in-process fake proxy
+ * adapter. The test:
  *
- *   1. Spins up a stub upstream on a free port. The upstream
- *      captures every inbound request + its headers.
- *   2. Builds a gateway with `workbenchProxyPlugin` registered. The
- *      auth chain is a list of stub middlewares that injects a
+ *   1. Replaces @fastify/http-proxy with an in-process adapter that
+ *      captures the request URL and rewritten headers. No real listen
+ *      socket is opened, so the test runs inside sandboxed CI.
+ *   2. Builds a gateway-shaped Fastify app that uses the exported
+ *      proxy preHandler/rewrite helpers. The auth chain is a list of
+ *      stub middlewares that injects a
  *      fixed `req.auth` + `req.workspace` + `req.membership` so the
  *      test doesn't need a real cookie / DB.
  *   3. Sends a request through the gateway via `app.inject`.
- *   4. Asserts the stub upstream saw the 7 ``X-Workbench-*`` headers
- *      AND that the signature verifies against the same shared
- *      secret on the upstream side. The upstream's verification
- *      mirrors what the FastAPI middleware does at production
- *      runtime.
+ *   4. Asserts the in-process capture saw the 7 ``X-Workbench-*``
+ *      headers AND that the signature verifies against the same
+ *      shared secret. This mirrors what the FastAPI middleware does at
+ *      production runtime.
  *
  * E2-rest behaviors pinned (in addition to E2-min's HMAC sign-and-
  * forward):
@@ -29,12 +30,14 @@
  *     proxy never forwards.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 
-import { workbenchProxyPlugin } from "../../src/proxy/workbenchProxy.js";
+import {
+  buildHandoffPreHandler,
+  rewriteWorkbenchProxyHeaders,
+  rewriteWorkbenchProxyUrl,
+} from "../../src/proxy/workbenchProxy.js";
 import {
   HANDOFF_HEADERS,
   buildHandoffPayload,
@@ -52,6 +55,7 @@ import type {
 import type { MiddlewareHandler } from "../../../../packages/secure_core/src/middleware/compose.js";
 import { NotFoundError } from "../../../../packages/secure_core/src/errors/shapes.js";
 import { toHttpResponse } from "../../../../packages/secure_core/src/errors/mapper.js";
+import type { Capability } from "../../../../packages/secure_core/src/config/capabilities.js";
 
 const HANDOFF_SECRET = "z".repeat(64);
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -64,70 +68,6 @@ interface CapturedRequest {
   readonly url: string;
   readonly method: string;
   readonly headers: Record<string, string | string[] | undefined>;
-}
-
-function makeStubUpstream(opts: {
-  readonly captures: CapturedRequest[];
-  readonly verifyHandoff?: boolean;
-}): Promise<{ close: () => Promise<void>; baseUrl: string }> {
-  const server = createServer((req, res) => {
-    opts.captures.push({
-      url: req.url ?? "",
-      method: req.method ?? "GET",
-      headers: { ...req.headers },
-    });
-    if (opts.verifyHandoff === true) {
-      const userId = req.headers[HANDOFF_HEADERS.USER_ID];
-      const workspaceId = req.headers[HANDOFF_HEADERS.WORKSPACE_ID];
-      const workspaceSlug = req.headers[HANDOFF_HEADERS.WORKSPACE_SLUG];
-      const roles = req.headers[HANDOFF_HEADERS.ROLES];
-      const requestId = req.headers[HANDOFF_HEADERS.REQUEST_ID];
-      const issuedAt = req.headers[HANDOFF_HEADERS.ISSUED_AT];
-      const signature = req.headers[HANDOFF_HEADERS.SIGNATURE];
-      if (
-        typeof userId !== "string" ||
-        typeof workspaceId !== "string" ||
-        typeof workspaceSlug !== "string" ||
-        typeof roles !== "string" ||
-        typeof requestId !== "string" ||
-        typeof issuedAt !== "string" ||
-        typeof signature !== "string"
-      ) {
-        res.statusCode = 401;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ error: "missing handoff headers" }));
-        return;
-      }
-      const payload: HandoffPayload = {
-        userId,
-        workspaceId,
-        workspaceSlug,
-        roles: roles.length > 0 ? roles.split(",") : [],
-        requestId,
-        issuedAtSec: Number.parseInt(issuedAt, 10),
-      };
-      if (!verifyHandoffSignature(payload, signature, HANDOFF_SECRET)) {
-        res.statusCode = 401;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ error: "invalid signature" }));
-        return;
-      }
-    }
-    res.statusCode = 200;
-    res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ ok: true }));
-  });
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address() as AddressInfo;
-      resolve({
-        baseUrl: `http://127.0.0.1:${addr.port}`,
-        async close() {
-          await new Promise<void>((r) => server.close(() => r()));
-        },
-      });
-    });
-  });
 }
 
 /**
@@ -178,9 +118,13 @@ function buildStubAuthChain(opts?: {
 }
 
 async function buildProxyOnlyApp(args: {
-  readonly upstreamUrl: string;
+  readonly captures: CapturedRequest[];
   readonly authChain: ReadonlyArray<MiddlewareHandler>;
   readonly clock?: () => number;
+  readonly platformRolesFor?: (userId: string) => Promise<readonly string[]>;
+  readonly platformCapabilitiesFor?: (
+    userId: string,
+  ) => Promise<readonly Capability[]>;
 }): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.addHook("onRequest", requireRequestId);
@@ -190,11 +134,33 @@ async function buildProxyOnlyApp(args: {
     const mapped = toHttpResponse(err, req.requestId ?? "unknown");
     reply.code(mapped.status).send(mapped.body);
   });
-  await app.register(workbenchProxyPlugin, {
-    upstreamUrl: args.upstreamUrl,
+  const handoffPreHandler = buildHandoffPreHandler({
     handoffSecret: HANDOFF_SECRET,
-    authChain: args.authChain,
-    now: args.clock,
+    now: args.clock ?? Date.now,
+    platformRolesFor: args.platformRolesFor,
+    platformCapabilitiesFor: args.platformCapabilitiesFor,
+  });
+  const preHandler = [...args.authChain, handoffPreHandler];
+  const handler = async (req: FastifyRequest) => {
+    args.captures.push({
+      url: rewriteWorkbenchProxyUrl(req.url),
+      method: req.method,
+      headers: rewriteWorkbenchProxyHeaders(req, { ...req.headers }),
+    });
+    return { ok: true };
+  };
+  const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+  app.route({
+    method: methods,
+    url: "/api/:slug",
+    preHandler: preHandler as never,
+    handler,
+  });
+  app.route({
+    method: methods,
+    url: "/api/:slug/*",
+    preHandler: preHandler as never,
+    handler,
   });
   return app;
 }
@@ -205,22 +171,17 @@ async function buildProxyOnlyApp(args: {
 
 describe("workbenchProxyPlugin (E2-rest)", () => {
   let captures: CapturedRequest[];
-  let upstream: { close: () => Promise<void>; baseUrl: string };
 
-  beforeAll(async () => {
+  beforeEach(() => {
     captures = [];
-    upstream = await makeStubUpstream({ captures });
-  });
-
-  afterAll(async () => {
-    await upstream.close();
+    captures.length = 0;
   });
 
   it("forwards GET /api/{slug}/foo with handoff carrying the real workspace_id + role", async () => {
     captures.length = 0;
     const fixedClock = () => 1_700_000_000_000; // ms; 1700000000 sec
     const app = await buildProxyOnlyApp({
-      upstreamUrl: upstream.baseUrl,
+      captures,
       authChain: buildStubAuthChain(),
       clock: fixedClock,
     });
@@ -271,7 +232,7 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
   it("strips inbound X-Workbench-* headers from the client (defense)", async () => {
     captures.length = 0;
     const app = await buildProxyOnlyApp({
-      upstreamUrl: upstream.baseUrl,
+      captures,
       authChain: buildStubAuthChain(),
     });
 
@@ -298,35 +259,45 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
     await app.close();
   });
 
-  it("upstream-side HMAC verification accepts the gateway's headers (round-trip)", async () => {
-    const verifyCaptures: CapturedRequest[] = [];
-    const verifyingUpstream = await makeStubUpstream({
-      captures: verifyCaptures,
-      verifyHandoff: true,
+  it("FastAPI-side HMAC verification accepts the gateway's headers (round-trip)", async () => {
+    const app = await buildProxyOnlyApp({
+      captures,
+      authChain: buildStubAuthChain(),
     });
-    try {
-      const app = await buildProxyOnlyApp({
-        upstreamUrl: verifyingUpstream.baseUrl,
-        authChain: buildStubAuthChain(),
-      });
 
-      const r = await app.inject({
-        method: "GET",
-        url: `/api/${WORKSPACE_SLUG}/capsules`,
-      });
-      expect(r.statusCode).toBe(200);
-      expect(verifyCaptures).toHaveLength(1);
+    const r = await app.inject({
+      method: "GET",
+      url: `/api/${WORKSPACE_SLUG}/capsules`,
+    });
+    expect(r.statusCode).toBe(200);
+    expect(captures).toHaveLength(1);
+    const captured = captures[0]!;
+    const payload: HandoffPayload = {
+      userId: captured.headers[HANDOFF_HEADERS.USER_ID] as string,
+      workspaceId: captured.headers[HANDOFF_HEADERS.WORKSPACE_ID] as string,
+      workspaceSlug: captured.headers[HANDOFF_HEADERS.WORKSPACE_SLUG] as string,
+      roles: String(captured.headers[HANDOFF_HEADERS.ROLES] ?? "").split(","),
+      requestId: captured.headers[HANDOFF_HEADERS.REQUEST_ID] as string,
+      issuedAtSec: Number.parseInt(
+        captured.headers[HANDOFF_HEADERS.ISSUED_AT] as string,
+        10,
+      ),
+    };
+    expect(
+      verifyHandoffSignature(
+        payload,
+        captured.headers[HANDOFF_HEADERS.SIGNATURE] as string,
+        HANDOFF_SECRET,
+      ),
+    ).toBe(true);
 
-      await app.close();
-    } finally {
-      await verifyingUpstream.close();
-    }
+    await app.close();
   });
 
   it("workspace-membership refusal returns 404 and never forwards", async () => {
     captures.length = 0;
     const app = await buildProxyOnlyApp({
-      upstreamUrl: upstream.baseUrl,
+      captures,
       authChain: buildStubAuthChain({ refuseMembership: true }),
     });
 
@@ -354,7 +325,7 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
     // surfaces the intent change at review time.
     captures.length = 0;
     const app = await buildProxyOnlyApp({
-      upstreamUrl: upstream.baseUrl,
+      captures,
       authChain: buildStubAuthChain(),
     });
 
@@ -378,7 +349,7 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
   it("URL without a slug → 404 (Fastify routing miss; never reaches upstream)", async () => {
     captures.length = 0;
     const app = await buildProxyOnlyApp({
-      upstreamUrl: upstream.baseUrl,
+      captures,
       authChain: buildStubAuthChain(),
     });
 
@@ -431,7 +402,7 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
       },
     ];
     const app = await buildProxyOnlyApp({
-      upstreamUrl: upstream.baseUrl,
+      captures,
       authChain: stubAuthChain,
     });
     const r = await app.inject({
@@ -444,7 +415,7 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
     expect(r.json()).toMatchObject({
       error: { code: "PERMISSION_DENIED" },
     });
-    // Critically: the upstream NEVER saw the request.
+    // Critically: the simulated upstream NEVER saw the request.
     expect(captures).toHaveLength(0);
 
     await app.close();
@@ -484,7 +455,7 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
       },
     ];
     const app = await buildProxyOnlyApp({
-      upstreamUrl: upstream.baseUrl,
+      captures,
       authChain: stubAuthChain,
     });
     const r = await app.inject({
@@ -496,6 +467,70 @@ describe("workbenchProxyPlugin (E2-rest)", () => {
     expect(r.statusCode).toBe(200);
     expect(captures).toHaveLength(1);
 
+    await app.close();
+  });
+
+  it("refuses unmapped mutating /api routes before forwarding (fail-closed)", async () => {
+    captures.length = 0;
+    const app = await buildProxyOnlyApp({
+      captures,
+      authChain: buildStubAuthChain(),
+    });
+
+    const r = await app.inject({
+      method: "PATCH",
+      url: `/api/${WORKSPACE_SLUG}/future-mutation`,
+      headers: { "content-type": "application/json" },
+      payload: { ok: true },
+    });
+
+    expect(r.statusCode).toBe(403);
+    expect(captures).toHaveLength(0);
+    await app.close();
+  });
+
+  it("allows platform approval when capability lives outside active workspace", async () => {
+    captures.length = 0;
+    const app = await buildProxyOnlyApp({
+      captures,
+      authChain: buildStubAuthChain(),
+      platformRolesFor: async () => ["IncidentRemediator"],
+      platformCapabilitiesFor: async () => ["platform:incident_remediate"],
+    });
+
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/${WORKSPACE_SLUG}/tool-promotions/request-1/approve`,
+      headers: { "content-type": "application/json" },
+      payload: { decision_note: "approved" },
+    });
+
+    expect(r.statusCode).toBe(200);
+    expect(captures).toHaveLength(1);
+    expect(captures[0]!.headers[HANDOFF_HEADERS.ROLES]).toContain(
+      "IncidentRemediator",
+    );
+    await app.close();
+  });
+
+  it("refuses platform approval without platform capability even for active workspace admin", async () => {
+    captures.length = 0;
+    const app = await buildProxyOnlyApp({
+      captures,
+      authChain: buildStubAuthChain(),
+      platformRolesFor: async () => [],
+      platformCapabilitiesFor: async () => [],
+    });
+
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/${WORKSPACE_SLUG}/tool-promotions/request-1/approve`,
+      headers: { "content-type": "application/json" },
+      payload: { decision_note: "approved" },
+    });
+
+    expect(r.statusCode).toBe(403);
+    expect(captures).toHaveLength(0);
     await app.close();
   });
 

@@ -36,6 +36,13 @@ export default function SecurityRolesPermissions() {
         They are time-limited, reason-bound, audited, and recorded in the
         operator event chain whenever used.
       </p>
+      <p>
+        Gateway proxy authorization resolves platform capabilities from
+        server-side membership/role records across the platform scope rather
+        than from the currently selected workspace. Active workspace roles do
+        not grant platform actions, and platform-capability checks do not read
+        role claims from request bodies.
+      </p>
 
       <h2>High-risk actions</h2>
       <p>

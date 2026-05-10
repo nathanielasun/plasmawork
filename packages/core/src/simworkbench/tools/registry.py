@@ -14,7 +14,6 @@ through ``simworkbench.paths.is_under_workbench`` for safety.
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path

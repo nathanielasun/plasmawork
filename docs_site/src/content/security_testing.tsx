@@ -18,6 +18,7 @@ export default function SecurityTesting() {
           <tr><td>Authentication</td><td>Invalid, expired, disabled, and unauthenticated sessions fail safely.</td></tr>
           <tr><td>Workspace isolation</td><td>Objects from one workspace cannot be read or mutated from another.</td></tr>
           <tr><td>Capabilities</td><td>Missing roles or capabilities return authorization failures and emit audit records.</td></tr>
+          <tr><td>Gateway proxy map</td><td>Every state-changing proxied FastAPI route is explicitly mapped to workspace or platform capabilities; unmapped mutations fail closed.</td></tr>
           <tr><td>Approvals</td><td>High-risk actions require durable, context-bound, single-use human approval.</td></tr>
           <tr><td>Capsule versioning</td><td>Protected versions cannot be silently overwritten.</td></tr>
           <tr><td>Sandbox</td><td>Generated or imported execution remains isolated and policy-limited.</td></tr>
@@ -46,6 +47,12 @@ export default function SecurityTesting() {
         <code>runsc</code> installed, and <code>security_live_worm.sh</code>
         requires <code>PLASMAWORK_ANCHOR_LIVE_PROBES=1</code> plus a dedicated
         Object-Lock probe bucket.
+      </p>
+      <p>
+        Gateway regression tests also exercise the legacy FastAPI proxy: a
+        state-changing route without a capability-map entry is refused before
+        forwarding, and platform operations use server-derived platform
+        capabilities rather than the active workspace's role list.
       </p>
 
       <h2>Documentation parity</h2>

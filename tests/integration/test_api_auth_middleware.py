@@ -24,7 +24,6 @@ import time
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-
 from simworkbench.api.auth_middleware import (
     HANDOFF_HEADER_ISSUED_AT,
     HANDOFF_HEADER_REQUEST_ID,
@@ -35,7 +34,6 @@ from simworkbench.api.auth_middleware import (
     HANDOFF_HEADER_WORKSPACE_SLUG,
     WorkbenchHandoffMiddleware,
 )
-
 
 SECRET = "Aa!23456789012345678901234567890123456"  # 38 bytes
 USER_ID = "11111111-1111-4111-8111-111111111111"

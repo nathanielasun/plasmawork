@@ -22,7 +22,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from simworkbench.paths import imported_tools_root_for, local_cache_root
 from simworkbench.tools.registry import ToolRegistry
 

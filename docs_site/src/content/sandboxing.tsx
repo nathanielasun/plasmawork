@@ -38,6 +38,16 @@ export default function Sandboxing() {
         capabilities, quota, or allowlist entries, but cannot bypass isolation,
         audit, or workspace scoping.
       </p>
+
+      <h2>Tool-draft preview</h2>
+      <p>
+        Draft preview is a code-execution path, so production posture treats it
+        as sandbox-dependent. In local single-user development, preview may run
+        through the bounded dev harness with fixed timeout and output caps. In
+        gateway-required mode, the endpoint refuses preview unless a configured
+        sandbox launcher or <code>runsc</code> runtime is available. A boolean
+        environment variable is not accepted as evidence of isolation.
+      </p>
     </article>
   );
 }

@@ -2739,3 +2739,152 @@ LoginService uses to throttle password guessing.
   key extractor was switched from a direct XFF read to `req.ip`, and
   `.env.auth.example` documents the trust-proxy posture as part of
   the F1–F5 audit-fix bundle.
+
+---
+
+## Error Pattern: Partial gateway route maps that fail open
+
+### Why it is bad
+The Fastify gateway authenticates the browser and verifies workspace
+membership before proxying `/api/:slug/*` to the legacy FastAPI
+workbench. Membership alone is not enough for mutations. If a new
+FastAPI POST/PUT/PATCH/DELETE route is not present in the gateway's
+capability map and the proxy falls back to membership-only forwarding,
+any live workspace member can reach the handler even if the UI hides the
+button from them.
+
+### Required behavior
+- Every state-changing proxied FastAPI route has an explicit
+  workspace/platform capability requirement in
+  `apps/workbench-gateway/src/proxy/routeCapabilityMap.ts`.
+- Unmapped state-changing routes fail closed before forwarding.
+- UI capability gating is treated as display logic only, never as an
+  authorization boundary.
+
+### Detection
+- Gateway proxy tests include an unmapped mutation and assert the
+  upstream is not called.
+- The convention checker pins the capability map, the fail-closed
+  helper, and representative route families.
+
+### Bug log
+- 2026-05-10 *Auth-gateway post-audit hardening*: the proxy map was
+  expanded and changed from partial matching to fail-closed default for
+  state-changing methods.
+
+---
+
+## Error Pattern: Checking platform authority only in the active workspace
+
+### Why it is bad
+Platform actions are not scoped to the user's currently selected
+workspace. If a gateway route checks only `req.membership.capabilities`
+for the active workspace, a real PlatformAdmin can be denied when they
+are acting from a regular workspace, and a future workaround may
+accidentally loosen platform routes. Platform authority must be derived
+from server-side membership/role records for the platform scope.
+
+### Required behavior
+- Platform-route authorization uses a server-side platform capability
+  resolver, not the active workspace capability list.
+- The active workspace still gates workspace-scoped object access; it
+  does not grant platform actions.
+- Request bodies and client-provided role names are never consulted for
+  platform authority.
+
+### Detection
+- Proxy tests cover platform approval with no active-workspace platform
+  capability but with `platform:incident_remediate` from the platform
+  resolver.
+- A missing platform capability rejects before proxy forwarding.
+
+### Bug log
+- 2026-05-10 *Auth-gateway post-audit hardening*: tool-promotion
+  approval/denial now use `platformCapabilitiesFor` from server-side
+  membership state.
+
+---
+
+## Error Pattern: Treating a boolean sandbox flag as isolation
+
+### Why it is bad
+An environment variable such as `WORKBENCH_PREVIEW_SANDBOX_ENABLED=1`
+does not create a kernel boundary, filesystem policy, or network egress
+policy. If a production code-execution preview path accepts a boolean
+flag as proof of isolation, a misconfigured deployment can run user
+draft code in the server process environment.
+
+### Required behavior
+- Gateway-required code preview needs a concrete sandbox command/runtime
+  such as `WORKBENCH_PREVIEW_SANDBOX_COMMAND` or
+  `WORKBENCH_PREVIEW_SANDBOX_RUNTIME=runsc`.
+- Missing sandbox configuration returns a fail-closed error before
+  execution.
+- Local single-user development may keep a bounded subprocess harness,
+  but docs must not present it as production isolation.
+
+### Detection
+- Gateway-required preview tests assert failure without configured
+  sandbox and success through a controlled launcher.
+- Documentation and OS-compatibility pages name the concrete sandbox
+  requirement.
+
+### Bug log
+- 2026-05-10 *Auth-gateway post-audit hardening*: tool-draft preview
+  now refuses production/gateway-required execution without a configured
+  sandbox launcher/runtime.
+
+---
+
+## Error Pattern: Local dev audit mistaken for canonical audit
+
+### Why it is bad
+A local JSONL hash chain can make single-user development inspectable,
+but it is not the production audit store, does not share the secure-core
+anchor cadence, and can drift from the real audit schema. If a
+cross-language service mutates security-relevant state and only writes a
+local file, operators get an incomplete audit chain.
+
+### Required behavior
+- Gateway-required cross-language mutations emit audit through a
+  gateway-internal authenticated bridge into secure-core's canonical
+  audit logger.
+- If canonical audit emission fails, the mutating operation fails closed
+  and rolls back local side effects where possible.
+- Local dev fallbacks are clearly labeled and carry their own verifier.
+
+### Detection
+- Gateway tests cover the internal bridge signature and canonical
+  `auditLogger.write` call.
+- Integration tests verify local promotion chains remain valid in
+  single-user mode.
+
+### Bug log
+- 2026-05-10 *Auth-gateway post-audit hardening*: tool-promotion
+  request/decision events now bridge through
+  `/internal/audit-events/tool-promotion` in gateway-required posture.
+
+---
+
+## Error Pattern: Lockout shortcut before password verification
+
+### Why it is bad
+Lockout is a server-derived denial reason, but if a login flow returns
+before invoking the password verifier, locked accounts can have a
+different timing profile from ordinary wrong-password attempts. Generic
+error text alone is not sufficient anti-enumeration.
+
+### Required behavior
+- Login denial paths preserve the same verifier call shape wherever a
+  credential hash is available.
+- Response text stays generic; only the audit chain records the
+  server-derived denial reason.
+
+### Detection
+- Login service tests assert the verifier is invoked for locked
+  accounts and the public response remains a generic invalid-credentials
+  error.
+
+### Bug log
+- 2026-05-10 *Auth-gateway post-audit hardening*: `LoginService.login`
+  now checks lockout while preserving verifier timing parity.

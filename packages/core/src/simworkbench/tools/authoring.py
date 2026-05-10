@@ -754,7 +754,9 @@ class ToolAuthoringService:
         self._audit("draft.deleted", draft_id=draft_id, tool_name=state["tool_name"])
         return {"draft_id": draft_id, "deleted": True}
 
-    def preview_draft(self, *, draft_id: str, harness: str) -> dict[str, Any]:
+    def preview_draft(
+        self, *, draft_id: str, harness: str, sandboxed: bool = False
+    ) -> dict[str, Any]:
         """Run a saved draft through a bounded preview harness."""
         root = self._draft_root(draft_id)
         harness = _validate_preview_harness(harness)
@@ -765,32 +767,44 @@ class ToolAuthoringService:
         preview_root.mkdir(parents=True)
         result_path = preview_root / "result.json"
         current_hash = _content_hash(root)
-        env = dict(os.environ)
-        core_src = repo_root() / "packages" / "core" / "src"
-        prior_pythonpath = env.get("PYTHONPATH")
-        env["PYTHONPATH"] = (
-            str(core_src)
-            if not prior_pythonpath
-            else f"{core_src}{os.pathsep}{prior_pythonpath}"
-        )
         start = time.monotonic()
         try:
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    PREVIEW_RUNNER,
-                    str(root),
-                    harness,
-                    str(result_path),
-                ],
-                cwd=repo_root(),
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=PREVIEW_TIMEOUT_SECONDS,
-            )
+            if sandboxed:
+                from simworkbench.tools.preview_sandbox import (  # noqa: PLC0415
+                    run_preview_in_configured_sandbox,
+                )
+
+                completed = run_preview_in_configured_sandbox(
+                    draft_root=root,
+                    harness=harness,
+                    result_path=result_path,
+                    timeout_seconds=PREVIEW_TIMEOUT_SECONDS,
+                )
+            else:
+                env = dict(os.environ)
+                core_src = repo_root() / "packages" / "core" / "src"
+                prior_pythonpath = env.get("PYTHONPATH")
+                env["PYTHONPATH"] = (
+                    str(core_src)
+                    if not prior_pythonpath
+                    else f"{core_src}{os.pathsep}{prior_pythonpath}"
+                )
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        PREVIEW_RUNNER,
+                        str(root),
+                        harness,
+                        str(result_path),
+                    ],
+                    cwd=repo_root(),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=PREVIEW_TIMEOUT_SECONDS,
+                )
         except subprocess.TimeoutExpired as exc:
             shutil.rmtree(preview_root, ignore_errors=True)
             stdout = exc.stdout if isinstance(exc.stdout, str) else ""

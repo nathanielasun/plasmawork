@@ -172,9 +172,9 @@ import shutil  # noqa: E402
 import uuid  # noqa: E402
 
 import pytest  # noqa: E402
+from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG  # noqa: E402
 from simworkbench.experiment import Experiment, RunConfig  # noqa: E402
 from simworkbench.model_spec import load_yaml  # noqa: E402
-from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG  # noqa: E402
 from simworkbench.paths import repo_root, simulation_capsules_root_for  # noqa: E402
 from simworkbench.runtime import Runner  # noqa: E402
 from simworkbench.serialization import save_capsule  # noqa: E402

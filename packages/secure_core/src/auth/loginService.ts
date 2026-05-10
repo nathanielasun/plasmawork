@@ -227,47 +227,18 @@ export class LoginService {
     `;
     const user = userRows[0] ?? null;
 
-    // If the account is currently locked (locked_until in the future),
-    // refuse the login WITHOUT running the verifier. This is the read
-    // side of the per-account counter — combined with
-    // `recordVerificationOutcome` resetting the counter on success and
-    // the route's per-IP rate limit, distributed password guessing
-    // is gated on BOTH signals (per v4 §8 + §22.1 documented posture).
-    //
-    // Anti-enumeration: the response shape is identical to a regular
-    // wrong-password failure (generic 401 + audit row with discriminated
-    // reason). The caller cannot tell whether the account is locked,
-    // disabled, or simply has the wrong password.
     // ``locked_until`` is undefined in legacy tests that stub the
     // user row without the user_credentials join columns; treat it
-    // as null in that case so the lockout branch only fires for
-    // rows that actually carry the column.
+    // as null in that case.
     const lockedUntil = user?.locked_until ?? null;
-    if (
+    const accountLocked =
       user !== null &&
       lockedUntil !== null &&
-      lockedUntil.getTime() > this.#now()
-    ) {
-      await this.#auditLogger.write({
-        workspaceId: null,
-        actorUserId: user.id,
-        actorType: "human",
-        action: "login.failed",
-        result: "denied",
-        requestId: input.requestId,
-        ipHmac: input.ipHmac,
-        userAgentHmac: input.userAgentHmac,
-        metadata: {
-          denied_reason: "account_locked",
-          locked_until: lockedUntil.toISOString(),
-        },
-      });
-      throw new UnauthenticatedError("Invalid username or password.");
-    }
+      lockedUntil.getTime() > this.#now();
 
     // Constant-time path: ALWAYS run verifyPasswordHash so the wall
-    // clock doesn't reveal whether the user exists. If user is null,
-    // verify against the dummy hash.
+    // clock doesn't reveal whether the user exists or is locked. If
+    // user is null, verify against the dummy hash.
     const storedHash =
       user === null
         ? DUMMY_PASSWORD_HASH
@@ -280,10 +251,12 @@ export class LoginService {
     let deniedReason:
       | "user_not_found"
       | "user_disabled"
+      | "account_locked"
       | "password_invalid"
       | null = null;
     if (user === null) deniedReason = "user_not_found";
     else if (user.disabled_at !== null) deniedReason = "user_disabled";
+    else if (accountLocked) deniedReason = "account_locked";
     else if (!passwordOk) deniedReason = "password_invalid";
 
     if (deniedReason !== null || user === null) {

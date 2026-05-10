@@ -6,15 +6,11 @@ imported tools to a target workspace (typically
 ``shared-internal-tools``); a PlatformAdmin approves; the approval
 performs the cross-workspace directory copy and audits the action.
 
-Why a Python-side service rather than secure_core's L2.9 token flow:
-the L2.9 approval primitives live in TypeScript (secure_core); the
-tool registry mutation lives in Python (FastAPI). Bridging the two
-across the gateway → loopback handoff would require either
-duplicating the verifier in Python OR a new gateway-internal HTTP
-hop. For the promotion-specific use case both are heavier than the
-on-disk-record pattern below; the resulting workflow has identical
-shape (request, approver review, approve, mutate) without the
-cross-language plumbing.
+Production audit emission uses a gateway-internal HMAC bridge so
+promotion request/decision events land in the canonical secure_core
+audit chain. Local single-user development falls back to an append-only
+hash-chained JSONL verifier so promotion behavior stays inspectable
+without a database-backed gateway.
 
 State layout::
 
@@ -45,8 +41,13 @@ simply sets the status; the operator can manually delete the JSON.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
 import shutil
+import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -58,8 +59,7 @@ from simworkbench.paths import (
     tool_promotions_root,
 )
 
-
-# Tamper-evident audit chain for promotion decisions — Phase α
+# Tamper-evident audit chain for local promotion decisions — Phase α
 # post-audit hardening (2026-05-10).
 #
 # The promotion JSON records under _pending_promotions/{id}.json are
@@ -69,18 +69,24 @@ from simworkbench.paths import (
 # secure_core has a hash-chained audit_events table; our promotion
 # decisions don't reach it.
 #
-# Until a Python-side client to the gateway's audit logger ships,
-# this module writes an append-only jsonl chain to
-# ``_pending_promotions/_audit_chain.jsonl`` that mirrors v4 §19.3's
-# row-hash shape: each line is ``{prev_hash, fields..., row_hash}``
-# where row_hash = SHA-256(canonical(prev_hash + fields)). A single
-# operator inspecting the file can verify integrity by walking the
-# chain. Mismatched hashes are evidence of tampering.
-#
-# This is INTERIM. The follow-on is a Python audit client that POSTs
-# to a new gateway-internal /internal/audit-events endpoint so the
-# events land in the canonical secure_core audit chain.
+# Gateway-required deployments POST through a gateway-internal audit
+# route and fail closed when canonical audit emission fails. Local
+# single-user development writes ``_pending_promotions/_audit_chain.jsonl``
+# with rows shaped as ``{prev_hash, fields..., row_hash}``, where
+# row_hash = SHA-256(canonical(prev_hash + fields)). The verifier below
+# walks that chain and surfaces tampering.
 PROMOTION_AUDIT_LOG_NAME = "_audit_chain.jsonl"
+
+
+class PromotionAuditError(RuntimeError):
+    """Raised when promotion audit emission fails closed."""
+
+
+def _gateway_required() -> bool:
+    return (
+        bool(os.environ.get("WORKBENCH_GATEWAY_HANDOFF_SECRET"))
+        or os.environ.get("SIMWORKBENCH_REQUIRE_GATEWAY") == "1"
+    )
 
 
 def _canonicalize(payload: dict[str, object]) -> bytes:
@@ -89,6 +95,17 @@ def _canonicalize(payload: dict[str, object]) -> bytes:
 
 
 def _emit_promotion_audit(
+    *,
+    action: str,
+    record: PromotionRequest,
+) -> None:
+    if _gateway_required():
+        _emit_canonical_promotion_audit(action=action, record=record)
+        return
+    _emit_local_promotion_audit(action=action, record=record)
+
+
+def _emit_local_promotion_audit(
     *,
     action: str,
     record: PromotionRequest,
@@ -105,17 +122,16 @@ def _emit_promotion_audit(
         try:
             last_line = ""
             with log_path.open("r", encoding="utf-8") as fh:
-                for raw in fh:
-                    raw = raw.strip()
-                    if raw:
-                        last_line = raw
+                for raw_line in fh:
+                    stripped = raw_line.strip()
+                    if stripped:
+                        last_line = stripped
             if last_line:
                 prev = json.loads(last_line)
                 prev_hash = prev.get("row_hash")
         except (OSError, ValueError):
-            # Corrupted last line — treat as the chain head. A future
-            # `verify_promotion_audit_chain` helper would surface
-            # this as a tamper finding rather than silently re-chaining.
+            # Corrupted last line — treat as the chain head. The
+            # verifier surfaces this as a tamper finding on read.
             prev_hash = None
     fields: dict[str, object] = {
         "action": action,
@@ -140,6 +156,125 @@ def _emit_promotion_audit(
     # write is a single line so there's no torn-write hazard.
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(line, sort_keys=True) + "\n")
+
+
+def verify_promotion_audit_chain() -> tuple[bool, str]:
+    """Verify the dev-mode local promotion audit chain."""
+    log_path = tool_promotions_root() / PROMOTION_AUDIT_LOG_NAME
+    ok = True
+    message = "ok"
+    if not log_path.exists():
+        return True, "empty"
+    previous: str | None = None
+    try:
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        ok = False
+        message = f"unreadable: {exc}"
+    if ok:
+        for index, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            failure: str | None = None
+            try:
+                row = json.loads(line)
+            except ValueError as exc:
+                failure = f"line {index}: invalid JSON: {exc}"
+            if failure is None and row.get("prev_hash") != previous:
+                failure = f"line {index}: prev_hash mismatch"
+            row_hash = row.get("row_hash") if failure is None else None
+            if failure is None and not isinstance(row_hash, str):
+                failure = f"line {index}: missing row_hash"
+            if failure is None:
+                canonical_payload = {
+                    k: v for k, v in row.items() if k != "row_hash"
+                }
+                expected = hashlib.sha256(
+                    _canonicalize(canonical_payload)
+                ).hexdigest()
+                if not hmac.compare_digest(row_hash, expected):
+                    failure = f"line {index}: row_hash mismatch"
+            if failure is not None:
+                ok = False
+                message = failure
+                break
+            previous = row_hash
+    return ok, message
+
+
+def _canonical_action(action: str) -> str:
+    if action == "tool.promotion_approved":
+        return "tool.promoted"
+    return action
+
+
+def _canonical_result(action: str) -> str:
+    return "denied" if action == "tool.promotion_denied" else "succeeded"
+
+
+def _audit_actor(record: PromotionRequest) -> str:
+    if record.status == "pending":
+        return record.requested_by
+    if record.decided_by:
+        return record.decided_by
+    return record.requested_by
+
+
+def _emit_canonical_promotion_audit(
+    *,
+    action: str,
+    record: PromotionRequest,
+) -> None:
+    secret = os.environ.get("WORKBENCH_GATEWAY_HANDOFF_SECRET")
+    if not secret:
+        raise PromotionAuditError(
+            "WORKBENCH_GATEWAY_HANDOFF_SECRET is required for canonical promotion audit."
+        )
+    ts = str(int(time.time()))
+    body = {
+        "action": _canonical_action(action),
+        "promotion_request_id": record.request_id,
+        "actor_user_id": _audit_actor(record),
+        "result": _canonical_result(action),
+    }
+    payload = "|".join(
+        (
+            ts,
+            body["action"],
+            body["promotion_request_id"],
+            body["actor_user_id"],
+            body["result"],
+        )
+    )
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    gateway_url = os.environ.get(
+        "WORKBENCH_GATEWAY_INTERNAL_URL",
+        "http://127.0.0.1:4000",
+    ).rstrip("/")
+    req = urllib.request.Request(
+        f"{gateway_url}/internal/audit-events/tool-promotion",
+        data=json.dumps(body, separators=(",", ":")).encode("utf-8"),
+        headers={
+            "content-type": "application/json",
+            "x-workbench-internal-audit-timestamp": ts,
+            "x-workbench-internal-audit-signature": signature,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status < 200 or response.status >= 300:
+                raise PromotionAuditError(
+                    f"canonical audit bridge returned HTTP {response.status}"
+                )
+    except (OSError, urllib.error.URLError) as exc:
+        raise PromotionAuditError(
+            f"canonical promotion audit bridge failed: {exc}"
+        ) from exc
 
 
 PromotionStatus = Literal["pending", "approved", "denied"]
@@ -286,11 +421,19 @@ class PromotionService:
             justification=justification[:4096],
             status="pending",
         )
-        _record_path(record.request_id).write_text(
+        record_path = _record_path(record.request_id)
+        record_path.write_text(
             json.dumps(record.as_json_dict(), indent=2),
             encoding="utf-8",
         )
-        _emit_promotion_audit(action="tool.promotion_requested", record=record)
+        try:
+            _emit_promotion_audit(
+                action="tool.promotion_requested",
+                record=record,
+            )
+        except Exception:
+            record_path.unlink(missing_ok=True)
+            raise
         return record
 
     def list_pending(self) -> list[PromotionRequest]:
@@ -410,11 +553,21 @@ class PromotionService:
             decided_at=_now_iso(),
             decision_note=decision_note[:4096],
         )
-        _record_path(approved.request_id).write_text(
-            json.dumps(approved.as_json_dict(), indent=2),
-            encoding="utf-8",
-        )
-        _emit_promotion_audit(action="tool.promotion_approved", record=approved)
+        record_path = _record_path(approved.request_id)
+        try:
+            record_path.write_text(
+                json.dumps(approved.as_json_dict(), indent=2),
+                encoding="utf-8",
+            )
+            _emit_promotion_audit(action="tool.promoted", record=approved)
+        except Exception:
+            if target_dir.exists():
+                shutil.rmtree(target_dir, ignore_errors=True)
+            record_path.write_text(
+                json.dumps(record.as_json_dict(), indent=2),
+                encoding="utf-8",
+            )
+            raise
         return approved
 
     def deny(
@@ -451,9 +604,17 @@ class PromotionService:
             decided_at=_now_iso(),
             decision_note=decision_note[:4096],
         )
-        _record_path(denied.request_id).write_text(
-            json.dumps(denied.as_json_dict(), indent=2),
-            encoding="utf-8",
-        )
-        _emit_promotion_audit(action="tool.promotion_denied", record=denied)
+        record_path = _record_path(denied.request_id)
+        try:
+            record_path.write_text(
+                json.dumps(denied.as_json_dict(), indent=2),
+                encoding="utf-8",
+            )
+            _emit_promotion_audit(action="tool.promotion_denied", record=denied)
+        except Exception:
+            record_path.write_text(
+                json.dumps(record.as_json_dict(), indent=2),
+                encoding="utf-8",
+            )
+            raise
         return denied

@@ -86,9 +86,7 @@ from simworkbench.experiment import Experiment, RunConfig
 from simworkbench.model_spec import load_yaml as load_modelspec_yaml
 from simworkbench.paths import (
     repo_root,
-    simulation_capsules_root,
     simulation_capsules_root_for,
-    temp_runs_root,
     temp_runs_root_for,
 )
 from simworkbench.runtime import Runner
@@ -110,6 +108,7 @@ from simworkbench.tools import (
 )
 from simworkbench.tools.artifacts import ToolArtifactError
 from simworkbench.tools.promotion import (
+    PromotionAuditError,
     PromotionError,
     PromotionNotFound,
     PromotionService,
@@ -1654,38 +1653,43 @@ def create_app(
         #
         # Two-gate fix:
         #
-        # 1. Gateway-required (production) mode REQUIRES an explicit
-        #    operator opt-in via ``WORKBENCH_PREVIEW_SANDBOX_ENABLED=1``.
-        #    The flag exists so the operator can signal "I've wired
-        #    preview through gVisor / a process-isolated sandbox /
-        #    equivalent". Without it, preview is refused with 503.
-        # 2. Even with the flag set, only callers carrying the
-        #    "WorkspaceAdmin" role can trigger preview. Regular
-        #    workspace members cannot run authored Python.
+        # 1. Gateway-required (production) mode only runs through a
+        #    configured sandbox launcher. No env flag is accepted as a
+        #    substitute for isolation.
+        # 2. Only callers carrying the "WorkspaceAdmin" role can
+        #    trigger preview. Regular workspace members cannot run
+        #    authored Python.
         #
         # Dev mode (no gateway middleware) keeps the legacy permissive
         # behavior so single-user developer workflows aren't disrupted;
         # the threat model assumes single-user trust there.
+        from simworkbench.tools.preview_sandbox import (  # noqa: PLC0415
+            PreviewSandboxUnavailable,
+            preview_sandbox_configured,
+        )
+
+        sandboxed_preview = False
         if _gateway_required_from_env():
-            sandbox = os.environ.get("WORKBENCH_PREVIEW_SANDBOX_ENABLED", "")
-            if sandbox != "1":
+            _require_role(request, "WorkspaceAdmin")
+            if not preview_sandbox_configured():
                 raise HTTPException(
                     status_code=503,
                     detail=(
                         "Tool draft preview is disabled in production mode. "
-                        "Operator MUST set WORKBENCH_PREVIEW_SANDBOX_ENABLED=1 "
-                        "after wiring the preview subprocess through a "
-                        "kernel-isolated sandbox (gVisor / runsc). The "
-                        "default Python subprocess inherits os.environ + "
-                        "the repo-root cwd, which is a multi-tenant RCE."
+                        "Configure WORKBENCH_PREVIEW_SANDBOX_COMMAND or "
+                        "WORKBENCH_PREVIEW_SANDBOX_RUNTIME=runsc so authored "
+                        "Python runs through a kernel-isolated sandbox."
                     ),
                 )
-            _require_role(request, "WorkspaceAdmin")
+            sandboxed_preview = True
         try:
             return _authoring(slug).preview_draft(
                 draft_id=draft_id,
                 harness=body.harness,
+                sandboxed=sandboxed_preview,
             )
+        except PreviewSandboxUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ToolAuthoringError as exc:
             _raise_authoring(exc)
 
@@ -2200,6 +2204,8 @@ def create_app(
             )
         except PromotionError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PromotionAuditError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         return record.as_json_dict()
 
     @app.get("/api/tool-promotions")
@@ -2228,6 +2234,8 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PromotionError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PromotionAuditError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         return record.as_json_dict()
 
     @app.post("/api/tool-promotions/{request_id}/deny")
@@ -2249,6 +2257,8 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PromotionError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PromotionAuditError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         return record.as_json_dict()
 
     # -----------------------------------------------------------------------
@@ -2408,7 +2418,6 @@ def create_app(
 
         from simworkbench.codegen import CodeGenerator
         from simworkbench.model_spec import load_yaml as _load_modelspec_yaml
-        from simworkbench.paths import temp_runs_root
 
         capsule_path = _resolve_capsule(name, slug)
         generated_root = capsule_path / "src" / "generated"

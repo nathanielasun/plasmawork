@@ -68,7 +68,11 @@ cd ../workbench-gateway && npm install`}</code>
           <code>apps/workbench-gateway/</code> is the public entry on
           <code>:4000</code>; it reads <code>/.env.auth</code> and signs
           every forwarded request. Use this when working on auth, the
-          UI shell, or any code that touches workspace-scoped paths.
+          UI shell, or any code that touches workspace-scoped paths. If you
+          exercise tool-draft preview in this posture, configure
+          <code>WORKBENCH_PREVIEW_SANDBOX_COMMAND</code> or
+          <code>WORKBENCH_PREVIEW_SANDBOX_RUNTIME=runsc</code>; otherwise the
+          preview endpoint refuses to execute saved draft code.
         </li>
       </ul>
 

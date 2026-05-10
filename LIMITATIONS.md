@@ -1,6 +1,6 @@
 # Capabilities and Limitations
 
-**Last updated: 2026-05-09 — Phase 0.5 auth gateway lands.**
+**Last updated: 2026-05-10 — Phase 0.5 auth-gateway hardening.**
 
 Secure-core ships through Layer 5 (identity, session, login + CSRF
 cookies, workspace-scoped routes, approval middleware, audit/provenance
@@ -11,7 +11,11 @@ gates, frontend Security Ops binding). The Phase 0.5 auth gateway
 machine: login → workspace switcher → `/api/{slug}/*` proxied to a
 loopback-bound FastAPI with HMAC-verified handoff headers. Username-
 primary identity, three seeded workspaces, one-shot WORM bootstrap
-seal.
+seal. Post-audit hardening now adds fail-closed gateway capability
+checks for proxied FastAPI mutations, platform-capability aggregation
+outside the active workspace, canonical promotion audit bridging, and
+production-only tool-draft preview refusal unless a real sandbox is
+configured.
 
 **Open follow-ups (visible in `--include-open-workstreams`):**
 
@@ -26,8 +30,6 @@ seal.
   against a real deployment doesn't yet.
 - WebAuthn / TOTP enrollment for the platform admin (intentionally
   deferred; password-only at aal2 in this cut).
-- Workspace-scoped imported-tool registries (the
-  `local_cache/imported_tools/` cache stays cross-tenant).
 
 This document is the honest, non-aspirational map of what the Scientific Simulation Workbench can and cannot do today. The convention checker verifies *structural* completeness — files exist, classes define the right fields, tests cover the named verbs. It does **not** verify scientific capability. A green gate plus a passing test suite means the wiring works and regressions don't sneak back in. It does NOT mean the system can take a real laser-physics paper and produce a publishable simulation autonomously.
 
@@ -211,8 +213,8 @@ A short, brutal list of cases where you'd hit a wall. Each is a real consequence
 4. **"Have the agent critique my spec and fix the issues."** The reviewer flags absolutist phrasing and missing-physics categories. It does not propose code changes, and does not have any model of *what physics is missing for your specific problem*.
 5. **"Submit to a real Slurm cluster from the workbench."** `SlurmJob.write` writes a real bundle. The remote node needs `simworkbench-core` installed and `PYTHONPATH` configured; the bundle is "self-contained" only for the workbench's own payload + entrypoint, not for the runtime. ADR documents this.
 6. **"Run the full `examples/autonomous_experiment_kr` pipeline against a real paper."** The example uses a stand-in quadratic objective. The four-stage pipeline runs end-to-end, but the objective it sweeps is `(x - 0.7)^2`, not anything tied to the spec.
-7. **"Have multiple researchers share a production workspace."** Partial. The Phase 0.5 auth gateway at `apps/workbench-gateway/` is the new public entry; secure-core's login, session, CSRF, audit, approval, and capability stack now run against real HTTP traffic, and the FastAPI workbench is loopback-bound behind it. What's *not* yet done: WebAuthn / TOTP enrollment for the platform admin (password-only at aal2 in this cut), workspace-scoped imported-tool registries (the `local_cache/imported_tools/` cache stays cross-tenant), and the deployment cut-over to a target-runtime CI lane that exercises the live probes. The browser flow (login → workspace switcher → `/api/{slug}/*` proxied to FastAPI) works end-to-end on a developer machine; production multi-user operation still requires the live-probe lanes to pass.
-8. **"Run this on a production sandboxed worker."** Not from the default local scientific runtime. Secure-core has worker-token/upload paths and sandbox launch-spec guards; `simworkbench.runtime.python_cpu` still runs in-process for local examples. Production worker execution requires a `runsc`-capable target runtime and green live probes.
+7. **"Have multiple researchers share a production workspace."** Partial. The Phase 0.5 auth gateway at `apps/workbench-gateway/` is the new public entry; secure-core's login, session, CSRF, audit, approval, and capability stack now run against real HTTP traffic, and the FastAPI workbench is loopback-bound behind it. Imported-tool registries are workspace-scoped, and privileged cross-workspace tool promotion now goes through the gateway capability/audit path. What's *not* yet done: WebAuthn / TOTP enrollment for the platform admin (password-only at aal2 in this cut) and the deployment cut-over to a target-runtime CI lane that exercises the live probes. The browser flow (login → workspace switcher → `/api/{slug}/*` proxied to FastAPI) works end-to-end on a developer machine; production multi-user operation still requires the live-probe lanes to pass.
+8. **"Run this on a production sandboxed worker."** Not from the default local scientific runtime. Secure-core has worker-token/upload paths and sandbox launch-spec guards; `simworkbench.runtime.python_cpu` still runs in-process for local examples. Tool-draft preview refuses to run in gateway-required mode unless `WORKBENCH_PREVIEW_SANDBOX_COMMAND` or `WORKBENCH_PREVIEW_SANDBOX_RUNTIME=runsc` is configured. Production worker execution still requires a `runsc`-capable target runtime and green live probes.
 
 ---
 
@@ -301,24 +303,23 @@ workstreams.
 
 ---
 
-## Tool promotion audit posture (interim, 2026-05-10)
+## Tool promotion audit posture (2026-05-10)
 
-Cross-workspace tool promotions emit a hash-chained event log on
-disk at `local_cache/imported_tools/_pending_promotions/_audit_chain.jsonl`.
-Each line carries `{prev_hash, ...fields, row_hash}` where
-`row_hash = SHA-256(canonical(prev_hash + fields))` so an attacker
-who mutates ANY entry breaks the chain at the next read. Mirrors v4
-§19.3's row-hash shape but is NOT the canonical secure_core
-`audit_events` table.
+Cross-workspace tool promotions are audited differently by posture:
 
-The interim log lets an operator verify integrity of promotion
-decisions today. The follow-on is a Python audit client that POSTs
-to a new gateway-internal `POST /internal/audit-events` endpoint so
-the events land in the canonical secure_core hash chain alongside
-login + workspace + capsule events. Tracked under the open follow-
-ups; the on-disk log gets deleted in the same commit that ships the
-gateway-internal route (its data carries forward into the canonical
-chain via a one-shot replay).
+- **Gateway-required posture:** the Python promotion service emits
+  promotion request/decision events through a gateway-internal,
+  HMAC-authenticated bridge. The gateway writes them through
+  secure-core's canonical audit logger, so they join the same
+  tamper-evident chain as login, workspace, capsule, and operator
+  events. If the bridge is unavailable, promotion requests and
+  decisions fail closed and roll back local side effects.
+- **Single-user dev posture:** without the gateway secret, promotions
+  append to `local_cache/imported_tools/_pending_promotions/_audit_chain.jsonl`.
+  Each line carries `{prev_hash, ...fields, row_hash}` where
+  `row_hash = SHA-256(canonical(prev_hash + fields))`. The local
+  verifier surfaces tampering and keeps dev-mode records inspectable,
+  but this fallback is not a substitute for the production audit table.
 
 ---
 

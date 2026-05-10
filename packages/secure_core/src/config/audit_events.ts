@@ -52,6 +52,7 @@ export const AUDIT_EVENTS = [
   "tool.updated",
   "tool.promotion_requested",
   "tool.promoted",
+  "tool.promotion_denied",
   "tool.deprecated",
 
   // Artifact lifecycle

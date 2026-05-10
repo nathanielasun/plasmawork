@@ -164,9 +164,11 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
       <h2>Imported tools</h2>
       <p>
         External tool packages are copied into{" "}
-        <code>local_cache/imported_tools/</code> on import (plan §9.7).
-        Imports never scatter files across the user's home directory.
-        The registry walks both that directory and{" "}
+        <code>local_cache/imported_tools/&#123;workspace_slug&#125;/</code>
+        on import. Imports never scatter files across the user's home
+        directory and are not visible across workspaces unless a
+        PlatformAdmin approves promotion into a shared workspace. The
+        registry walks both that directory and{" "}
         <code>packages/internal_tools/registry/</code> on every refresh,
         so imported tools appear in the UI alongside built-in ones.
       </p>
@@ -199,8 +201,13 @@ class AbsorptionSpectrumDiagnostic(BaseTool):
         execution. The backend runs saved draft code in a subprocess with a
         fixed harness name, timeout, capped stdout/stderr, and server-derived
         output roots under <code>temp_runs/tool_authoring_previews/</code>.
-        Preview success is a development aid only; it does not replace package
-        checks, validation tests, lifecycle approval, or reviewer promotion.
+        In single-user development this uses the local dev subprocess
+        harness. In gateway-required mode the same endpoint refuses to run
+        unless <code>WORKBENCH_PREVIEW_SANDBOX_COMMAND</code> or{" "}
+        <code>WORKBENCH_PREVIEW_SANDBOX_RUNTIME=runsc</code> is configured;
+        an environment flag alone is not treated as a sandbox. Preview
+        success is a development aid only; it does not replace package checks,
+        validation tests, lifecycle approval, or reviewer promotion.
       </p>
       <p>
         Built-in code templates live in{" "}

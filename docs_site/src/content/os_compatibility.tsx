@@ -31,8 +31,9 @@ export default function OperatingSystemCompatibility() {
         <li>
           <strong>Deployment-dependent features:</strong> gVisor/runsc live
           probes, production Postgres role probes, WORM/S3 anchor probes, GPU
-          kernels, compiled kernels, and external HPC/PIC integrations require
-          their documented target runtimes.
+          kernels, compiled kernels, tool-preview sandbox launchers, and
+          external HPC/PIC integrations require their documented target
+          runtimes.
         </li>
       </ul>
 
@@ -91,7 +92,10 @@ python scripts/dev/run_backend.py`}</code>
       <ul>
         <li>
           <strong>Sandboxing:</strong> live gVisor/runsc checks require a
-          Linux-capable runtime lane.
+          Linux-capable runtime lane. Tool-draft preview in gateway-required
+          mode also requires either a configured sandbox launcher command or a
+          <code>runsc</code> runtime; local single-user preview is not a
+          production isolation guarantee.
         </li>
         <li>
           <strong>Database security probes:</strong> Postgres role tests require

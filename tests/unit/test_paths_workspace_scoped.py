@@ -18,8 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-import simworkbench.paths as paths
+from simworkbench import paths
 
 
 def test_simulation_capsules_root_for_appends_slug():

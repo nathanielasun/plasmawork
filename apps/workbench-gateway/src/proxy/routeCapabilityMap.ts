@@ -13,10 +13,12 @@
  * Promote button etc.) was not a security boundary.
  *
  * The fix: a centralized map of (method, path-regex) → required
- * capability that the proxy plugin's auth chain consults before
- * forwarding. Any request whose path matches an entry MUST carry
- * the capability in ``req.membership.capabilities``; otherwise the
- * proxy refuses with 403 BEFORE the FastAPI handler runs.
+ * capabilities that the proxy plugin's auth chain consults before
+ * forwarding. Any request whose path matches an entry MUST carry the
+ * required workspace and/or platform capabilities; otherwise the
+ * proxy refuses with 403 BEFORE the FastAPI handler runs. Any
+ * unmapped state-changing request fails closed instead of falling
+ * back to membership-only access.
  *
  * The path is the ORIGINAL request URL (slug-prefixed); the regexes
  * match against ``/api/{slug}/{rest}``. They use Fastify's existing
@@ -32,6 +34,12 @@ import type { Capability } from "../../../../packages/secure_core/src/config/cap
 
 type ProxyMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 
+export interface RouteCapabilityRequirement {
+  readonly workspaceAllOf?: ReadonlyArray<Capability>;
+  readonly workspaceAnyOf?: ReadonlyArray<Capability>;
+  readonly platformAllOf?: ReadonlyArray<Capability>;
+}
+
 export interface RouteCapabilityRule {
   /** HTTP method this rule applies to. */
   readonly method: ProxyMethod;
@@ -43,8 +51,8 @@ export interface RouteCapabilityRule {
    * the slug.
    */
   readonly pattern: RegExp;
-  /** Capability the active membership MUST hold for this request. */
-  readonly capability: Capability;
+  /** Workspace and/or platform capabilities required before proxy forwarding. */
+  readonly requirement: RouteCapabilityRequirement;
 }
 
 /**
@@ -54,13 +62,23 @@ export interface RouteCapabilityRule {
  * gate failure rather than a silent capability bypass.
  */
 export const PROXY_ROUTE_CAPABILITIES: ReadonlyArray<RouteCapabilityRule> = [
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/examples\/[^\/]+\/run\b/,
+    requirement: { workspaceAllOf: ["run:create"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/runs\b/,
+    requirement: { workspaceAllOf: ["run:create"] },
+  },
   // Tool import — requires the active workspace's tool:create.
   // Regular workspace members (Viewer / Researcher) cannot import
   // tools into their workspace; that's WorkspaceAdmin work.
   {
     method: "POST",
     pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/import\b/,
-    capability: "tool:create",
+    requirement: { workspaceAllOf: ["tool:create"] },
   },
   // Cross-workspace promotion request — requires
   // tool:request_promotion (in WorkspaceAdmin).
@@ -68,7 +86,7 @@ export const PROXY_ROUTE_CAPABILITIES: ReadonlyArray<RouteCapabilityRule> = [
     method: "POST",
     pattern:
       /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/[A-Za-z0-9_-]+\/promote\b/,
-    capability: "tool:request_promotion",
+    requirement: { workspaceAllOf: ["tool:request_promotion"] },
   },
   // Tool execution / status / export — workspace-admin gated. A
   // regular Researcher can READ tools (GET /api/tools) but cannot
@@ -76,37 +94,68 @@ export const PROXY_ROUTE_CAPABILITIES: ReadonlyArray<RouteCapabilityRule> = [
   {
     method: "POST",
     pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/[A-Za-z0-9_-]+\/status\b/,
-    capability: "tool:update",
+    requirement: { workspaceAllOf: ["tool:update"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/[A-Za-z0-9_-]+\/preview\b/,
+    requirement: { workspaceAllOf: ["tool:read"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/[A-Za-z0-9_-]+\/runs\b/,
+    requirement: { workspaceAllOf: ["tool:read", "run:create"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/[A-Za-z0-9_-]+\/run-tests\b/,
+    requirement: { workspaceAllOf: ["tool:update"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/[A-Za-z0-9_-]+\/execute\b/,
+    requirement: { workspaceAllOf: ["tool:read", "run:create"] },
   },
   {
     method: "POST",
     pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tools\/[A-Za-z0-9_-]+\/export\b/,
-    capability: "tool:read",
+    requirement: { workspaceAllOf: ["tool:read"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-authoring\/code-templates\b/,
+    requirement: { workspaceAllOf: ["tool:create"] },
+  },
+  {
+    method: "DELETE",
+    pattern:
+      /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-authoring\/code-templates\/[^\/]+\b/,
+    requirement: { workspaceAllOf: ["tool:create"] },
   },
   // Tool draft authoring — full sandbox of mutations require
   // tool:create (the user is materially creating new tool code).
   {
     method: "POST",
     pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-authoring\/drafts\b/,
-    capability: "tool:create",
+    requirement: { workspaceAllOf: ["tool:create"] },
   },
   {
     method: "PUT",
     pattern:
       /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-authoring\/drafts\/[^\/]+\/files\b/,
-    capability: "tool:create",
+    requirement: { workspaceAllOf: ["tool:create"] },
   },
   {
     method: "DELETE",
     pattern:
       /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-authoring\/drafts\/[^\/]+\b/,
-    capability: "tool:create",
+    requirement: { workspaceAllOf: ["tool:create"] },
   },
   {
     method: "POST",
     pattern:
-      /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-authoring\/drafts\/[^\/]+\/register\b/,
-    capability: "tool:create",
+      /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-authoring\/drafts\/[^\/]+\/(manifest|apply-code-template|preview|check|register|export)\b/,
+    requirement: { workspaceAllOf: ["tool:create"] },
   },
   // Promotion approve / deny — platform admin only. Server-side
   // _require_role still enforces this; the proxy gate is the
@@ -115,23 +164,64 @@ export const PROXY_ROUTE_CAPABILITIES: ReadonlyArray<RouteCapabilityRule> = [
     method: "POST",
     pattern:
       /^\/api\/[A-Za-z0-9_-]{3,64}\/tool-promotions\/[^\/]+\/(approve|deny)\b/,
-    capability: "platform:incident_remediate",
+    requirement: { platformAllOf: ["platform:incident_remediate"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/papers\/import\b/,
+    requirement: { workspaceAllOf: ["capsule:update"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/papers\/[^\/]+\/edit\b/,
+    requirement: { workspaceAllOf: ["capsule:update"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/proposals\b/,
+    requirement: { workspaceAllOf: ["capsule:update"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/capsules\/[^\/]+\/codegen\b/,
+    requirement: { workspaceAllOf: ["capsule:update"] },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/[A-Za-z0-9_-]{3,64}\/capsules\/[^\/]+\/validate-run\b/,
+    requirement: { workspaceAllOf: ["capsule:update"] },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/[A-Za-z0-9_-]{3,64}\/capsules\/[^\/]+\/user_edits\/.+/,
+    requirement: { workspaceAllOf: ["capsule:update"] },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/[A-Za-z0-9_-]{3,64}\/autonomy\/(design|smoke|review|sweep)\/[^\/]+\b/,
+    requirement: { workspaceAllOf: ["capsule:update"] },
   },
 ];
 
 /**
- * Look up the required capability for a request, if any. Returns
- * undefined when the route is unmapped — those go through with the
- * default workspace-membership gate.
+ * Look up the required capabilities for a request, if any. A caller
+ * that receives undefined for a state-changing method must fail
+ * closed instead of forwarding.
  */
-export function findRequiredCapability(
+export function isProxyStateChangingMethod(method: string): method is ProxyMethod {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
+}
+
+export function findRequiredCapabilities(
   method: string,
   path: string,
-): Capability | undefined {
+): RouteCapabilityRequirement | undefined {
   const m = method.toUpperCase();
   for (const rule of PROXY_ROUTE_CAPABILITIES) {
     if (rule.method === m && rule.pattern.test(path)) {
-      return rule.capability;
+      return rule.requirement;
     }
   }
   return undefined;

@@ -50,9 +50,14 @@ import {
   signHandoffPayload,
   type HandoffPayload,
 } from "./handoffSigner.js";
-import { findRequiredCapability } from "./routeCapabilityMap.js";
+import {
+  findRequiredCapabilities,
+  isProxyStateChangingMethod,
+  type RouteCapabilityRequirement,
+} from "./routeCapabilityMap.js";
 import type { MiddlewareHandler } from "../../../../packages/secure_core/src/middleware/compose.js";
 import { PermissionDeniedError } from "../../../../packages/secure_core/src/errors/shapes.js";
+import type { Capability } from "../../../../packages/secure_core/src/config/capabilities.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -102,6 +107,14 @@ export interface WorkbenchProxyOptions {
    * query against the user's full membership set.
    */
   readonly platformRolesFor?: (userId: string) => Promise<readonly string[]>;
+  /**
+   * Async lookup of platform-tier capabilities across every live
+   * membership. Route authorization uses this for `platform:*`
+   * requirements because `_platform` is not an active workspace.
+   */
+  readonly platformCapabilitiesFor?: (
+    userId: string,
+  ) => Promise<readonly Capability[]>;
   /** Optional clock seam — defaults to `Date.now`. Tests inject a fixed clock. */
   readonly now?: () => number;
 }
@@ -116,6 +129,34 @@ export function stripInboundHandoffHeaders(req: FastifyRequest): void {
   for (const name of HANDOFF_HEADER_NAMES) {
     delete req.headers[name];
   }
+}
+
+export function rewriteWorkbenchProxyUrl(url: string): string {
+  return url.replace(/^\/api\/[A-Za-z0-9_-]{3,64}(?=\/|$|\?)/, "/api");
+}
+
+export function rewriteWorkbenchProxyHeaders(
+  req: FastifyRequest,
+  headers: Record<string, string | string[] | undefined>,
+): Record<string, string | string[] | undefined> {
+  const handoff = req.workbenchHandoff;
+  if (handoff === undefined) {
+    // The preHandler chain refused to run; @fastify/http-proxy
+    // shouldn't reach this branch in a normal request, but if it did
+    // the missing handoff lets FastAPI 401 the request.
+    return headers;
+  }
+  const { payload, signatureHex } = handoff;
+  return {
+    ...headers,
+    [HANDOFF_HEADERS.USER_ID]: payload.userId,
+    [HANDOFF_HEADERS.WORKSPACE_ID]: payload.workspaceId,
+    [HANDOFF_HEADERS.WORKSPACE_SLUG]: payload.workspaceSlug,
+    [HANDOFF_HEADERS.ROLES]: [...payload.roles].sort().join(","),
+    [HANDOFF_HEADERS.REQUEST_ID]: payload.requestId,
+    [HANDOFF_HEADERS.ISSUED_AT]: String(payload.issuedAtSec),
+    [HANDOFF_HEADERS.SIGNATURE]: signatureHex,
+  };
 }
 
 /**
@@ -133,6 +174,9 @@ export function buildHandoffPreHandler(opts: {
   readonly handoffSecret: string;
   readonly now: () => number;
   readonly platformRolesFor?: (userId: string) => Promise<readonly string[]>;
+  readonly platformCapabilitiesFor?: (
+    userId: string,
+  ) => Promise<readonly Capability[]>;
 }): MiddlewareHandler {
   return async (req) => {
     if (req.auth === undefined) {
@@ -150,34 +194,16 @@ export function buildHandoffPreHandler(opts: {
         "workbenchProxyPlugin: req.membership missing — preHandler must run requireWorkspaceMembership first.",
       );
     }
-    // Audit fix (2026-05-10) #2: enforce per-route capabilities at
-    // the proxy boundary. The previous auth chain only checked
-    // workspace membership; legacy FastAPI routes that lack their
-    // own role check (e.g. /api/tools/import) were therefore
-    // callable by any workspace member. The map below names every
-    // mutating route + the capability it requires; this preHandler
-    // refuses BEFORE the proxy forwards to FastAPI.
-    const required = findRequiredCapability(req.method, req.url);
-    if (required !== undefined) {
-      // Capabilities are typed as ReadonlySet<Capability> in
-      // production (the membership join populates them) but a
-      // stub fixture might pass an array; handle both.
-      const caps: unknown = req.membership.capabilities;
-      const has =
-        caps instanceof Set
-          ? (caps as ReadonlySet<string>).has(required)
-          : Array.isArray(caps)
-            ? (caps as ReadonlyArray<string>).includes(required)
-            : false;
-      if (!has) {
-        throw new PermissionDeniedError(
-          `Caller lacks the '${required}' capability required for ${req.method} ${req.url}.`,
-        );
-      }
+    const requirement = findRequiredCapabilities(req.method, req.url);
+    if (
+      requirement === undefined &&
+      isProxyStateChangingMethod(req.method)
+    ) {
+      throw new PermissionDeniedError(
+        `Unmapped state-changing FastAPI route refused at gateway boundary: ${req.method} ${req.url}.`,
+      );
     }
-    stripInboundHandoffHeaders(req);
 
-    const issuedAtSec = Math.floor(opts.now() / 1000);
     // The active membership's role name is canonical; FastAPI keys
     // workspace-scoped role checks against this list. Audit fix
     // (2026-05-10): platform-tier roles (IncidentRemediator, etc.)
@@ -186,18 +212,39 @@ export function buildHandoffPreHandler(opts: {
     // ``_require_role`` sees the union.
     const baseRoles = [req.membership.roleName];
     let platformRoles: readonly string[] = [];
+    let platformCapabilities: readonly Capability[] = [];
+    let platformLookupFailed = false;
     if (opts.platformRolesFor !== undefined) {
       try {
         platformRoles = await opts.platformRolesFor(req.auth.userId);
       } catch {
-        // Lookup failure is non-fatal: the workspace-tier role
-        // still rides through, so workspace-scoped operations work.
-        // Platform-tier operations refuse server-side. The DB is
-        // the canonical source; a transient failure shouldn't block
-        // the request entirely.
+        platformLookupFailed = true;
         platformRoles = [];
       }
     }
+    if (opts.platformCapabilitiesFor !== undefined) {
+      try {
+        platformCapabilities = await opts.platformCapabilitiesFor(
+          req.auth.userId,
+        );
+      } catch {
+        platformLookupFailed = true;
+        platformCapabilities = [];
+      }
+    }
+    if (requirement !== undefined) {
+      enforceRouteRequirement({
+        requirement,
+        workspaceCapabilities: req.membership.capabilities,
+        platformCapabilities,
+        platformLookupFailed,
+        method: req.method,
+        url: req.url,
+      });
+    }
+    stripInboundHandoffHeaders(req);
+
+    const issuedAtSec = Math.floor(opts.now() / 1000);
     // Deduplicate; the active workspace's role might also appear in
     // the platform-roles set if the user holds it in multiple slots.
     const roles = Array.from(new Set([...baseRoles, ...platformRoles]));
@@ -214,6 +261,64 @@ export function buildHandoffPreHandler(opts: {
   };
 }
 
+function capabilitySetFrom(
+  capabilities: ReadonlySet<Capability> | ReadonlyArray<Capability>,
+): ReadonlySet<Capability> {
+  return capabilities instanceof Set
+    ? capabilities
+    : new Set(capabilities);
+}
+
+function hasAll(
+  capabilities: ReadonlySet<Capability>,
+  required: ReadonlyArray<Capability> | undefined,
+): boolean {
+  return (required ?? []).every((capability) => capabilities.has(capability));
+}
+
+function hasAny(
+  capabilities: ReadonlySet<Capability>,
+  required: ReadonlyArray<Capability> | undefined,
+): boolean {
+  const values = required ?? [];
+  return values.length === 0 || values.some((capability) => capabilities.has(capability));
+}
+
+function describeRequirement(requirement: RouteCapabilityRequirement): string {
+  return [
+    ...(requirement.workspaceAllOf ?? []).map((c) => `workspace:${c}`),
+    ...(requirement.workspaceAnyOf ?? []).map((c) => `workspace:any:${c}`),
+    ...(requirement.platformAllOf ?? []).map((c) => `platform:${c}`),
+  ].join(", ");
+}
+
+function enforceRouteRequirement(args: {
+  readonly requirement: RouteCapabilityRequirement;
+  readonly workspaceCapabilities: ReadonlySet<Capability>;
+  readonly platformCapabilities: readonly Capability[];
+  readonly platformLookupFailed: boolean;
+  readonly method: string;
+  readonly url: string;
+}): void {
+  const workspace = capabilitySetFrom(args.workspaceCapabilities);
+  const platform = capabilitySetFrom(args.platformCapabilities);
+  const needsPlatform = (args.requirement.platformAllOf ?? []).length > 0;
+  if (needsPlatform && args.platformLookupFailed) {
+    throw new PermissionDeniedError(
+      `Platform capability lookup failed for ${args.method} ${args.url}; refusing fail-closed.`,
+    );
+  }
+  if (
+    !hasAll(workspace, args.requirement.workspaceAllOf) ||
+    !hasAny(workspace, args.requirement.workspaceAnyOf) ||
+    !hasAll(platform, args.requirement.platformAllOf)
+  ) {
+    throw new PermissionDeniedError(
+      `Caller lacks route capability requirement [${describeRequirement(args.requirement)}] for ${args.method} ${args.url}.`,
+    );
+  }
+}
+
 /**
  * Workbench proxy plugin. Registers @fastify/http-proxy mounted at
  * ``/api`` with slug-aware routes + the auth chain + handoff signer.
@@ -226,6 +331,7 @@ export const workbenchProxyPlugin: FastifyPluginAsync<
     handoffSecret: opts.handoffSecret,
     now,
     platformRolesFor: opts.platformRolesFor,
+    platformCapabilitiesFor: opts.platformCapabilitiesFor,
   });
 
   // The preHandler argument accepts either a single function or an
@@ -260,40 +366,12 @@ export const workbenchProxyPlugin: FastifyPluginAsync<
     // on the FastAPI side, this preRewrite becomes the operator's
     // switch: drop the strip and the slug rides through to FastAPI
     // verbatim.
-    preRewrite: (url: string) => {
-      const stripped = url.replace(
-        /^\/api\/[A-Za-z0-9_-]{3,64}(?=\/|$|\?)/,
-        "/api",
-      );
-      return stripped;
-    },
+    preRewrite: rewriteWorkbenchProxyUrl,
     preHandler: preHandler as unknown as Parameters<
       typeof fastifyHttpProxy
     >[1]["preHandler"],
     replyOptions: {
-      rewriteRequestHeaders: (
-        req: FastifyRequest,
-        headers: Record<string, string | string[] | undefined>,
-      ) => {
-        const handoff = req.workbenchHandoff;
-        if (handoff === undefined) {
-          // The preHandler chain refused to run; @fastify/http-proxy
-          // shouldn't reach this branch in a normal request, but if
-          // it did the missing handoff lets FastAPI 401 the request.
-          return headers;
-        }
-        const { payload, signatureHex } = handoff;
-        return {
-          ...headers,
-          [HANDOFF_HEADERS.USER_ID]: payload.userId,
-          [HANDOFF_HEADERS.WORKSPACE_ID]: payload.workspaceId,
-          [HANDOFF_HEADERS.WORKSPACE_SLUG]: payload.workspaceSlug,
-          [HANDOFF_HEADERS.ROLES]: [...payload.roles].sort().join(","),
-          [HANDOFF_HEADERS.REQUEST_ID]: payload.requestId,
-          [HANDOFF_HEADERS.ISSUED_AT]: String(payload.issuedAtSec),
-          [HANDOFF_HEADERS.SIGNATURE]: signatureHex,
-        };
-      },
+      rewriteRequestHeaders: rewriteWorkbenchProxyHeaders,
     },
   } as unknown) as Parameters<typeof fastifyHttpProxy>[1]);
 };

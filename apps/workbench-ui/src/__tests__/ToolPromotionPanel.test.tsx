@@ -19,7 +19,10 @@ import type {
   ApiClient,
   ToolPromotionRequest,
 } from "../api/client";
-import type { CurrentSessionResponse } from "../api/secureCoreClient";
+import type {
+  Capability,
+  CurrentSessionResponse,
+} from "../api/secureCoreClient";
 
 const PENDING: ToolPromotionRequest = {
   request_id: "11111111-1111-4111-8111-111111111111",
@@ -159,7 +162,7 @@ describe("ToolPromotionPanel", () => {
           workspace_name: "shared-public-experiments",
           role_id: "5b807f69-df63-5054-a96a-490c9668a567",
           role_name: "WorkspaceAdmin",
-          capabilities: [] as readonly never[],
+          capabilities: [] satisfies readonly Capability[],
         },
         // Platform anchor workspace — carries the capability.
         {
@@ -167,7 +170,9 @@ describe("ToolPromotionPanel", () => {
           workspace_name: "_platform",
           role_id: "9fd675cb-dbaa-59d3-9f21-3e5ae3bfc4ad",
           role_name: "IncidentRemediator",
-          capabilities: ["platform:incident_remediate"] as readonly never[],
+          capabilities: [
+            "platform:incident_remediate",
+          ] satisfies readonly Capability[],
         },
       ],
     };

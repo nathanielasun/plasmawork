@@ -60,6 +60,23 @@ export default function SecurityAuthentication() {
         </li>
       </ul>
 
+      <h2>Gateway route authorization</h2>
+      <p>
+        The gateway does not rely on UI button visibility or FastAPI route
+        comments for authorization. State-changing proxied FastAPI routes are
+        listed in a server-side capability map. Each entry declares the
+        workspace capabilities and, when needed, platform capabilities required
+        before forwarding. A state-changing route that lacks a map entry fails
+        closed at the gateway boundary.
+      </p>
+      <p>
+        Platform capabilities are derived from server-side membership and role
+        records across the relevant platform scope, not from the active
+        workspace's role list and never from a request body. This is why a
+        PlatformAdmin can decide a cross-workspace promotion while a regular
+        WorkspaceAdmin cannot.
+      </p>
+
       <h2>Where the env vars live</h2>
       <p>
         <code>/.env.auth</code> at the repo root is the canonical
@@ -217,6 +234,11 @@ printf '%s' '<your-oob-credential>' | shasum -a 256`}</code>
         handling are part of the authentication boundary; disabling a
         user prevents new privileged work and preserves historical audit
         and provenance rows.
+      </p>
+      <p>
+        Account lockout preserves the same password-verifier call path as an
+        ordinary wrong password. The response remains generic, while the audit
+        chain records the server-derived denial reason.
       </p>
 
       <h2>Request handling</h2>

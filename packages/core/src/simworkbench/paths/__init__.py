@@ -13,6 +13,7 @@ the project directory".
 from __future__ import annotations
 
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -88,8 +89,6 @@ def simulation_capsules_root() -> Path:
 # but the convention checker bans them in the FastAPI route layer —
 # server.py MUST go through the ``_for(workspace_slug)`` helpers.
 # ---------------------------------------------------------------------------
-
-import re
 
 _WORKSPACE_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,64}$")
 
@@ -169,7 +168,12 @@ def tool_drafts_root_for(workspace_slug: str) -> Path:
     Drafts created in workspace X are only visible to X members; the
     Tools page authoring panel reads/writes here exclusively.
     """
-    base = local_cache_root() / "workspaces" / _validate_workspace_slug(workspace_slug) / "tool_drafts"
+    base = (
+        local_cache_root()
+        / "workspaces"
+        / _validate_workspace_slug(workspace_slug)
+        / "tool_drafts"
+    )
     return _ensure(base)
 
 

@@ -3372,9 +3372,9 @@ check_grep_in_file 'forwards GET /api/.*workspace_id' \
 check_grep_in_file 'strips inbound X-Workbench-' \
   apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
   "workbenchProxy test pins inbound-header strip defense"
-check_grep_in_file 'upstream-side HMAC verification' \
+check_grep_in_file 'FastAPI-side HMAC verification' \
   apps/workbench-gateway/test/proxy/workbenchProxy.test.ts \
-  "workbenchProxy test pins HMAC round-trip against verifying upstream"
+  "workbenchProxy test pins HMAC round-trip without network upstream"
 
 # Phase 0.5 auth gateway / Phase E5 (workspace-slug threading through
 # server.py). Every handler that reads / writes capsule, run, or
@@ -3677,7 +3677,7 @@ check_grep_in_file 'safe_copy_tree' \
   "PromotionService.approve uses safe_copy_tree (no symlink follow)"
 check_grep_in_file 'locked_until' \
   packages/secure_core/src/auth/loginService.ts \
-  "LoginService reads locked_until before running the verifier"
+  "LoginService reads locked_until while preserving verifier timing parity"
 check_grep_in_file 'LOGIN_LOCKOUT_THRESHOLD' \
   apps/workbench-gateway/src/auth/argon2Adapter.ts \
   "argon2Adapter exports the lockout threshold constant"
@@ -3687,12 +3687,19 @@ check_grep_in_file 'LOGIN_LOCKOUT_DURATION_MS' \
 check_grep_in_file 'account_locked' \
   packages/secure_core/test/auth/loginService.test.ts \
   "loginService test pins the account_locked branch"
-check_grep_in_file 'WORKBENCH_PREVIEW_SANDBOX_ENABLED' \
+check_file_exists packages/core/src/simworkbench/tools/preview_sandbox.py
+check_grep_in_file 'WORKBENCH_PREVIEW_SANDBOX_COMMAND' \
   packages/core/src/simworkbench/api/server.py \
-  "preview endpoint refuses without WORKBENCH_PREVIEW_SANDBOX_ENABLED in production (RCE gate)"
+  "preview endpoint refuses without a configured production sandbox launcher"
+check_grep_in_file 'run_preview_in_configured_sandbox' \
+  packages/core/src/simworkbench/tools/authoring.py \
+  "tool authoring preview can execute through the configured sandbox adapter"
 check_grep_in_file 'platformRolesFor' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "proxy plugin accepts platformRolesFor seam (cross-membership platform-role aggregation)"
+check_grep_in_file 'platformCapabilitiesFor' \
+  apps/workbench-gateway/src/proxy/workbenchProxy.ts \
+  "proxy plugin accepts platformCapabilitiesFor seam for platform capability authorization"
 check_grep_in_file "platform:%" \
   apps/workbench-gateway/src/main.ts \
   "main.ts wires platformRolesFor against the appPool"
@@ -3703,12 +3710,21 @@ check_file_exists apps/workbench-gateway/src/proxy/routeCapabilityMap.ts
 check_grep_in_file 'PROXY_ROUTE_CAPABILITIES' \
   apps/workbench-gateway/src/proxy/routeCapabilityMap.ts \
   "proxy plugin pins per-route capability map (audit fix #2)"
-check_grep_in_file 'findRequiredCapability' \
+check_grep_in_file 'findRequiredCapabilities' \
   apps/workbench-gateway/src/proxy/workbenchProxy.ts \
   "proxy auth chain enforces per-route capabilities BEFORE forwarding"
-check_grep_in_file 'PROMOTION_AUDIT_LOG_NAME' \
+for route in 'runs' 'tools.*run-tests' 'papers.*import' 'proposals' 'capsules.*codegen' 'autonomy'; do
+  check_grep_in_file "$route" \
+    apps/workbench-gateway/src/proxy/routeCapabilityMap.ts \
+    "proxy route capability map covers mutating family $route"
+done
+check_file_exists apps/workbench-gateway/src/internal/promotionAuditRoutes.ts
+check_grep_in_file 'promotionAuditRoutes' \
+  apps/workbench-gateway/src/main.ts \
+  "gateway registers canonical promotion audit bridge"
+check_grep_in_file 'verify_promotion_audit_chain' \
   packages/core/src/simworkbench/tools/promotion.py \
-  "promotion service writes a hash-chained audit log (interim, audit fix #7)"
+  "dev fallback promotion audit chain has a verifier"
 check_grep_in_file '_emit_promotion_audit' \
   packages/core/src/simworkbench/tools/promotion.py \
   "promotion service calls _emit_promotion_audit on request/approve/deny"

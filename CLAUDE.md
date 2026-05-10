@@ -410,6 +410,16 @@ helpers, or any wrapper script that starts either process.
   `hmac.compare_digest`. Trusting any header without HMAC verification
   (or skipping the constant-time compare) is the same-host process
   spoofing failure mode tracked in `agent_error_patterns.md`.
+- Proxied FastAPI mutations are fail-closed at the gateway. Every new
+  state-changing `/api/:slug/*` route needs an explicit entry in
+  `apps/workbench-gateway/src/proxy/routeCapabilityMap.ts`; unmapped
+  mutations must not fall back to membership-only forwarding.
+- Platform operations derive platform capabilities from server-side
+  membership/role records across the platform scope, not from the
+  active workspace role list and never from request bodies.
+- Gateway-required code-execution preview paths require a configured
+  sandbox command/runtime. Do not reintroduce boolean "sandbox enabled"
+  flags as proof of isolation.
 - Recovery from a lost admin is the manual operator runbook in
   `LIMITATIONS.md`. There is no `BOOTSTRAP_FORCE`, `SKIP_WORM`, or
   equivalent break-glass env var; do not introduce one.

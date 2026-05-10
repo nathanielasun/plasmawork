@@ -49,13 +49,12 @@ import hmac
 import os
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-
 
 # Lowercase header keys. Fastify normalizes outbound headers, so the
 # gateway sets these in lowercase; FastAPI's request headers are case-
@@ -162,7 +161,7 @@ class WorkbenchHandoffMiddleware(BaseHTTPMiddleware):
         request.state.workbench_actor = actor
         return await call_next(request)
 
-    def _verify_and_extract(
+    def _verify_and_extract(  # noqa: PLR0911
         self, request: Request
     ) -> tuple[WorkbenchActor | None, JSONResponse | None]:
         # 1. Required headers present + non-empty.

@@ -33,7 +33,8 @@ import yaml
 from fastapi.testclient import TestClient
 from simworkbench.api import create_app
 from simworkbench.api.server import DEFAULT_WORKSPACE_SLUG
-from simworkbench.paths import repo_root, simulation_capsules_root_for as simulation_capsules_root_workspace
+from simworkbench.paths import repo_root
+from simworkbench.paths import simulation_capsules_root_for as simulation_capsules_root_workspace
 
 FIXTURE_PAPER = repo_root() / "tests" / "fixtures" / "phase_4_paper" / "sample.md"
 
