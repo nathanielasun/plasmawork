@@ -3896,6 +3896,12 @@ check_grep_fixed_in_file 'ZERO-AUTH stub for development convenience' \
 check_grep_fixed_in_file 'WORKBENCH_GATEWAY_PORT ?? 4000' \
   scripts/dev/dev_stub_gateway.mjs \
   "dev stub gateway port matches vite proxy target (4000)"
+# Unimplemented routes return 501 Not Implemented, NOT 401 Unauthorized.
+# 401 would mislead SPA error UX into suggesting a session problem
+# when the user IS authenticated; the route just isn't implemented.
+check_grep_fixed_in_file 'sendJson(res, 501' \
+  scripts/dev/dev_stub_gateway.mjs \
+  "dev stub returns 501 (not 401) for unimplemented secure-core routes"
 
 # 1f — Handoff-secret env-var name identical in both languages. The
 # gateway signs with this; FastAPI verifies with it. A typo on either

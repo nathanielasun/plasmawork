@@ -225,7 +225,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---------------------------------------------------------------
-    // Everything else the SPA might call — return 401 stub.
+    // Everything else the SPA might call — return 501 stub.
+    //
+    // 501 Not Implemented (rather than 401) because the user IS
+    // authenticated under the stub session — the route just isn't
+    // implemented by the stub. 401 would mislead the SPA's error UX
+    // into suggesting a session problem when there isn't one. Real
+    // /operator/*, /bootstrap, /workspaces, /approvals routes ship in
+    // the secure_core gateway.
     // ---------------------------------------------------------------
     if (
       url.startsWith("/auth/") ||
@@ -234,7 +241,7 @@ const server = http.createServer(async (req, res) => {
       url.startsWith("/workspaces") ||
       url.startsWith("/approvals")
     ) {
-      sendJson(res, 401, {
+      sendJson(res, 501, {
         error: "stub-gateway: route not implemented",
         path: url,
         stub: true,
