@@ -38,6 +38,9 @@ const BACKEND_PORT = Number(process.env.WORKBENCH_BACKEND_PORT ?? 8000);
 // In-memory session store — restarting this process wipes every "login".
 const SESSIONS = new Map();
 
+// Process start time for the /dev-status probe.
+const STARTED_AT = new Date().toISOString();
+
 const STUB_USER_ID = "00000000-0000-4000-8000-000000000001";
 const STUB_WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
 const STUB_WORKSPACE_SLUG = "shared-public-experiments";
@@ -165,6 +168,21 @@ const server = http.createServer(async (req, res) => {
   const method = req.method ?? "GET";
 
   try {
+    // ---------------------------------------------------------------
+    // /dev-status — probe endpoint for the SPA's BackendStatusBanner.
+    // The real gateway does NOT implement this route (404 = "live");
+    // a 200 with mode="stub" tells the SPA it's running against the
+    // dev stub. No auth required (the response carries no secrets).
+    // ---------------------------------------------------------------
+    if (method === "GET" && url === "/dev-status") {
+      sendJson(res, 200, {
+        mode: "stub",
+        started_at: STARTED_AT,
+        hint: "Dev stub gateway. Run scripts/dev/run_gateway.sh (or run_dev.sh --real) for the real auth surface.",
+      });
+      return;
+    }
+
     // ---------------------------------------------------------------
     // /auth/session — check the session cookie.
     // ---------------------------------------------------------------

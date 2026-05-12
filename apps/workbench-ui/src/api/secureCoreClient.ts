@@ -180,18 +180,29 @@ export class SecureCoreHttpError extends Error {
   public readonly status: number;
   public readonly code: string | null;
   public readonly requestId: string | null;
+  /**
+   * Optional actionable hint pulled from the response body. The dev
+   * stub gateway emits ``body.hint`` at top level for unimplemented
+   * routes (e.g. "Run scripts/dev/run_gateway.sh for real auth.").
+   * Pages that catch this error MAY surface the hint in their error
+   * banner so the actionable instruction reaches the user. If no
+   * hint was emitted, this is null.
+   */
+  public readonly hint: string | null;
 
   constructor(
     message: string,
     status: number,
     code: string | null,
     requestId: string | null,
+    hint: string | null = null,
   ) {
     super(message);
     this.name = "SecureCoreHttpError";
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    this.hint = hint;
   }
 }
 
@@ -212,6 +223,22 @@ function isErrorEnvelope(value: unknown): value is SecureCoreErrorEnvelope {
     error !== null &&
     typeof (error as { message?: unknown }).message === "string"
   );
+}
+
+/**
+ * Pull an actionable hint string from the response body if one is
+ * present. The dev stub emits ``body.hint`` at top level; future
+ * gateway versions MAY put it under ``body.error.details.hint``.
+ * Returns null if no hint shape matches.
+ */
+function extractHint(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const topLevel = (body as { hint?: unknown }).hint;
+  if (typeof topLevel === "string" && topLevel.length > 0) return topLevel;
+  const errorObj = (body as { error?: { details?: { hint?: unknown } } }).error;
+  const nested = errorObj?.details?.hint;
+  if (typeof nested === "string" && nested.length > 0) return nested;
+  return null;
 }
 
 // CSRF helpers (CSRF_COOKIE_NAME, STATE_CHANGING_METHODS, methodRequiresCsrf,
@@ -271,12 +298,14 @@ async function readJson<T>(
     );
   }
   if (!response.ok) {
+    const hint = extractHint(body);
     if (isErrorEnvelope(body)) {
       throw new SecureCoreHttpError(
         body.error.message,
         response.status,
         body.error.code,
         body.error.request_id,
+        hint,
       );
     }
     throw new SecureCoreHttpError(
@@ -284,6 +313,7 @@ async function readJson<T>(
       response.status,
       null,
       null,
+      hint,
     );
   }
   return body as T;

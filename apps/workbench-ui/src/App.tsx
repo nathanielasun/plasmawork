@@ -32,6 +32,7 @@ import LoginPage from "./app/login/page";
 import { SessionGuard } from "./components/auth/SessionGuard";
 import { WorkspaceSwitcher } from "./components/auth/WorkspaceSwitcher";
 import { LogoutButton } from "./components/auth/LogoutButton";
+import BackendStatusBanner from "./components/system/BackendStatusBanner";
 
 interface NavEntry {
   readonly to: string;
@@ -171,16 +172,24 @@ function AppShell(): JSX.Element {
 
 export default function App(): JSX.Element {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route
-        path="*"
-        element={
-          <SessionGuard>
-            <AppShell />
-          </SessionGuard>
-        }
-      />
-    </Routes>
+    <>
+      {/*
+        Backend-mode strip rendered OUTSIDE SessionGuard so it appears
+        pre-login (e.g. on /login) as well as inside the shell. Probes
+        /dev-status on mount and every 30s.
+      */}
+      <BackendStatusBanner />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="*"
+          element={
+            <SessionGuard>
+              <AppShell />
+            </SessionGuard>
+          }
+        />
+      </Routes>
+    </>
   );
 }

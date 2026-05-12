@@ -30,6 +30,7 @@ export default defineConfig({
       "/operator": "http://localhost:4000",
       "/workspaces": "http://localhost:4000",
       "/approvals": "http://localhost:4000",
+      "/dev-status": "http://localhost:4000",
     },
   },
   build: {

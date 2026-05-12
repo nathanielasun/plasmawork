@@ -81,4 +81,18 @@ test.describe("vite dev-server proxy actually forwards to the gateway", () => {
     const ct = r?.headers()["content-type"] ?? "";
     expect(ct).toMatch(/text\/html/);
   });
+
+  test("BackendStatusBanner renders the stub banner against the stub gateway", async ({
+    page,
+  }) => {
+    // /dev-status is proxied through vite to the stub which returns
+    // mode: "stub". The BackendStatusBanner reads that and renders
+    // an aria role="status" element with data-mode="stub".
+    await page.goto("/");
+    const banner = page.locator('[role="status"][data-mode]');
+    await banner.first().waitFor({ state: "visible", timeout: 5_000 });
+    // Banner displays the stub label + hint from the stub body.
+    await expect(banner.first()).toHaveAttribute("data-mode", "stub");
+    await expect(banner.first()).toContainText("Dev stub gateway");
+  });
 });

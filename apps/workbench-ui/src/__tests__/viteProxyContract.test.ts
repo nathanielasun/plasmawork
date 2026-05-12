@@ -41,6 +41,7 @@ const REQUIRED_PROXY_PREFIXES = [
   "/operator",
   "/workspaces",
   "/approvals",
+  "/dev-status",
 ] as const;
 
 const EXPECTED_GATEWAY_TARGET = "http://localhost:4000";

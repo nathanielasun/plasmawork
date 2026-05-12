@@ -3797,7 +3797,7 @@ section "Cross-process wiring (Vite ↔ gateway ↔ FastAPI)"
 # every proxy value targets the gateway port (NOT FastAPI directly).
 # Catches the original bug: a missing entry meant /auth/session 404'd
 # from the Vite dev server.
-for prefix in '/auth' '/api' '/bootstrap' '/operator' '/workspaces' '/approvals'; do
+for prefix in '/auth' '/api' '/bootstrap' '/operator' '/workspaces' '/approvals' '/dev-status'; do
   check_grep_fixed_in_file "\"${prefix}\": \"http://localhost:4000\"" \
     apps/workbench-ui/vite.config.ts \
     "vite proxies ${prefix} → gateway:4000"
@@ -3930,6 +3930,31 @@ check_grep_fixed_in_file 'trap cleanup EXIT INT TERM' scripts/dev/run_dev.sh \
   "run_dev.sh traps EXIT/INT/TERM for tear-down"
 check_grep_fixed_in_file 'kill_tree' scripts/dev/run_dev.sh \
   "run_dev.sh uses recursive kill_tree (npm + uvicorn don't propagate signals)"
+
+# D2 — BackendStatusBanner: always-visible mode strip.
+# Probes /dev-status; renders stub / live / error states. Surfaces
+# the actionable hint that previously got discarded by the SPA's
+# error formatter.
+check_file_exists apps/workbench-ui/src/api/devStatus.ts \
+  "devStatus probe client present"
+check_file_exists apps/workbench-ui/src/components/system/BackendStatusBanner.tsx \
+  "BackendStatusBanner component present"
+check_grep_fixed_in_file 'BackendStatusBanner' apps/workbench-ui/src/App.tsx \
+  "App.tsx mounts BackendStatusBanner (outside SessionGuard)"
+check_grep_fixed_in_file '/dev-status' scripts/dev/dev_stub_gateway.mjs \
+  "dev stub gateway serves /dev-status probe"
+check_grep_fixed_in_file '"/dev-status"' apps/workbench-ui/vite.config.ts \
+  "vite proxy routes /dev-status to the gateway"
+check_grep_in_file 'readonly hint: string \| null' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "SecureCoreHttpError carries a hint field (stub diagnostics reach the SPA)"
+check_grep_fixed_in_file 'extractHint(body)' \
+  apps/workbench-ui/src/api/secureCoreClient.ts \
+  "readJson extracts hint from response body"
+check_file_exists apps/workbench-ui/src/__tests__/devStatus.test.ts \
+  "devStatus client has unit tests"
+check_file_exists apps/workbench-ui/src/__tests__/BackendStatusBanner.test.tsx \
+  "BackendStatusBanner has unit tests"
 
 # 1f — Handoff-secret env-var name identical in both languages. The
 # gateway signs with this; FastAPI verifies with it. A typo on either

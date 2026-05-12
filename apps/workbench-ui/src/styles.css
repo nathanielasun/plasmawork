@@ -2543,3 +2543,47 @@ ol.lifecycle li.lifecycle-active {
 .tool-promote-field textarea {
   resize: vertical;
 }
+
+/* =============================================================================
+ * BackendStatusBanner — always-visible top strip indicating the gateway
+ * mode (stub / live / error). Sticky at the top of the viewport so it
+ * stays visible across navigation. Single-line for the trusted state
+ * so it doesn't clutter the real UX; multi-line allowed when surfacing
+ * a hint or error.
+ * ========================================================================== */
+.backend-status-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--border);
+}
+.backend-status-banner-label {
+  font-weight: 600;
+}
+.backend-status-banner-hint,
+.backend-status-banner-error {
+  font-weight: 400;
+  opacity: 0.85;
+}
+.backend-status-banner-warning {
+  background: var(--status-warning-fill);
+  color: var(--status-warning-fg);
+  border-bottom-color: var(--status-warning-border);
+}
+.backend-status-banner-trusted {
+  /* Muted on purpose — live mode shouldn't shout. */
+  background: var(--surface-nested);
+  color: var(--muted);
+}
+.backend-status-banner-deprecated {
+  background: var(--status-deprecated-fill);
+  color: var(--status-deprecated-fg);
+  border-bottom-color: var(--status-deprecated-border);
+}

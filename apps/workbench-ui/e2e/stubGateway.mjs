@@ -28,6 +28,15 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify(body));
   };
 
+  if (url === "/dev-status") {
+    // Mirrors the dev stub's /dev-status. The BackendStatusBanner
+    // tested by Layer 5 (proxyWiring.spec.ts) sees mode="stub" here.
+    sendJson(200, {
+      mode: "stub",
+      hint: "Layer 5 stub gateway (test fixture).",
+    });
+    return;
+  }
   if (url.startsWith("/auth/session")) {
     sendJson(401, { error: "unauthenticated", code: "no_session" });
     return;
