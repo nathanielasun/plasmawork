@@ -11,38 +11,56 @@ export default function Usage() {
       <h2>Starting the workbench</h2>
       <p>
         Phase 0.5 introduced an authentication gateway, so the dev model
-        is now three cooperating processes. The Vite dev server proxies
-        every UI-facing path (<code>/auth/*</code>, <code>/api/*</code>,
-        <code>/bootstrap</code>, etc.) to the gateway on
-        <code>:4000</code>; without something listening there, you'll see
-        <em>"Could not load your session"</em> from the SPA. Two choices:
+        is now three cooperating processes (FastAPI, gateway, Vite). The
+        easiest entrypoint boots all three from one command:
       </p>
-      <h3>Zero-config dev (stub gateway)</h3>
+      <h3>One command (recommended)</h3>
+      <pre>
+        <code>{`# Default — stub gateway (zero auth, no Postgres required)
+./scripts/dev/run_dev.sh
+
+# Real gateway (requires .env.auth + Postgres + bootstrap admin)
+./scripts/dev/run_dev.sh --real`}</code>
+      </pre>
+      <p>
+        <code>run_dev.sh</code> backgrounds FastAPI on <code>:8000</code>,
+        the gateway on <code>:4000</code>, and Vite on <code>:5173</code>,
+        interleaves their stdout with <code>[backend]</code> /{" "}
+        <code>[stub]</code> / <code>[gateway]</code> / <code>[ui]</code>{" "}
+        line prefixes, blocks on the gateway becoming ready, and
+        traps Ctrl-C for clean teardown of every process. Useful when
+        you don't want three terminals open.
+      </p>
+      <h3>Three terminals (manual)</h3>
       <pre>
         <code>{`# Terminal 1 — FastAPI on :8000
 ./scripts/dev/run_backend.sh
 
-# Terminal 2 — stub gateway on :4000 (zero auth, NEVER use in prod)
-./scripts/dev/run_dev_stub_gateway.sh
+# Terminal 2 — gateway on :4000
+./scripts/dev/run_dev_stub_gateway.sh   # zero-config stub
+# OR
+./scripts/dev/run_gateway.sh            # real, requires .env.auth + Postgres
 
 # Terminal 3 — UI on :5173
 ./scripts/dev/run_ui.sh`}</code>
       </pre>
       <p>
         The stub gateway (<code>scripts/dev/dev_stub_gateway.mjs</code>)
-        is a 200-line Node script. It accepts ANY <code>/auth/login</code>
-        credentials, mints a stub session, returns the right response
-        shapes for <code>/auth/session</code>, and reverse-proxies
-        <code>/api/*</code> to FastAPI. Use this when you want to dev
-        the UI or backend without setting up Postgres, <code>.env.auth</code>,
-        or a bootstrap admin.
+        is a ~200-line Node script. It accepts ANY{" "}
+        <code>/auth/login</code> credentials, mints a stub session,
+        returns the right response shapes for <code>/auth/session</code>,
+        and reverse-proxies <code>/api/*</code> to FastAPI. Use it
+        when you want to dev the UI or backend without setting up
+        Postgres, <code>.env.auth</code>, or a bootstrap admin.
       </p>
       <h3>Full auth (real gateway)</h3>
       <p>
         For login flows, multi-workspace, capability gating, or anything
-        that touches the canonical audit chain, run the real
-        <code>apps/workbench-gateway</code> in place of the stub. See
-        the Installation page for the <code>.env.auth</code> setup and
+        that touches the canonical audit chain, run the real{" "}
+        <code>apps/workbench-gateway</code> via{" "}
+        <code>scripts/dev/run_gateway.sh</code> (or{" "}
+        <code>run_dev.sh --real</code>) in place of the stub. See the
+        Installation page for the <code>.env.auth</code> setup and
         first-boot bootstrap; the gateway requires Postgres with the
         secure_core roles + migrations applied.
       </p>

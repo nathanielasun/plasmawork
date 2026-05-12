@@ -3903,6 +3903,34 @@ check_grep_fixed_in_file 'sendJson(res, 501' \
   scripts/dev/dev_stub_gateway.mjs \
   "dev stub returns 501 (not 401) for unimplemented secure-core routes"
 
+# D1 — one-command dev orchestrator + real-gateway wrapper.
+# Replaces the three-terminal model with a single foreground process
+# that boots backend + gateway (stub or real) + UI, blocks on
+# wait_for_http, and tears down cleanly on Ctrl-C.
+check_file_executable scripts/dev/run_gateway.sh \
+  "scripts/dev/run_gateway.sh present + executable (real-gateway wrapper)"
+check_file_executable scripts/dev/run_dev.sh \
+  "scripts/dev/run_dev.sh present + executable (three-process orchestrator)"
+check_grep_in_file '"dev":' apps/workbench-gateway/package.json \
+  "gateway package.json declares dev script (run_gateway.sh depends on it)"
+check_grep_fixed_in_file 'run_backend.sh' scripts/dev/run_dev.sh \
+  "run_dev.sh invokes run_backend.sh"
+check_grep_fixed_in_file 'run_ui.sh' scripts/dev/run_dev.sh \
+  "run_dev.sh invokes run_ui.sh"
+check_grep_fixed_in_file 'run_dev_stub_gateway.sh' scripts/dev/run_dev.sh \
+  "run_dev.sh defaults to the stub gateway"
+check_grep_fixed_in_file 'run_gateway.sh' scripts/dev/run_dev.sh \
+  "run_dev.sh uses run_gateway.sh on --real"
+check_grep_fixed_in_file 'wait_for_http.sh' scripts/dev/run_dev.sh \
+  "run_dev.sh blocks on the gateway becoming ready (reuses wait_for_http.sh)"
+# run_dev.sh MUST trap SIGINT/SIGTERM/EXIT for clean shutdown of all
+# three child processes. A regression here leaves the LAN sockets
+# bound after Ctrl-C.
+check_grep_fixed_in_file 'trap cleanup EXIT INT TERM' scripts/dev/run_dev.sh \
+  "run_dev.sh traps EXIT/INT/TERM for tear-down"
+check_grep_fixed_in_file 'kill_tree' scripts/dev/run_dev.sh \
+  "run_dev.sh uses recursive kill_tree (npm + uvicorn don't propagate signals)"
+
 # 1f — Handoff-secret env-var name identical in both languages. The
 # gateway signs with this; FastAPI verifies with it. A typo on either
 # side means every authenticated /api/* call 401s.

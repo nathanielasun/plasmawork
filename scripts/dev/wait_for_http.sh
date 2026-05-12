@@ -2,9 +2,12 @@
 #
 # scripts/dev/wait_for_http.sh — block until an HTTP endpoint is reachable.
 #
-# Fail-closed wait-for-ready helper used by cross-process smoke tests
-# (Layer 4 / Layer 5). Polls the given URL with curl --retry-connrefused
-# until it returns a 2xx response, or the timeout expires.
+# Wait-for-ready helper used by cross-process smoke tests (Layer 4 /
+# Layer 5) and run_dev.sh. Polls the given URL until ANY HTTP response
+# comes back, or the timeout expires. "Any response" — including 401,
+# 403, 404 — means the server is alive and answering, which is all the
+# caller cares about. The caller's own assertions decide whether the
+# specific response status is correct.
 #
 # Usage:
 #   scripts/dev/wait_for_http.sh <url> [timeout_seconds]
@@ -12,8 +15,8 @@
 # Defaults: timeout_seconds = 30.
 #
 # Exit codes:
-#   0  endpoint reached
-#   1  timed out (the URL never returned 2xx within timeout)
+#   0  endpoint responded with ANY HTTP status (server is alive)
+#   1  timed out (no response within timeout)
 #   2  bad arguments
 
 set -uo pipefail
@@ -33,7 +36,11 @@ fi
 
 START=$(date +%s)
 while true; do
-  if curl -fsS --max-time 2 -o /dev/null "$URL" 2>/dev/null; then
+  # -s silent, -o /dev/null discard body, -w prints status code
+  # (000 means no response, anything else means the server answered).
+  # No -f, so any HTTP status counts as "ready".
+  code=$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || true)
+  if [[ "$code" != "000" && -n "$code" ]]; then
     exit 0
   fi
   NOW=$(date +%s)

@@ -109,7 +109,11 @@ function proxyToBackend(req, res) {
   // Strip the slug from /api/<slug>/<rest> so the FastAPI's flat
   // /api/<rest> routes still match. Matches what the real gateway's
   // preRewrite does in apps/workbench-gateway/src/proxy/workbenchProxy.ts.
-  const slugPrefixed = req.url.match(/^\/api\/[A-Za-z0-9_-]{3,64}(\/.*|$)/);
+  //
+  // Only strip when there IS a /<rest> after the slug. A bare
+  // /api/<word> path (e.g. /api/health hit directly) must NOT lose
+  // its tail — otherwise FastAPI's bypass endpoints 404.
+  const slugPrefixed = req.url.match(/^\/api\/[A-Za-z0-9_-]{3,64}(\/.+)/);
   const upstreamUrl = slugPrefixed ? `/api${slugPrefixed[1]}` : req.url;
 
   const upstream = http.request(
